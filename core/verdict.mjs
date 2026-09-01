@@ -54,7 +54,9 @@ export function exitCodeOf(verdict) {
  */
 const EVIDENCE_FILE_EXT = /\.(?:js|mjs|cjs|ts|tsx|jsx|py|json|md|sh|ps1|css|html|sql|ya?ml|toml|txt|c|cpp|h|go|rs|java)$/i;
 const EVIDENCE_SYMBOL = /`([A-Za-z_$][\w.$-]{2,})`/g;
-const EVIDENCE_FILE_LINE = /(?:^|[\s(,;])([\w./-]+\.(?:jsx?|mjs|cjs|tsx?|py|json|md|sh|ps1|go|rs|java)):(\d+)(?:-\d+)?/i;
+// Backtick ist ein zulaessiges Praefix: Markdown-Code-Spans („`datei:zeile`“)
+// sind die native Form der Falsifikations-Referenzen (RunDance-Befund 7).
+const EVIDENCE_FILE_LINE = /(?:^|[\s(,;`])([\w./-]+\.(?:jsx?|mjs|cjs|tsx?|py|json|md|sh|ps1|go|rs|java)):(\d+)(?:-\d+)?/i;
 const EVIDENCE_PATH = /[\w.-]+(?:\/[\w.-]+)+\.[A-Za-z0-9]+/;
 
 // WIDERLEGUNGS-ZWANG (Rig-Review 2026-09-01): Ein Falsifikationsversuch muss
@@ -62,17 +64,35 @@ const EVIDENCE_PATH = /[\w.-]+(?:\/[\w.-]+)+\.[A-Za-z0-9]+/;
 // Fehler gefunden") sind KEIN Nachweis, auch nicht mit angehängtem Pfad.
 const REFUTATION = /widerlegt?|widerlegung|refuted|verletzt|violates?|bricht|brea?ks|umgehung|umgangen|bypass|race|racy|bug|luecke|lücke|gap|flaw|angreifbar|unsicher|unsafe|kaputt|broken|falsch|wrong|fehlt|missing|inkonsistent|inconsistent|unzureichend|insufficient|risiko|risik|gefahr|danger|crash|absturz|leak|ausbruch|escape|gegenteil|contrary|angreif|attack|schwach|weak|zuwenig|zu wenig|nicht funktioniert|fails?/i;
 // Negations-Senke: „keine Fehler/Lücken/Bugs …" ist KEINE Widerlegung.
-const NEGATION_SINK = /\bkein(?:e|er|em|en)?\s+(?:fehler|gefunden|luecke|lücke|bug|problem|schwachstelle|schwaechen|risiko|anhaltspunkt|verstoss|widerspruch|gegenteil)\b/gi;
+const NEGATION_SINK = /\b(?:kein(?:e|er|em|en)?\s+(?:fehler|gefunden|luecke|lücke|bug|problem|schwachstelle|schwaechen|risiko|anhaltspunkt|verstoss|widerspruch|gegenteil)|no errors? found|nothing wrong)\b/gi;
 
-function hasRefutation(text) {
-  return REFUTATION.test(String(text || "").replace(NEGATION_SINK, " "));
+/**
+ * Widerlegungs-Zwang (RunDance-Befund 7, 2026-09-01): EIN einzelnes
+ * Widerlegungs-Token + angehängter Whitelist-Pfad ist ein Rubber-Stamp
+ * („Widerlegt: `claimNextJob` (artifacts/jobs.mjs)“ trägt keine inhaltliche
+ * Widerlegung). Es braucht mindestens ZWEI unterschiedliche Widerlegungs-
+ * Token ODER ein Token MIT verifizierter Datei:Zeile (die stärkste Evidenz
+ * kompensiert ein einziges Token – der Produktpfad übergibt immer root,
+ * RunDance-Befund 3 entkräftet).
+ */
+function hasRefutation(text, evidenceType) {
+  const t = String(text || "").replace(NEGATION_SINK, " ");
+  const tokens = new Set();
+  for (const m of t.matchAll(new RegExp(REFUTATION.source, "gi"))) tokens.add(m[0].toLowerCase());
+  if (tokens.size >= 2) return true;
+  return tokens.size === 1 && evidenceType === "datei-zeile";
 }
 
 /**
  * Zerlegt den Abschnitt in Versuch-BÜNDEL: Eine nummerierte/Bullet-Zeile
- * beginnt ein Bündel, Folgezeilen (bis zur nächsten Bündel-/Abschnittszeile)
- * gehören dazu – die Evidenz darf in der Folgezeile stehen (Rig-2026-09-01:
- * nur die Listen-Zeile zu lesen blockte echte Versuche strukturell).
+ * beginnt ein Bündel (auch als Markdown-Header „### N. …“ oder „**N. …**“
+ * formatiert – E2E-Befund 2026-09-01: der Thinker strukturierte Versuche
+ * als ###-Untertitel, das Gate sah null Bündel und degradierte eine
+ * evidenzgetragene Widerlegung zu UNKNOWN), Folgezeilen (bis zur nächsten
+ * Bündel-/Abschnittszeile) gehören dazu – die Evidenz darf in der
+ * Folgezeile stehen (Rig-2026-09-01: nur die Listen-Zeile zu lesen blockte
+ * echte Versuche strukturell). Widerlegungs-/Evidenz-Semantik bleibt
+ * unverändert streng – erweitert wird nur die FORMAT-Erkennung.
  */
 export function extractAttemptBundles(section) {
   const bundles = [];
@@ -80,8 +100,15 @@ export function extractAttemptBundles(section) {
   for (const raw of String(section || "").split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
-    if (/^(?:\d+\.|[-*])\s+\S/.test(line)) {
-      current = { text: line.replace(/^(?:\d+\.|[-*])\s+/, "").trim() };
+    // JEDE ###-Kopfzeile startet ein Bündel (nummeriert ODER benannt —
+    // RunDance-Befund 2026-09-01: „### Widerlegung: …“ ohne Nummer blieb
+    // unsichtbar, und der Falsifikations-Abschnitt endet nur an #/##).
+    // Markdown-Deko entfernen, dann ist die Listen-Form („1. …“) prüfbar.
+    const isHeader = /^#{1,6}\s+\S/.test(line);
+    const bare = line.replace(/^#{1,6}\s+/, "").replace(/^\*{1,3}\s+/, "");
+    const isListItem = /^(?:\d+\.|[-*])\s+\S/.test(bare);
+    if (isHeader || isListItem) {
+      current = { text: (isListItem ? bare.replace(/^(?:\d+\.|[-*])\s+/, "") : bare).trim() };
       bundles.push(current);
     } else if (current) {
       current.text += " " + line;
@@ -167,9 +194,17 @@ export function hasChallengeEvidence(content, opts = {}) {
   const m = c.match(/##\s*Falsifikationsversuche/i);
   if (!m) return false;
   const rest = c.slice(m.index + m[0].length);
-  const nextHeading = rest.search(/\n#{1,6}\s+\S/);
+  // Harte Abschnittsgrenzen sind NUR #/##-Überschriften: „### N.“-Untertitel
+  // der Versuche gehören ZUM Abschnitt (E2E-Befund 2026-09-01 – sonst endet
+  // die Sektion schon beim ersten Versuch und alle evidenzgetragenen
+  // Widerlegungen werden unsichtbar).
+  const nextHeading = rest.search(/\n#{1,2}\s+\S/);
   const section = (nextHeading === -1 ? rest : rest.slice(0, nextHeading)).trim();
-  return extractAttemptBundles(section).some((b) => b.text.length >= 10 && hasRefutation(b.text) && evidenceOf(b.text, opts));
+  return extractAttemptBundles(section).some((b) => {
+    if (b.text.length < 10) return false;
+    const ev = evidenceOf(b.text, opts);
+    return !!ev && hasRefutation(b.text, ev);
+  });
 }
 
 /** Echte Finding-Severity je Verdict (info/warning/critical, UI-065-Befund 3). */
@@ -223,6 +258,42 @@ export function parseBefund(content) {
  * (Prompt-Anpassung + wichtiger Scope-Kontext) – Fallback gegen Drift.
  * @returns {string|null} die 3 Zeilen, mit "\n" verbunden (oder null)
  */
+/**
+ * Loop-Anker (UI-107, 2026-09-01): Die Umsetzungsvorschläge der BEIDEN
+ * Agents — Coder (agent_intent aus der Einreichung) und Thinker (eigene
+ * „## Umsetzungsverstaendnis (FalsifyMe)“-Sektion) — müssen an EINEM Punkt
+ * dividiert werden, damit der Task-Scope praezisiert wird. Der Thinker
+ * deklariert das Ergebnis seiner Gegenueberstellung pflichtbewusst:
+ *   SCOPE-KONFORM                     -> kein Unterschied
+ *   SCOPE-DIVERGENZ: <Grund>          -> Abweichung mit substanzieller
+ *                                        Begruendung (>20 Zeichen, sonst
+ *                                        wird sie nicht als Anker gezählt)
+ * Liefert { text, konform, divergence|null }. Fehlt die Sektion komplett,
+ * gibt es keinen Anker (kein Downgrade – nur DEKLARIERTE Divergenz blockt).
+ */
+export function parseScopeDivergence(content) {
+  const c = String(content || "");
+  // DE mit ae- und ae-umlaut-Schreibweise, EN Title-Case-tolerant (Rig R10).
+  const m = c.match(/##\s*(?:Umsetzungsverst(?:aendnis|ändnis)|Implementation understanding)\s*\(?FalsifyMe\)?/i);
+  if (!m) return { text: null, konform: false, divergence: null };
+  const rest = c.slice(m.index + m[0].length);
+  // Harte Abschnittsgrenzen: naechste #/##/###-Ueberschrift ODER die
+  // Terminal-Marker BEFUND:/VERDICT:/SUBPROMPT: — sonst schluckt die Sektion
+  // bei ans-Ende-platziertem Anker den Rest der Antwort (Rig R10, Befund 1).
+  const nextHeading = rest.search(/\n(?:#{1,3}\s+\S|BEFUND:\s|VERDICT:\s|SUBPROMPT:\s)/);
+  const section = (nextHeading === -1 ? rest : rest.slice(0, nextHeading)).trim();
+  const div = section.match(/SCOPE-DIVERGENZ:\s*(.+)$/im);
+  if (div) {
+    // JEDE Deklaration setzt den Anker (kein stiller Verlust) — eine zu vage
+    // Begruendung (<20 Zeichen) wird markiert, blockt aber weiterhin (Rig R10,
+    // Befund 4: konform:false ohne divergence war eine stille Inkonsistenz).
+    const d = div[1].trim();
+    return { text: section, konform: false, divergence: d, tooShort: d.length < 20 };
+  }
+  if (/SCOPE-KONFORM/i.test(section)) return { text: section, konform: true, divergence: null, tooShort: false };
+  return { text: section, konform: false, divergence: null, tooShort: false };
+}
+
 export function parseSubPrompt(content) {
   const lines = content.split(/\r?\n/).map((l) => l.trim());
   let idx = -1;

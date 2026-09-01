@@ -97,6 +97,16 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
 - Verdict `ASK` = Aufgaben-Mehrdeutigkeit (nicht Umsetzung): Phase und
   `open_conflicts` bleiben, Status active, Exit 5 — Exit-Codes zentral in
   `core/verdict.mjs exitCodeOf()` (0 WRITE · 1 PLAN/RESEARCH · 5 ASK · 3 sonst).
+- Loop-Anker (Regel 7, UI-107, Schema v4): `scopes.last_divergence` hält die
+  deklarierte Divergenz zwischen Coder-agent_intent und dem UNABHÄNGIGEN
+  `## Umsetzungsverstaendnis (FalsifyMe)`-Abschnitt des Thinkers (Pflicht
+  DIREKT VOR `## Falsifikationsversuche`, sonst schneidet das `##` den
+  Challenge-Abschnitt ab!). `SCOPE-DIVERGENZ: <Grund>` (≥20 Zeichen) ⇒ WRITE
+  wird deterministisch zu PLAN (Warnung in run.mjs); `SCOPE-KONFORM` leert
+  den Anker; fehlende Sektion = keine Aussage (kein Write an last_divergence).
+  `buildUserContent` gibt den Anker als „Offener Divergenz-Anker“ an den
+  nächsten Lauf — der Submit muss `--agent-intent` tragen, sonst kann der
+  Thinker nicht dividieren.
 - Härtung: `scopes.status` active|hardened|done; hardened nur nach WRITE mit
   0 offenen Konflikten (`updateScopeAfterReview`), erneuter PLAN ent-härtet.
   „hardened/done" sind für `listScopes` abgeschlossen (nur active läuft).
@@ -253,7 +263,8 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
 - Kernsuite: `node --test tests/onboard.test.mjs tests/bootstrap.test.mjs
   tests/security.test.mjs tests/phase2.test.mjs tests/queue.test.mjs
   tests/feasibility.test.mjs tests/datamodel.test.mjs tests/invariants.test.mjs
-  tests/selfreview.test.mjs tests/twin.test.mjs tests/prompt.test.mjs`
+  tests/selfreview.test.mjs tests/twin.test.mjs tests/prompt.test.mjs
+  tests/agent.test.mjs`
   (Stand 2026-09-01; deckt die Regeln ab: Queue eine Wahrheit,
   list_dir-Namen-Vertrag, WRITE-Challenge-Evidenz, Self-Review-Scope,
   strukturelle Kohärenz, Evil-Twin-Gegenprüfung, Prompt-Daten).

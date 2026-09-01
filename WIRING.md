@@ -53,6 +53,7 @@ ui/                        ← Terminal-UI (Phase 1+2, live verdrahtet)
 core/settings.mjs          ← Runtime-Provider/Model/Key + live /models-Abfrage
 core/feasibility.mjs       ← Umsetzbarkeits-Puffer (Intent→Execution, §14)
 core/twin.mjs              ← Unabhängige Gegenprüfung (Evil Twin, Regel 6, §15)
+core/verdict.mjs            ← Loop-Anker: parseScopeDivergence (Regel 7, §15, UI-107)
 cli/settings.mjs           ← settings show/set + models (siehe §6)
   tui/views/               ← React/Ink Views (NUR Darstellung, stateless)
 worker.mjs                 ← PRODUKT: TUI-Host (createTui + Parser-Feed, Phase 2)
@@ -191,6 +192,7 @@ oder:         start "FalsifyMe-TUI" cmd /k node ui\tui-demo.mjs %*
 | `core/selfreview.mjs` | Self-Review-Scope-Regel: eigenes Checkout erkennen + Kern-Whitelist ergänzen (pure, read-only) |
 | `artifacts/invariants.mjs` | Zustandsmodell-Invariante: checkQueueConsistency (read-only, Regel 3) |
 | `core/twin.mjs` | Unabhängige Gegenprüfung (Evil Twin): runTwinCheck/parseTwinVerdict/extractClaims, Fail-closed (Regel 6) |
+| `core/verdict.mjs` | Loop-Anker (Regel 7, UI-107): parseScopeDivergence — Divergenz-Deklaration des Thinkers blockt WRITE (PLAN), `scopes.last_divergence` (Schema v4) |
 | `tui/events.mjs` | Event-Contract + einziger State-Writer (`apply`/`tick`), Slot-Routing 1..3, Fokus, Spiegel |
 | `tui/state.mjs` | Zustände, erlaubte Übergänge, 3 Fenster-Slots, globalIdle, Labels/Farben |
 | `tui/particles.mjs` | fallende Code-Partikel (Feld-Sim, deterministisch) |
@@ -555,6 +557,7 @@ Schema-Version 3 (Migration in artifacts/db.mjs, ALTER-only):
   betrifft keine davon). `enforceStructuralCoherence(blocks, verdict)` in
   core/verdict.mjs stuft ein WRITE mit solchen Blocker-Befunden auf PLAN
   runter – ein formales Gate macht eine kaputte Basis NIE grün.
+- Loop-Anker (UI-107, Regel 7): beide Agents dividieren ihre Umsetzungsvorschläge — der Thinker liefert sein eigenes `## Umsetzungsverstaendnis (FalsifyMe)` direkt vor den Falsifikationsversuchen und deklariert SCOPE-KONFORM oder SCOPE-DIVERGENZ; deklarierte Divergenz ⇒ WRITE→PLAN (deterministisch) und `scopes.last_divergence` als Präzisierungs-Anker, der im nächsten Lauf sichtbar ist.
 - Unabhängige Evidenz (UI-104, Regel 6 – der ARCHITEKTURKERN): FalsifyMe
   prüft nicht, ob ein Agent die Form erfüllt, sondern ob seine Behauptungen
   durch UNABHÄNGIGE Evidenz belastbar sind. `core/twin.mjs` (`runTwinCheck`)

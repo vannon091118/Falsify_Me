@@ -32,7 +32,7 @@ import { loadApiKey, keyEnvFile, keyNames } from "../core/keys.mjs";
 import { loadConfig } from "../core/config.mjs";
 import { enforceRateLimit } from "../core/ratelimit.mjs";
 import { SYSTEM_DE, SYSTEM_EN, buildUserContent } from "../core/prompt.mjs";
-import { parseVerdict, parseBefund, parseSubPrompt, enforceWriteChallenge, enforceStructuralCoherence, findingSeverity } from "../core/verdict.mjs";
+import { parseVerdict, parseBefund, parseSubPrompt, enforceWriteChallenge, enforceStructuralCoherence, findingSeverity, parseScopeDivergence } from "../core/verdict.mjs";
 import { runTwinCheck, extractClaims } from "../core/twin.mjs";
 import { runAgent } from "../core/agent.mjs";
 import { checkFeasibility } from "../core/feasibility.mjs";
@@ -392,6 +392,7 @@ async function main() {
     feasibilityNotes,
     agentIntent: job?.agent_intent || null,
     affected: (job?.affected || "").split(",").map((s) => s.trim()).filter(Boolean),
+    lastDivergence: scope ? scope.last_divergence : null,
   });
 
   const t0 = Date.now();
@@ -414,10 +415,20 @@ async function main() {
       },
     });
   } catch (e) {
-    const timedOut = /timeout/i.test(String(e.message));
-    uiEvt({ t: "state", s: timedOut ? "TIMEOUT" : "ERROR" });
-    console.error(red(`\n✖ ${e.message}`));
-    jobDone(db, jobId, null, e.message);
+    // Timeout-Eskalation (2026-09-01): Ueberlastete Provider enden ehrlich —
+    // kein Fake-Verdict, Job als ERROR mit Ursache, Exit 3, Hinweis zum
+    // erneuten Einreichen. Der TIMEOUT-State im Dock zeigt die Ueberlastung.
+    const msg = String(e.message || "");
+    const overloaded = /überlastung|Überlastung/i.test(msg);
+    const timedOut = /timeout/i.test(msg);
+    uiEvt({ t: "state", s: timedOut || overloaded ? "TIMEOUT" : "ERROR" });
+    if (overloaded) {
+      console.error(red(`\n✖ API-Überlastung: ${msg}`));
+      console.error(yellow("  Keine Freigabe, kein Fake-Verdict — Job als ERROR beendet. Bitte später erneut einreichen oder die Whitelist/den Umfang verkleinern."));
+    } else {
+      console.error(red(`\n✖ ${msg}`));
+    }
+    jobDone(db, jobId, null, msg);
     const secs = ((Date.now() - t0) / 1000).toFixed(1);
     console.log(dim(`── ${secs}s – Fehler ──`));
     console.log(dim(`Job: ${jobId}  ·  Status: ERROR (falsify status ${jobId})`));
@@ -449,6 +460,21 @@ async function main() {
   if (parsedVerdict === "WRITE" && structural.length) {
     console.warn(yellow(`\n⚠ WRITE trotz struktureller Widersprüche (${structural.length}: ${structural[0]}) – als PLAN behandelt. Ein Gate ist erst belastbar, wenn die zugrunde liegende Behauptung steht (Regel 5).`));
     verdict = enforceStructuralCoherence(structural, verdict);
+  }
+  // Regel 7 (UI-107, Loop-Anker): Der Thinker deklariert das Ergebnis der
+  // Gegenueberstellung der Umsetzungsvorschlaege beider Agents
+  // (SCOPE-KONFORM / SCOPE-DIVERGENZ). Eine deklarierte Divergenz blockt
+  // die Freigabe — der Scope muss erst an der Differenz praezisiert werden
+  // (fail-closed wie Regel 5, Warnung statt stilles Downgrade).
+  const anchor = parseScopeDivergence(result.content);
+  if (anchor.tooShort) {
+    console.warn(yellow(`⚠ SCOPE-DIVERGENZ-Begruendung ist sehr vage (<20 Zeichen: ${anchor.divergence.slice(0, 40)}) – Anker wird trotzdem gesetzt (kein stiller Verlust).`));
+  }
+  if (verdict === "WRITE" && anchor.divergence) {
+    console.warn(yellow(`\n⚠ WRITE trotz deklarierter SCOPE-DIVERGENZ im Umsetzungsverstaendnis (${anchor.divergence.slice(0, 80)}…) – als PLAN behandelt. Der Loop-Anker zwingt zur Scope-Praezisierung (Regel 7).`));
+    verdict = "PLAN";
+  } else if (anchor.divergence) {
+    console.log(dim(`Loop-Anker: SCOPE-DIVERGENZ deklariert (${anchor.divergence.slice(0, 60)}…) – Anker persistiert.`));
   }
   // Regel 6 (UI-104): WRITE braucht UNABHÄNGIGE Evidenz (Evil Twin). Der
   // Erstprüfer hat widerlegt und verifiziert in EINER Konversation – eine
@@ -510,7 +536,10 @@ async function main() {
     db.exec("BEGIN IMMEDIATE");
     try {
       if (scope) {
-        updateScopeAfterReview(db, scope.id, verdict, befund, subPrompt);
+        // Loop-Anker: Konform schliesst den Anker (null), Divergenz setzt ihn,
+        // fehlende Sektion laesst ihn unveraendert (keine Schlussfolgerung).
+        updateScopeAfterReview(db, scope.id, verdict, befund, subPrompt,
+          anchor.konform ? null : (anchor.divergence ?? undefined));
         addFinding(db, {
           scopeId: scope.id,
           jobId,

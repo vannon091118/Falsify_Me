@@ -98,7 +98,7 @@ export async function runTwinCheck({ header, planText, befund, claims, lang = "d
       reasoningEffort: opts.reasoningEffort ?? "high",
       maxToolRounds: opts.maxToolRounds ?? 14,
       temperature: opts.temperature ?? 0.3,
-      timeoutMs: opts.timeoutMs ?? 600000,
+      timeoutMs: opts.timeoutMs ?? 180000,
       root,
       whitelist,
       onTool,

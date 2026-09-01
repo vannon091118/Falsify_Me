@@ -231,15 +231,24 @@ async function main() {
     console.log("Die Jobs laufen über die SQLite-Warteschlange im bestehenden Fenster weiter.");
     process.exit(0);
   }
-  registerWorker(db, WINDOW_IDX, process.pid);
-
-  // ── Orphan-Recovery beim Start (E2E-Befund 4, 2026-09-01) ────────────────
-  // Hart gekillte Fenster lassen RUNNING-Jobs zurück; claimNextJob claimt nur
-  // QUEUED – ohne Recovery blieben sie dauerhaft hängen ("Queue lügt").
+  // ── Orphan-Recovery VOR der eigenen Registrierung (E2E-Befund 2026-09-01) ─
+  // Reihenfolge ist kritisch: erst reapStaleJobs, DANN registerWorker. Läuft
+  // registerWorker zuerst, überschreibt er PID/Heartbeat des gecrashten
+  // Vorgängers im SELBEN Fenster – reap sieht danach einen „lebenden“ Worker
+  // und die RUNNING-Waisen bleiben ewig hängen (live belegt: OOM-Crash des
+  // Fenster-1-Workers hinterließ einen unräumbaren RUNNING-Job). Sicher, weil
+  // isWorkerAlive PID + Heartbeat prüft: ein noch lebender Vorgänger wird nie
+  // geräumt (Doppel-Start-Fenster bleiben unangetastet).
   try {
     const reaped = reapStaleJobs(db, MAX_WINDOWS);
     if (reaped.length) say(`♻ Waisen-Jobs geschlossen (Worker tot): ${reaped.length}`);
-  } catch { /* egal */ }
+  } catch (e) {
+    // RunDance-Befund 7: Fehler SICHTBAR machen (Debug-Log), statt still
+    // zu schlucken – ein SQLITE_BUSY im Parallelbetrieb darf nicht als
+    // „Recovery ok“ durchgehen (Worker-Recovery lügt sonst wie die Queue).
+    dlog(`reapStaleJobs-Fehler: ${e && e.message ? e.message : e}`);
+  }
+  registerWorker(db, WINDOW_IDX, process.pid);
 
   // ── Kontinuierlicher Herzschlag (auch waerend Jobs) ───────────────────────
   // Grundlage der Status-API: --check/--state zaehlen nur frische Heartbeats.

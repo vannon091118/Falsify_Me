@@ -50,7 +50,7 @@ export function listScopes(db, { onlyActive = true } = {}) {
  *                  Phase + Konfliktzähler bleiben, Status active (nicht gehärtet)
  * - sonst (UNBEKANNT): Zähler/Status unverändert
  */
-export function updateScopeAfterReview(db, scopeId, verdict, befund, subPrompt) {
+export function updateScopeAfterReview(db, scopeId, verdict, befund, subPrompt, divergence) {
   const v = String(verdict || "").toUpperCase();
   const cur = getScope(db, scopeId) || {};
   const phase = v === "ASK" ? (cur.phase || "plan") : (verdictToPhase(v) || cur.phase || "plan");
@@ -58,6 +58,12 @@ export function updateScopeAfterReview(db, scopeId, verdict, befund, subPrompt) 
   // Falsifikations-Ergebnis die Coder-Annahme nicht freigibt (PLAN/RESEARCH/ASK).
   // Mit WRITE ist der Gap geschlossen (last_gap = null).
   const gap = v === "WRITE" ? null : (befund || null);
+  // Loop-Anker (UI-107): last_divergence wird bei deklarierter Divergenz
+  // gesetzt, bei SCOPE-KONFORM geleert (Anker geschlossen), bei fehlender
+  // Sektion unveraendert gelassen (keine Aussage — kein Schluss).
+  if (divergence !== undefined) {
+    db.prepare("UPDATE scopes SET last_divergence = ? WHERE id = ?").run(divergence, scopeId);
+  }
   let openConflicts = Number(cur.open_conflicts || 0);
   let status = cur.status || "active";
   let hardenedAt = cur.hardened_at || null;

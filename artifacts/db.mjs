@@ -26,7 +26,7 @@ import path from "node:path";
 import os from "node:os";
 import { DatabaseSync } from "node:sqlite";
 
-export const SCHEMA_VERSION = "3";
+export const SCHEMA_VERSION = "4";
 
 // ── FALSIFY_HOME auflösen / anlegen ─────────────────────────────────────────
 export function falsifyHome() {
@@ -174,6 +174,15 @@ function migrate(db) {
   } catch { /* existiert */ }
   try {
     db.exec("ALTER TABLE scopes ADD COLUMN hardened_at TEXT");
+  } catch { /* existiert */ }
+
+  // ── Schema-Version 4 (Loop-Anker): scopes.last_divergence ────────────────
+  // Der Divergenz-Anker speichert den zuletzt deklarierten Unterschied
+  // zwischen dem Umsetzungsvorschlag des CODERS (agent_intent) und dem des
+  // Thinkers (## Umsetzungsverstaendnis). Null = konform/kein offener
+  // Anker. Wird beim Review-Commit gesetzt/geleert (Ein-Wahrheit-Pfad).
+  try {
+    db.exec("ALTER TABLE scopes ADD COLUMN last_divergence TEXT");
   } catch { /* existiert */ }
 
   setMeta(db, "schema_version", SCHEMA_VERSION);

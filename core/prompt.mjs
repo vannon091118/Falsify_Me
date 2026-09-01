@@ -42,7 +42,7 @@ export const SYSTEM_EVILTWIN_EN = promptText("system-eviltwin-en");
  *   (Umsetzbarkeits-Puffer) – gehen als KONTEXT an den Falsifikations-Agent;
  *   sie erteilen selbst KEIN Verdict (Verdict-Hoheit bleibt beim Thinker).
  */
-export function buildUserContent({ header, phase, lastBefund, findings = [], subPrompt, planText, diffText, root, whitelist = [], feasibilityNotes = [], agentIntent = null, affected = null }) {
+export function buildUserContent({ header, phase, lastBefund, findings = [], subPrompt, planText, diffText, root, whitelist = [], feasibilityNotes = [], agentIntent = null, affected = null, lastDivergence = null }) {
   const parts = [];
   if (header) {
     parts.push(`# Anforderung (User-Input 1:1 – HEADER)\n${header}`);
@@ -66,6 +66,12 @@ export function buildUserContent({ header, phase, lastBefund, findings = [], sub
     parts.push(`## Scope-Artefakt\n${art.join("\n")}`);
     if (subPrompt) {
       parts.push(`## Sub-Prompt (FALLBACK gegen Drift – vom Modell nach dem letzten Review aktualisiert)\n\nWenn du vom Scope abdriftest (den HEADER aus dem Blick verlierst oder Kontext vergisst), nutze diesen Sub-Prompt als Anker: Er passt den FalsifyMe-Prompt an und ergänzt wichtigen Scope-Kontext.\n\n${subPrompt}`);
+    }
+    if (lastDivergence) {
+      // Loop-Anker (UI-107): Fruehere SCOPE-DIVERGENZ zwischen Coder-
+      // Vorschlag (agent_intent) und Thinker-Umsetzungsverstaendnis — die
+      // naechste Iteration MUSS den Scope an dieser Differenz praezisieren.
+      parts.push(`## Offener Divergenz-Anker\n\nDer letzte Review hat eine Abweichung zwischen der eingereichten Interpretation (Agent-Verstaendnis) und dem unabhaengigen Umsetzungsverstaendnis deklariert:\n\n${lastDivergence}\n\nPraezisiere den Task-Scope an dieser Differenz: Lege die gemeinsame Zielsetzung explizit fest und baue die naechste Iteration so, dass die Divergenz aufgehoert hat zu bestehen.`);
     }
   }
   if (feasibilityNotes.length) {

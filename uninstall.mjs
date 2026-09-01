@@ -71,6 +71,37 @@ async function removeFile(p) {
   logAction("entfernt  (Datei)", p);
 }
 
+// Desktop-Icons des Bootstraps (FalsifyMe.lnk / FalsifyMe-TUI-Test.lnk).
+// LUEKENGESCHLOSSEN (E2E-Befund scope1, 2026-09-01): Der Modul-Kopf versprach
+// „Desktop-Icons FalsifyMe*.lnk entfernen", main() rief es nie auf – die
+// Icons blieben nach der Deinstallation stehen. Der Desktop-Pfad wird wie in
+// ui/tui-make-icons.ps1 bestimmt (Windows: USERPROFILE\Desktop, Fallback
+// os.homedir()/Desktop). Idempotent, Dry-Run-ehrlich über logAction.
+// Desktop-Pfad KONSISTENT mit ui/tui-make-icons.ps1 (E2E-Befund scope1-Runde 5,
+// Versuch 4): der Bootstrap erzeugt die Icons ueber
+// [Environment]::GetFolderPath("Desktop") – folgt Folder-Redirection
+// (OneDrive, GPO). USERPROFILE\Desktop weicht dort ab. Fallback-Kette:
+// GetFolderPath -> USERPROFILE\Desktop -> os.homedir()/Desktop.
+function desktopPath() {
+  if (process.platform !== "win32") return path.join(home, "Desktop");
+  try {
+    const r = spawnSync("powershell.exe", ["-NoProfile", "-Command", "[Environment]::GetFolderPath('Desktop')"], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    const p = String(r.stdout || "").trim();
+    if (p.length > 2 && existsSync(p)) return p;
+  } catch { /* egal: Fallback */ }
+  return path.join(process.env.USERPROFILE || home, "Desktop");
+}
+
+async function removeDesktopIcons() {
+  const desktop = desktopPath();
+  if (!existsSync(desktop)) return;
+  const icons = (await fs.readdir(desktop)).filter((f) => /^FalsifyMe.*\.lnk$/i.test(f));
+  for (const f of icons) await removeFile(path.join(desktop, f));
+}
+
 async function stopWorkers() {
   const checkScript = path.join(coreDir, "ui", "worker.mjs");
   if (!existsSync(checkScript)) return;
@@ -158,6 +189,7 @@ async function main() {
   await removeProfileMarkers();
   await removeDir(coreDir);
   await removeNpmShims();
+  await removeDesktopIcons();
   if (keepEnv) {
     console.log(`--keep-env: ${homeDir} (FALSIFY_HOME: Keys/DB/Logs) wird BEHALTEN.`);
   } else {

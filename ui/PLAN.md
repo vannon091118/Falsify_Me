@@ -1409,3 +1409,10 @@ Selbstzertifizierung, Fenster-0-Liveness/Recovery, neue Blindstellen,
 enforce wirft/schweigt); volle Suite
 RESULT: PASS - 9/9 grün; Selbstzertifizierung deckte die qualifier-Lücke
 (jobs.jobDone) auf und der Scan wurde nachgeschärft; Gesamtsuite grün.
+
+ID: UI-107
+TASK: Loop-Anker: Die Umsetzungsvorschlaege beider Agents (Coder-agent_intent vs. Thinker-Umsetzungsverstaendnis) werden an EINEM Punkt dividiert; SCOPE-DIVERGENZ-Deklaration blockt WRITE deterministisch (PLAN) und persistiert scopes.last_divergence als Praezisierungs-Anker fuer die naechste Iteration.
+STATUS: DONE
+DEPENDS_ON: UI-090 (agent_intent), UI-103 (structural gate)
+VERIFY: node --test tests/queue.test.mjs (Loop-Anker-Test) + Prompt-Daten-Vertrag in system-de/en.md; live: Submit MIT --agent-intent zeigt SCOPE-DIVERGENZ/KONFORM und den Anker im naechsten Lauf.
+RESULT: Schema v4 (scopes.last_divergence, ALTER-only), parseScopeDivergence (DE/EN-Ueberschrift, Divergenz >= 20 Zeichen, sonst kein Anker), run.mjs-Downgrade WRITE->PLAN mit Warnung, Persistenz in der Review-Transaktion (konform leert), buildUserContent-Sektion "Offener Divergenz-Anker" fuer den naechsten Lauf. 83/83 Core + 38/38 UI gruen.

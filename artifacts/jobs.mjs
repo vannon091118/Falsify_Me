@@ -104,7 +104,9 @@ export function claimNextJob(db, windowIdx, preferredScopeId = null) {
  * deren registrierter Worker tot ist (hart gekillt, Stromausfall), als
  * "Worker-Abbruch (Recovery)" – die Queue luegt sonst dauerhaft:
  * claimNextJob claimt nur QUEUED, ein verwaister RUNNING-Job wuerde nie
- * fertig werden. Aufruf: worker.mjs beim Start (nach registerWorker).
+ * fertig werden. Aufruf: worker.mjs beim Start VOR registerWorker (sonst
+ * überschreibt die eigene Registrierung den toten Vorgänger im selben Fenster
+ * und die RUNNING-Waisen sind unräumbar — E2E-Befund 2026-09-01).
  * @returns {string[]} geschlossene Job-IDs
  */
 export function reapStaleJobs(db, maxWindows = 3) {
@@ -114,16 +116,21 @@ export function reapStaleJobs(db, maxWindows = 3) {
   // altert dadurch genauso aus wie ein gekilltes Worker-Fenster — die Recovery
   // behandelt beide Pfade gleich (Regel-3-Rig, Asymmetrie-Fix).
   for (let i = 0; i <= maxWindows; i++) {
-    const alive = isWorkerAlive(db, i);
-    const jobs = db.prepare(
-      "SELECT id FROM jobs WHERE status = 'RUNNING' AND (window_idx = ? OR (window_idx IS NULL AND ? = 0))"
-    ).all(i, i);
-    for (const j of jobs) {
-      if (!alive) {
-        jobDone(db, j.id, null, "Worker-Abbruch (Recovery)");
-        reaped.push(j.id);
+    // Partieller Reap ist besser als gar keiner (RunDance-Befund 2026-09-01):
+    // ein Fehler in EINEM Fenster (z. B. SQLITE_BUSY) darf die anderen
+    // Fenster nicht blockieren – pro Fenster faengen und weiteriterieren.
+    try {
+      const alive = isWorkerAlive(db, i);
+      const jobs = db.prepare(
+        "SELECT id FROM jobs WHERE status = 'RUNNING' AND (window_idx = ? OR (window_idx IS NULL AND ? = 0))"
+      ).all(i, i);
+      for (const j of jobs) {
+        if (!alive) {
+          jobDone(db, j.id, null, "Worker-Abbruch (Recovery)");
+          reaped.push(j.id);
+        }
       }
-    }
+    } catch { /* Fenster i ueberspringen, naechstes versuchen */ }
   }
   return reaped;
 }

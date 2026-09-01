@@ -26,7 +26,7 @@ const DEFAULTS = {
   maxRpm: 40,
   lang: "de",
   temperature: 0.3,
-  timeoutMs: 600000,
+  timeoutMs: 180000,
 };
 
 function loadConfigFile() {
