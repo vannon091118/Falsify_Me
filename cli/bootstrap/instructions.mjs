@@ -13,6 +13,11 @@
 //   generic     -> FALSIFYME-WORKFLOW.md im PROJEKT-ROOT (Doku-Fallback,
 //                  ehrlich als "liest der Agent nur, wenn er es kennt")
 //
+// Modus-Entscheid (UI-075, keine stille Gate-Aktivierung): Jede Instruction-
+// Datei traegt eine FALSIFYME-MODUS-Kopfzeile (Reichweite · Betriebsmodus).
+// Ohne dokumentierten Modus gilt der Bootstrap als nicht abgeschlossen -
+// PFLICHT entsteht NIE still (Default: optional + Warnung).
+//
 // MERGE-Vertrag (Review-Fehler 6): existiert die Zieldatei bereits, wird
 // der FalsifyMe-Abschnitt MARKIERT angehängt statt überschrieben. Der
 // Marker-Bereich wird bei erneutem Lauf ersetzt (idempotent).
@@ -101,6 +106,14 @@ export function renderTemplate(agentType, vars) {
   return text;
 }
 
+/** Modus-Kopfzeile je Format (md-Kommentar vs. sh/ps1-Kommentar). */
+export function modeHeader(agentType, { mode, reichweite }) {
+  const line = `FALSIFYME-MODUS: ${reichweite} · ${mode}`;
+  return agentType === "bash" || agentType === "powershell"
+    ? `# ${line}`
+    : `<!-- ${line} -->`;
+}
+
 // MERGE (Review-Fehler 6): existiert die Zieldatei, wird der markierte
 // FalsifyMe-Abschnitt ersetzt (idempotent) oder angehängt — niemals blind
 // überschrieben. Reine Textdateien (bash/ps1/generic) bekommen den Block
@@ -116,7 +129,7 @@ function mergeInstruction(existing, content) {
 }
 
 // Schreibt die Instruction-Datei. Liefert Zielpfad + Skill-Pfade + Merge-Info.
-export async function writeInstruction(agent, { root, homeDir, coreDir }) {
+export async function writeInstruction(agent, { root, homeDir, coreDir, mode = "optional", reichweite = "projekt" }) {
   const { skillsDir, falsiflowSkillDir } = skillPaths(homeDir);
   const skillsInstalled =
     existsSync(path.join(skillsDir, "agent-skill-falsify.sh")) ||
@@ -133,6 +146,7 @@ export async function writeInstruction(agent, { root, homeDir, coreDir }) {
     FALSIFLOW_SKILL: falsiflowSkillDir,
     CORE: coreDir,
     ROOT: root,
+    MODE_HEADER: modeHeader(agent.type, { mode, reichweite }),
   });
 
   let merged = false;

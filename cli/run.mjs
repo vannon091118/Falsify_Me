@@ -15,8 +15,8 @@
 //  · NACH REVIEW endet der Modellkontext (frisches Modell je Job); die DB wird
 //    NICHT geleert – Zugriff nur auf die Ergebnisse des eigenen Scopes.
 //
-// Persistenz: SQLite (WAL) in FALSIFY_HOME (~/.Falsify) – EINZIGE Quelle.
-// FalsifyMe schreibt NIE ins Projekt (read-only bleibt).
+// Persistenz: SQLite (WAL) in FALSIFY_HOME (Default ~/.Falsify_Private) –
+// EINZIGE Quelle. FalsifyMe schreibt NIE ins Projekt (read-only bleibt).
 //
 // Exit-Code: 0 = VERDICT WRITE (Freigabe) · 1 = PLAN/RESEARCH (Loop)
 //            2 = Konfig-Fehler · 3 = API-Fehler/kein Verdict
@@ -31,10 +31,19 @@ import { loadApiKey, keyEnvFile, keyNames } from "../core/keys.mjs";
 import { loadConfig } from "../core/config.mjs";
 import { enforceRateLimit } from "../core/ratelimit.mjs";
 import { SYSTEM_DE, SYSTEM_EN, buildUserContent } from "../core/prompt.mjs";
-import { parseVerdict, parseBefund, parseSubPrompt } from "../core/verdict.mjs";
+import { parseVerdict, parseBefund, parseSubPrompt, enforceWriteChallenge, findingSeverity } from "../core/verdict.mjs";
 import { runAgent } from "../core/agent.mjs";
+import { checkFeasibility } from "../core/feasibility.mjs";
 
-// Provider-neutrale Konfiguration (Env → ~/.Falsify/config.json → Defaults).
+// ── Umsetzbarkeits-Puffer (Intent → Execution, UI-078, revidiert) ───────────
+// Deterministischer read-only Pre-Check VOR dem API-Call. Er erteilt KEIN
+// Verdict und schliesst KEINEN Job: blocks/findings gehen als KONTEXT an den
+// Falsifikations-Agent (Thinker), der die Coder-Annahmen selbst gegen die
+// echten Dateien falsifiziert. RESEARCH bleibt damit ein Falsifikations-Modul
+// (Datenbeschaffung), nie ein Urteil des Pre-Checks. Verdict-Hoheit liegt
+// ausschliesslich beim Thinker (Modellpfad).
+
+// Provider-neutrale Konfiguration (Env → FALSIFY_HOME/config.json → Defaults).
 const CFG = loadConfig();
 
 // ── UI-Events (Phase 2): FM-EVT:-Marker für die Terminal-UI ──────────────────
@@ -84,7 +93,7 @@ Optionen:
   --job-id <id>        Job aus der SQLite-Warteschlange laden (vom Worker genutzt)
   -h, --help           Diese Hilfe
 
-Provider/Ziel (Env oder ~/.Falsify/config.json):
+Provider/Ziel (Env oder FALSIFY_HOME/config.json):
   FALSIFY_API_BASE     z. B. https://integrate.api.nvidia.com/v1 (NVIDIA NIM),
                        https://api.openai.com/v1 (OpenAI), http://localhost:11434/v1 (Ollama)
   FALSIFY_MODEL        Modell-ID (Default: ${CFG.model})
@@ -267,6 +276,27 @@ if (!apiKey) {
 async function main() {
   enforceRateLimit(maxRpm, noWait);
 
+  // ── Umsetzbarkeits-Puffer: read-only Validierung, KEIN Verdict ───────────
+  const feasibility = checkFeasibility({
+    header: scope ? scope.header : null,
+    planText,
+    root: ROOT,
+    whitelist: FILE_WHITELIST,
+    hasDiff: Boolean(diffText),
+  });
+  const feasibilityNotes = [];
+  if (feasibility.blocks.length || feasibility.findings.length) {
+    for (const b of feasibility.blocks) {
+      feasibilityNotes.push(b);
+      uiEvt({ t: "finding", severity: "warning" });
+      console.warn(yellow(`⚠ Validierung: ${b}`));
+    }
+    for (const f of feasibility.findings) {
+      feasibilityNotes.push(f.text);
+      console.warn(yellow(`  Hinweis: ${f.text}`));
+    }
+  }
+
   console.log("");
   console.log(cyan(bold("◤ FalsifyMe ◢")));
   console.log(dim(`  Modell : ${model}`));
@@ -293,6 +323,7 @@ async function main() {
     diffText,
     root: ROOT,
     whitelist: FILE_WHITELIST,
+    feasibilityNotes,
   });
 
   const t0 = Date.now();
@@ -328,15 +359,23 @@ async function main() {
   }
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
 
-  const verdict = parseVerdict(result.content);
   const befund = parseBefund(result.content);
   const subPrompt = parseSubPrompt(result.content);
 
-  // ── UI-Befund-/End-Events (Phase 2): Review-Erkenntnis + Verdict ──────────
-  // Nur echte Werte: finding nur, wenn der Review wirklich einen Befund hat;
-  // progress wird NICHT erfunden (kein Prozent ohne echten Fortschritt).
+  // ── Anti-Self-Check-Bias (Thinker): WRITE nur mit Challenge-Nachweis ─────
+  // Der unabhängige Betrachter muss die Coder-Annahme aktiv falsifiziert haben
+  // (Struktur "## Falsifikationsversuche" oder BEFUND). Ein WRITE ohne jeden
+  // Challenge-Beleg (Rubber-Stamp) wird als UNKNOWN behandelt: KEINE Freigabe.
+  const parsedVerdict = parseVerdict(result.content);
+  const verdict = enforceWriteChallenge(result.content, parsedVerdict);
+  if (parsedVerdict === "WRITE" && verdict === null) {
+    console.warn(yellow("\n⚠ WRITE ohne Challenge-Nachweis (kein Falsifikationsversuch im Review) – als UNKNOWN behandelt, KEINE Freigabe."));
+  }
+
+  // Finding-Severity echt (UI-065-Befund 3): info/warning/critical je Verdict,
+  // nicht hartkodiert. progress wird NIE erfunden.
   uiEvt({ t: "state", s: "FINDINGS" });
-  if (befund) uiEvt({ t: "finding", severity: "discovered" });
+  if (befund) uiEvt({ t: "finding", severity: findingSeverity(verdict) });
   uiEvt({ t: "phase_done", phase: phaseLabel });
 
   // ── Persistenz: Job + Scope-Artefakt aktualisieren (FalsifyMe, nur eigene DB) ──
@@ -366,6 +405,7 @@ async function main() {
     uiEvt({ t: "done" });
     console.log(green(bold(`\nVERDICT: WRITE → Freigabe: READ-ONLY → WRITE`)));
     if (scope) console.log(green(`Scope ${scope.id} ist freigegeben – der Agent darf jetzt schreiben (WRITE-Loop/REVIEW-Loop).`));
+    if (scope) console.log(green("GAP: geschlossen – die Coder-Annahme hat die Falsifikations-Challenge überstanden."));
     closeDb();
     process.exitCode = 0;
     return;
@@ -374,9 +414,10 @@ async function main() {
     uiEvt({ t: "verdict", v: verdict });
     uiEvt({ t: "done" });
     const hint = verdict === "RESEARCH"
-      ? "→ FalsifyMe braucht weitere Daten: read-only recherchieren, Befunde ergänzen, erneut einreichen."
+      ? "→ FalsifyMe braucht weitere Daten (Falsifikations-Modul): read-only recherchieren, Befunde ergänzen, erneut einreichen."
       : "→ Iteration überarbeiten (Plan konkretisieren), erneut einreichen.";
     console.log(yellow(`\nVERDICT: ${verdict} – nicht freigegeben (Loop)`));
+    if (scope && befund) console.log(yellow(`GAP offen (Divergenz Coder-Urteil vs. Falsifikation): ${befund}`));
     console.log(yellow(hint));
     closeDb();
     process.exitCode = 1;

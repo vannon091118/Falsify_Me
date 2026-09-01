@@ -38,8 +38,13 @@ export function listScopes(db, { onlyActive = true } = {}) {
 /** Nach einem Review: Phase + letzter Gesamtbefund + Sub-Prompt aktualisieren (FalsifyMe). */
 export function updateScopeAfterReview(db, scopeId, verdict, befund, subPrompt) {
   const phase = verdictToPhase(verdict);
-  db.prepare("UPDATE scopes SET phase = ?, last_befund = ?, sub_prompt = ?, updated_at = ? WHERE id = ?")
-    .run(phase, befund ?? null, subPrompt ?? null, nowIso(), scopeId);
+  // GAP-Erfassung (Divergenz-Loop): Der Gap ist offen, solange das
+  // Falsifikations-Ergebnis die Coder-Annahme nicht freigibt (PLAN/RESEARCH).
+  // Mit WRITE ist der Gap geschlossen (last_gap = null).
+  const v = String(verdict || "").toUpperCase();
+  const gap = v === "WRITE" ? null : (befund || null);
+  db.prepare("UPDATE scopes SET phase = ?, last_befund = ?, sub_prompt = ?, last_gap = ?, updated_at = ? WHERE id = ?")
+    .run(phase, befund ?? null, subPrompt ?? null, gap, nowIso(), scopeId);
 }
 
 export function markScopeDone(db, scopeId) {
@@ -68,6 +73,8 @@ export function getFindings(db, scopeId) {
 /** Artefakt-Ansicht (für CLI/prompt) – nur Daten des EIGENEN Scopes. */
 export function artifactView(scope, findings) {
   const lines = [`- Phase: ${scope.phase}`];
+  if (scope.last_gap) lines.push(`- GAP (offen, Divergenz Coder-Urteil vs. Falsifikation): ${scope.last_gap}`);
+  else if (scope.phase === "write") lines.push("- GAP: geschlossen (WRITE-Freigabe nach Falsifikations-Challenge)");
   if (scope.last_befund) lines.push(`- Letzter Befund: ${scope.last_befund}`);
   if (scope.sub_prompt) lines.push(`- Sub-Prompt (Fallback gegen Drift): ${scope.sub_prompt}`);
   if (findings?.length) {

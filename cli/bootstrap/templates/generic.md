@@ -1,3 +1,5 @@
+{{MODE_HEADER}}
+
 # FalsifyMe Workflow-Anweisung
 
 FalsifyMe = unabh\xE4ngiger read-only Falsifizierungs-Agent

@@ -42,6 +42,24 @@ export function listJobs(db, { status } = {}) {
   return db.prepare("SELECT * FROM jobs ORDER BY created_at DESC").all();
 }
 
+// ── Abort (CLI-angeordneter Job-Abbruch) ────────────────────────────────────
+// `falsify abort <id>` bzw. `falsify wait --abort` setzen das Flag; der
+// Worker pollt es während eines laufenden Kindprozesses und killt den Job
+// echt (createAbort). Kein Fake-Verdict: der Job endet als ERROR
+// "Abgebrochen (CLI)" – das Flag wird nach der Verarbeitung geloescht.
+export function setJobAbort(db, id) {
+  db.prepare("UPDATE jobs SET abort_requested = 1 WHERE id = ?").run(id);
+}
+
+export function clearJobAbort(db, id) {
+  db.prepare("UPDATE jobs SET abort_requested = 0 WHERE id = ?").run(id);
+}
+
+export function isAbortRequested(db, id) {
+  const r = db.prepare("SELECT abort_requested FROM jobs WHERE id = ?").get(id);
+  return Boolean(r && Number(r.abort_requested));
+}
+
 // ── Worker-Claim: atomar über SQLite (kein Lock-File-Rennen) ─────────────────
 /**
  * Claimt den nächsten QUEUED-Job für Fenster <windowIdx>. Bevorzugt Jobs des
@@ -114,12 +132,26 @@ export function isWorkerAlive(db, windowIdx) {
   return true;
 }
 
+// Heartbeat-Frische: ein registrierter Worker ist nur dann ein ECHTER Worker,
+// wenn sein Herzschlag nicht älter als STALE_MS ist. Der Worker heartbeated
+// seit der Registrierung kontinuierlich (setInterval, auch während Jobs) -
+// hart gekillte Fenster (taskkill //T) altern dadurch aus und koennen keine
+// false RUNNING/BUSY-Meldung mehr erzeugen (Root-Cause-Fix, ersetzt den
+// frueheren PowerShell-CIM-Prozessabgleich).
+export const WORKER_STALE_MS = 60 * 1000;
+
 /** Registrierte/laufende Worker (1..MAX_WINDOWS) als Liste. */
 export function listWorkers(db, maxWindows = 3) {
   const out = [];
   for (let i = 1; i <= maxWindows; i++) {
     const pid = workerPid(db, i);
-    const alive = isProcessAlive(pid);
+    const ts = getMeta(db, `worker.${i}.ts`);
+    let fresh = false;
+    if (ts) {
+      const ageMs = Date.now() - new Date(ts).getTime();
+      fresh = ageMs <= WORKER_STALE_MS;
+    }
+    const alive = isProcessAlive(pid) && fresh;
     const running = db.prepare(
       "SELECT id, scope_id FROM jobs WHERE status = 'RUNNING' AND window_idx = ? ORDER BY started_at DESC LIMIT 1"
     ).get(i);

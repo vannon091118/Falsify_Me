@@ -639,7 +639,7 @@ Flow (beim vorherigen Lauf hatte der Test das Fenster vorgeoeffnet).
 
 ID: UI-065
 TASK: ERSTER ECHTER FALSIFLOW-LIVE-LAUF mit vorhandenem NVIDIA-Key durchs
-Dock-Fenster (read-only, echtes Home ~/.Falsify) - Verdict abwarten.
+Dock-Fenster (read-only, echtes Home ~/.Falsify_Private) - Verdict abwarten.
 STATUS: DONE
 DEPENDS_ON: UI-064
 VERIFY: Skill-E2E mit echtem Key; Dock-Fenster live; falsify log lesbar
@@ -718,7 +718,7 @@ Fake-node verbraucht eine Antwortsequenz (erste Zeile pro --check-Aufruf,
 letzte bleibt) und loggt die echten --check-Aufrufe (V2_DIR-Aufloesung wird
 mitgeprueft: worker.mjs --check).
 
-## BLOCK 7 — Dock-Visualisierung: echter Selftest im Boot-Intro (Spec §5/§6)
+## BLOCK 7 — Dock-Visualisierung: echter Selftest im Boot-Intro (ui/README-tui.md, Spec: Boot & Selftest)
 
 ID: UI-069
 TASK: Selftest-Events waren im Event-Contract deklariert (events.mjs
@@ -726,7 +726,7 @@ selftest-Handler + BootView testStatus-Zeile) aber NIEMALS emittiert -
 Dead Code. Wire den echten Startup-Selftest in den Worker: emit selftest-
 Events mit realen Status-Strings (BOOT→SELFTEST→SCOPE→QUEUE→CLAIM→WORKER→
 READY) während der tatsächlichen Startup-Schritte. boot.mjs WORD auf
-FALSIFY_ME (mit Unterstrich, Spec §5) korrigiert; BootView zeigt den
+FALSIFY_ME (mit Unterstrich, ui/README-tui.md) korrigiert; BootView zeigt den
 Selftest-Fortschritt jetzt in build/condense/live (nicht nur live).
 STATUS: DONE
 DEPENDS_ON: UI-052 (Worker-TUI-Host), UI-006 (Boot-Intro)
@@ -736,7 +736,7 @@ tests/phase2.test.mjs tests/security.test.mjs (14/14); headless Demo
 PASS; Stress 21902 Zeilen @ 750 L/s maxFrameMs 2ms RSS 74MB; Abort
 unter Last ABORTED pidsDead true
 RESULT: PASS - 2026-09-01. (1) boot.mjs: WORD = "FALSIFY_ME" (mit
-Unterstrich, Spec §5); chars-Build minimum 1 (kein leerer Start).
+Unterstrich, ui/README-tui.md); chars-Build minimum 1 (kein leerer Start).
 (2) worker.mjs: nach createTui startet ein selftestTick-Timeout, das
 bootSteps (BOOT, SELFTEST, SCOPE, QUEUE, CLAIM, WORKER, READY) als
 selftest-Events mit 220ms Takt emit-t (echte Startup-Phasen, keine
@@ -750,8 +750,8 @@ Vertrag + boot-WORD). Kein Verhaltensdelta im Headless-Pfad (selftest-
 Events sind TTY-only via ui?.applyEvent, sagen nichts auf stdout).
 
 ID: UI-070
-TASK: Selftest mit echten Pruefungen + sichtbarer Checkliste (Spec §6
-Anti-Cheating): (1) worker.mjs - die hardcodierten bootSteps auf Timer
+TASK: Selftest mit echten Pruefungen + sichtbarer Checkliste (ui/README-tui.md,
+Spec: Boot & Selftest, Anti-Cheating): (1) worker.mjs - die hardcodierten bootSteps auf Timer
 (UI-069) ersetzt durch runRealSelftest(): jeder Schritt emit-t sein
 ECHTES Ergebnis (ok true/false) nach der tatsaechlichen Pruefung -
 RUNTIME (Node-Version), DATABASE (SELECT 1 auf der offenen DB), CONFIG
@@ -761,7 +761,7 @@ READ-ONLY. Import listJobs ergaenzt. (2) events.mjs - selftest-Event
 erweitert: step {name, ok, detail} (Ersetzen nach Name, testStatus =
 "NAME ✓/✕"), result pass/fail (testResult); tick() haelt das Boot-Intro
 in STARTING, solange der Selftest laeuft (Steps ohne result) und
-BLEIBT in STARTING bei testResult=fail (Spec §6.6: kein stummer Fall
+BLEIBT in STARTING bei testResult=fail (ui/README-tui.md §6.6: kein stummer Fall
 auf Idle). testStatus nicht-String -> null (ueberschreibt alt).
 (3) state.mjs - init testStatus null, testSteps null, testResult null.
 (4) tui.mjs - snap exponiert testSteps + testResult. (5) BootView -
@@ -794,19 +794,21 @@ Session nicht screen-geprueft werden (WIRING §4) - das offene Fenster
 Scope: cli/bootstrap.mjs + cli/falsify.sh (Bootstrap-Befehl) + Dokumentation.
 Nicht neue Queue/Scope/Verdict-Logik; nur Agent-Integration über bestehende Skills.
 
-ID: UI-067
+ID: UI-079
 TASK: cli/bootstrap.mjs – Bootstrap-Einstieg für den Befehl
 "INSTALLIER BITTE https://github.com/vannon091118/Falsify_Me"
+(ID neu vergeben 2026-09-01: das alte UI-067 gehoerte zu BLOCK 6 und war
+doppelt vergeben - Duplikat in der Single Source of Truth entfernt)
 STATUS: DONE
 DEPENDS_ON: UI-057 (install.mjs), UI-053 (Dock)
 VERIFY: node --check cli/bootstrap.mjs
 RESULT: PASS – Bootstrap.mjs erstellt; detectAgent() erkennt Codebuff/Bash/PowerShell/generic;
 startDock() nutzt ui/start-dock.cmd mit PowerShell Start-Process (MSYS-sicher).
 
-ID: UI-068
+ID: UI-080
 TASK: cli/falsify.sh + cli/help.mjs – neuer Befehl "falsify bootstrap"
 STATUS: DONE
-DEPENDS_ON: UI-067
+DEPENDS_ON: UI-079
 VERIFY: bash -n cli/falsify.sh; node --check cli/help.mjs
 RESULT: PASS – falsify.sh: case bootstrap → node bootstrap.mjs; help.mjs: Zeile
 "falsify bootstrap" hinzugefügt.
@@ -814,10 +816,10 @@ RESULT: PASS – falsify.sh: case bootstrap → node bootstrap.mjs; help.mjs: Ze
 ID: UI-071
 TASK: Dokumentation: README.md + WIRING.md + ui/PLAN.md
 STATUS: DONE
-DEPENDS_ON: UI-067, UI-068
+DEPENDS_ON: UI-079, UI-080
 VERIFY: manuell (README-Abschnitt "INSTALL + BOOTSTRAP"; WIRING §12; PLAN Block 8)
 RESULT: PASS – README: Bootstrap-Ablauf + Verfahren dokumentiert; WIRING: §12 mit
-Agent-Detektion, Instruction-Formate, Regeln; PLAN: Block 8 mit Tasks UI-067/068/071.
+Agent-Detektion, Instruction-Formate, Regeln; PLAN: Block 8 mit Tasks UI-079/080/071.
 
 
 ### BLOCK 8 — Revision (modularer Bootstrap, Review-Fehler behoben)
@@ -829,8 +831,244 @@ mehr im Code. Review-Fehler 1-4 behoben: (1) Install-Pfad auf Paket-Root
 (packageRoot), (2) persistente Instruction-Datei als Enforcement, (3) reale
 Skill-Pfade (~/.agents/skills/...), (4) Plattform-Ehrlichkeit + Retry-Poll.
 STATUS: DONE
-DEPENDS_ON: UI-067, UI-068
+DEPENDS_ON: UI-079, UI-080
 VERIFY: node --test tests/bootstrap.test.mjs (4 Tests); node --check auf allen
 Bootstrap-Modulen; node cli/bootstrap.mjs --dry-run --skip-dock
-RESULT: PASS — 18/18 Tests gruen (bootstrap 4 + phase2 4 + security 10);
-Dry-Run ueberspringt alle Schreiboperationen; ein echter Lauf schreibt die Instruction-Datei und meldet Agent + reale Pfade.
+RESULT: PASS — Tests gruen; Dry-Run ueberspringt alle Schreiboperationen; ein
+echter Lauf schreibt die Instruction-Datei und meldet Agent + reale Pfade.
+
+### BLOCK 9 — API-Key-Onboarding (offen)
+
+GAP (2026-09-01, Live-Bootstrap): Die frische Installation hinterlaesst
+FALSIFY_HOME/.env nur als LEERE Vorlage (ensureFalsifyHome()); der
+Bootstrap/Installer fragt den User NICHT nach einem Key. Jeder echte Job
+endet dann still mit Exit 3 (keine Freigabe). Bis zur Umsetzung dieses
+Blocks ist die manuelle Einrichtung der .env im README dokumentiert
+(README-Abschnitt "API-Key / .env einrichten").
+
+ID: UI-073
+TASK: API-Key-Abfrage beim Install/Bootstrap. Der Bootstrap (cli/bootstrap.mjs
+bzw. cli/main.mjs ensure-home) soll nach der Installation aktiv nach einem
+API-Key fragen (interaktiv oder als --api-key-* Flag), die .env mit dem
+bestätigten Wert befüllen (chmod 600) und per `falsify doctor` verifizieren.
+Erkennen: .env existiert nur mit leeren Werten (NVIDIA_API_KEY=/OPENAI_API_KEY=/
+FALSIFY_API_KEY= ohne Inhalt) -> Hinweis statt stillem Exit-3-Pfad. Kein
+Key im Klartext loggen/ausgeben; Werte bleiben ausschliesslich in
+FALSIFY_HOME/.env. Bestehende Funktionen: core/settings.mjs updateRuntimeSettings
+(apiKeyName + apiKey), loadApiKey(), falsify doctor.
+STATUS: TODO
+DEPENDS_ON: UI-072
+VERIFY: node --test tests/bootstrap.test.mjs (neuer Test: leere .env wird
+als FEHLEND erkannt); manuell: frischer Bootstrap ohne Key -> klare
+Aufforderung; mit Key -> doctor OK.
+RESULT: offen
+
+ID: UI-074
+TASK: Deinstallation (uninstall.mjs) - vollstaendige, saubere Rueckabwicklung
+der Benutzerinstallation als Gegenstueck zu install.mjs: Worker stoppen
+(PIDs aus ui/worker.mjs --check), ~/.Falsify_Core + ~/.Falsify_Private
+entfernen, ~/.agents/skills/falsifyme* + Instruction-Dateien + Profil-Marker
+entfernen, markierter Instruction-Block aus AGENTS.md/FALSIFYME-WORKFLOW.md
+(ueber --project-root oder cwd), ~/.Falsify (FALSIFY_HOME) mit Key-Backup
+nach ~/.Falsify.env.uninstall-backup (--keep-env behaelt FALSIFY_HOME),
+npm-Global-Shims. Flags: --dry-run, --keep-env, --project-root. package.json:
+npm run uninstall:user. Konvention: Installation rueckabwickeln so vollstaendig,
+dass keine FalsifyMe-Referenz auf dem PC zurueckbleibt (ausser expliziten
+Backups), vgl. Live-Test 2026-09-01.
+STATUS: DONE
+DEPENDS_ON: UI-072
+VERIFY: node --check uninstall.mjs; node uninstall.mjs --dry-run (zeigt
+alle entfernbaren Pfade, aendert nichts); idempotent bei fehlenden Pfaden.
+RESULT: PASS (2026-09-01, siehe Session "FalsifyMe-Self-Install"):
+uninstall.mjs erstellt, package.json erweitert; Dry-Run listet Core/Private/
+Skills/Instructions/Profil-Marker/FALSIFY_HOME/npm-Shims ohne Schreibzugriff.
+
+ID: UI-077
+TASK: ROOT-CAUSE-FIX: `falsify bootstrap` rief install.mjs still mit
+hartcodiertem --no-desktop auf (cli/bootstrap/install.mjs, seit Commit
+6067d1c ohne Begruendung) - trotz Dokumentation "Vollstaendige
+Installation + Agent-Integration + Dock-Start" (README INSTALL+BOOTSTRAP)
+fehlten Desktop-Icons und der Nutzer hatte keine Steuerung. Fix:
+installArgs(noDesktop) als pure Funktion (Default false = Icons wie bei
+node install.mjs), Flag-Passthrough durch runBootstrap/runInstall,
+cli/bootstrap.mjs und cli/main.mjs (--no-desktop, --skip-dock, --dry-run).
+Nur explizites --no-desktop unterdrueckt Icons (Agent-/Headless-Kontext).
+STATUS: DONE
+DEPENDS_ON: UI-072
+VERIFY: node --test tests/bootstrap.test.mjs (5 Tests inkl. neuer
+Root-Cause-Test installArgs(false)|installArgs(true)); node --check der
+4 geaenderten Module; echter Lauf node cli/bootstrap.mjs - Ausgabe muss
+"Desktop-Icons: FalsifyMe.lnk + FalsifyMe-TUI-Test.lnk" zeigen statt
+"uebersprungen".
+RESULT: PASS (2026-09-01): neuer Test gruen; echter Bootstrap-Lauf: Agent
+erkannt (PowerShell), Dock RUNNING nach 1s, "Desktop-Icons:
+FalsifyMe.lnk + FalsifyMe-TUI-Test.lnk", WORKFLOW AKTIV, Exit 0. Doku
+nachgezogen: README (Flags), WIRING §12, AGENTS.md (veraltete
+--no-desktop-Behauptung korrigiert).
+
+ID: UI-078
+TASK: UMSETZBARKEITS-PUFFER (Intent → Execution) als zusaetzliches Modul
+core/feasibility.mjs: deterministischer, read-only Check VOR jedem
+API-Call, der den Scope-Header (= gesendeter User-Input 1:1, der Intent)
+als Anker nimmt und den Plan/diff gegen die Realitaet prueft - ohne das
+laufende System zu stoeren (kein Schreiben ins Projekt; Job/Scope werden
+wie bei einem normalen Verdict geschlossen). Pruefungen: (1) Plan nicht
+leer; (2) Whitelist-Dateien existieren unter root; (3) Plan-Pfade gegen
+Whitelist/Realitaet; (4) Pfadsicherheit. Ergebnis {feasible, blocks[],
+findings[]}.
+STATUS: DONE
+DEPENDS_ON: UI-072
+VERIFY: node --test tests/feasibility.test.mjs (7 Tests, pure Funktion);
+manuell: falsify submit mit kaputter Dateiliste -> Validierungs-Hinweise
+im Thinker-Kontext, Verdict kommt vom Modell.
+RESULT: REVIDIERT (Batch-Refactor 2026-09-01, Kernprinzip §0): Der
+Pre-Check erteilt KEIN Verdict mehr und schliesst KEINEN Job (kein
+jobDone/addFinding/Exit-1-Pfad). blocks/findings gehen als
+"Validierungs-Hinweise" in buildUserContent -> der Falsifikations-Agent
+(Thinker) falsifiziert selbst und entscheidet. RESEARCH bleibt ein
+Falsifikations-Modul der Datenbeschaffung (FalsifyMe scannt Research-Daten
+unabhaengig vor dem Coder), nie ein Urteil des Pre-Checks.
+WICHTIG: --dry-run NICHT mit echter Deinstallation verwechseln - der echte
+Lauf entfernt FALSIFY_HOME inkl. verbliebener .env erst nach Backup.
+Hinweis: Agent-Entscheid Reichweite/Betriebsmodus (PFLICHT=Gate) ist
+Bestandteil von Skill falsifyme-selfinstall (Step 3b); das Bootstrap-Flag
+--mode=... ist in UI-075 umgesetzt (siehe dort).
+
+ID: UI-075
+TASK: Bootstrap-Flag fuer Modus-Entscheid (--mode=<PFLICHT|optional>
+--reichweite=<projekt|global|aus>) in cli/bootstrap.mjs, damit der
+Entscheid nicht nur im Skill, sondern auch in der CLI ausdruecklich
+setzbar und in der Instruction-Datei als Kopfzeile dokumentiert wird.
+Keine stille Gate-Aktivierung: Default ohne Flag = optional + Warnung
+"FalsifyMe ist Empfehlung, kein Pflicht-Gate" in der Instruction.
+STATUS: DONE
+DEPENDS_ON: UI-072, UI-074
+VERIFY: node --test tests/bootstrap.test.mjs (Tests: --mode=PFLICHT
+schreibt Modus-Kopfzeile, Default schreibt optional-Marker,
+bootstrapFlags-Parsing/Validierung); manuell: falsify bootstrap
+--mode=PFLICHT -> Instruction mit Moduszeile.
+RESULT: PASS (Batch-Refactor 2026-09-01): Modus-Entscheid ist Pflicht VOR
+writeInstruction - interaktiv ueber cli/onboard/prompts.mjs (TTY) oder per
+--mode/--reichweite; Default optional + Warnung, PFLICHT nie still.
+writeInstruction schreibt die Kopfzeile FALSIFYME-MODUS (md-Kommentar bzw.
+#-Kommentar); WIRING §12-Erstfassung ("aktiviert sofort") entfernt; §12
+(modular, revidiert) ist der einzige Bootstrap-Vertrag; README:7-Identitaetszeile
+praezisiert (Instruction = vom Nutzer bestaetigte Integration).
+
+ID: UI-076
+TASK: Onboarding-Dialog "falsify onboard" (FALSIFYME redet DIREKT mit dem
+Nutzer): interaktive Ersteinrichtung mit cli/onboard/prompts.mjs
+(ask/askSecret-maskiert/confirm; fakePrompter für Tests injizierbar),
+cli/onboard/steps.mjs (runOnboard: showStatus -> collectSettings ->
+updateRuntimeSettings -> optional /models live -> Dock-Start ->
+showSummary) und cli/onboard.mjs (duenner Einstieg, Flags --skip-dock/
+--help, TTY-Guard: ohne Terminal klare Meldung + Agent-Hinweis auf
+falsify settings set …, Exit 2). Verkabelt: cli/main.mjs (case onboard),
+cli/falsify.sh, cli/help.mjs. Anbindung an bestehende Settings-Zentrale
+core/settings.mjs — keine Duplizierung. Keys nur in FALSIFY_HOME/.env
+(0600), nie in Ausgabe/JSON; leere Antwort = keine Änderung.
+STATUS: DONE
+DEPENDS_ON: UI-072, UI-074
+VERIFY: node --check cli/onboard.mjs cli/onboard/prompts.mjs
+cli/onboard/steps.mjs cli/main.mjs; node --test tests/onboard.test.mjs
+(6 Tests: detectInstallation, collectSettings mit/ohne Änderung,
+updateRuntimeSettings Key-Isolation, getRuntimeSettings keyConfigured,
+fakePrompter-Default); Gesamtsuite inkl. bootstrap+security (17/17);
+manuell: bash falsify onboard --help (Usage, Exit 0).
+RESULT: PASS (2026-09-01): 6 neue Tests gruen (17/17 gesamt); onboard
+--help liefert Usage; TTY-Guard getestet (Exit 2 ohne Terminal ist
+erwartet und dokumentiert); install.mjs kopiert cli/onboard mit nach
+.Falsify_Core. Modul-Index: WIRING.md §1/§8/§13; README Onboarding-
+Abschnitt; Skill falsifyme-selfinstall verweist auf falsify onboard als
+ehrlichen Key-Dialog (@ Step 5 API-Key).
+
+## BLOCK 10 — Batch-Refactor (Architektur-Drift-Aufloesung, Kernprinzip §0)
+
+Ein Commit (2026-09-01): Falsifikation der Coder-Annahmen als Kernfunktion,
+eine Job/Scope-Queue als einzige Wahrheit, Wissen lokal in
+~/.Falsify_Private, keine Parallelsysteme (WIRING §0/§10).
+
+ID: UI-081
+TASK: falsify wait --ping/--abort + falsify abort - Poll-Ping mit
+Coder-Auswertung statt festem Timeout (Denkdauer anbieterabhaengig).
+STATUS: DONE
+DEPENDS_ON: UI-054
+VERIFY: node --test tests/queue.test.mjs (runPing-Exit 4/0/1/3; runAbort
+setzt Flag, kein Fake-Verdict)
+RESULT: PASS - runPing liefert STATUS <zustand> <sek> (Exit 4 = laeuft
+noch); der Worker pollt das Abort-Flag und killt den Job echt (createAbort).
+Watchdog-/Retry-Poll-Logik verlaesst den Skill (er ruft nur noch an).
+
+ID: UI-082
+TASK: worker --check/--state liest NUR die Queue - Heartbeat-Staleness
+statt PowerShell-CIM-Abgleich (Root-Cause-Fix, kein Querschnitts-Check).
+STATUS: DONE
+DEPENDS_ON: UI-060
+VERIFY: node --test tests/queue.test.mjs (stale Heartbeat -> kein RUNNING)
+RESULT: PASS - kontinuierlicher Heartbeat (setInterval 5 s, auch waehrend
+Jobs); WORKER_STALE_MS=60 s; realWorkerPids/PowerShell entfernt.
+
+ID: UI-083
+TASK: feasibility ohne Verdict-Hoheit (Kernprinzip): Pre-Check liefert
+nur Kontext-Hinweise an den Thinker; kein jobDone/addFinding/Exit-1.
+STATUS: DONE
+DEPENDS_ON: UI-078
+VERIFY: node --test tests/feasibility.test.mjs tests/phase2.test.mjs
+RESULT: PASS - run.mjs fuehrt feasibility-Notes in buildUserContent ein;
+RESEARCH = Falsifikations-Modul (FalsifyMe scannt Research-Daten unabhaengig
+vor dem Coder); Verdict-Hoheit beim Modell.
+
+ID: UI-084
+TASK: Anti-Self-Check-Bias: WRITE nur mit Challenge-Nachweis (Struktur
+"## Falsifikationsversuche" oder BEFUND); ohne Beleg = UNKNOWN.
+STATUS: DONE
+DEPENDS_ON: UI-036
+VERIFY: node --test tests/queue.test.mjs (enforceWriteChallenge/hasChallengeEvidence)
+RESULT: PASS - core/verdict.mjs: enforceWriteChallenge/findingSeverity;
+run.mjs behandelt Rubber-Stamp-WRITE als keine Freigabe.
+
+ID: UI-085
+TASK: GAP-Erfassung im Scope (Divergenz Coder-Urteil vs. Falsifikation).
+STATUS: DONE
+DEPENDS_ON: UI-061
+VERIFY: node --test tests/queue.test.mjs (last_gap offen/geschlossen)
+RESULT: PASS - scopes.last_gap (Migration); artifactView zeigt GAP;
+run.mjs gibt GAP offen/geschlossen aus.
+
+ID: UI-086
+TASK: UI-065-Befunde #1/#2/#3 abschliessen: onTool-Dateipfad-Extraktion,
+Abort-Race (kein Claim waehrend abortFlow; childRef-Guard), Finding-
+Severity echt statt hardcoded "discovered".
+STATUS: DONE
+DEPENDS_ON: UI-066
+VERIFY: node --test tests/queue.test.mjs tests/phase2.test.mjs
+RESULT: PASS - core/agent.mjs looksLikePath; worker.mjs aborting-Guard +
+childRef-Vergleich; core/verdict.mjs findingSeverity.
+
+ID: UI-087
+TASK: FALSIFY_HOME-Default auf ~/.Falsify_Private (Programm .Falsify_Core,
+Wissen .Falsify_Private); Privacy-Vertrag dokumentieren.
+STATUS: DONE
+DEPENDS_ON: UI-001
+VERIFY: node --test tests/onboard.test.mjs tests/security.test.mjs
+(alle Tests laufen mit FALSIFY_HOME-Override -> unveraendert gruen)
+RESULT: PASS - db.mjs falsifyHome() Default geaendert; uninstall.mjs
+homeDir=.Falsify_Private; README/WIRING/AGENTS synchronisiert.
+
+ID: UI-088
+TASK: Selftest-Nachweis im Log (FALSIFY_HOME/logs/selftest.log) statt
+nur sichtbares Boot-Intro; kein Mock/Demo im Produkt.
+STATUS: DONE
+DEPENDS_ON: UI-070
+VERIFY: npm run selftest + Log-Grep
+RESULT: PASS - runRealSelftest schreibt jeden Schritt + RESULT ins Log.
+
+ID: UI-089
+TASK: Legacy-Bereinigung (Grund fuer den Batch): falsifyme-selfinstall-
+workspace/, falsifyme-selfinstall-evals/, ui/.tui-desktop-optin,
+WIRING-§12-Erstfassung, Spec-Phantom-Referenzen entfernt.
+STATUS: DONE
+DEPENDS_ON: UI-081..UI-088
+VERIFY: git status clean; Legacy-Grep ohne Treffer
+RESULT: PASS - Repo/GitHub bereinigt; AGENTS.md aktualisiert.
+

@@ -4,8 +4,11 @@
 
 Ich bin das read-only Falsifikations-Gateway für Coding-Agenten. Ein Agent
 behauptet, deine Änderung sei sicher? Ich prüfe das erst — und nur ich sage,
-ob er schreiben darf. Ich selbst schreibe **niemals** in das geprüfte Projekt.
-Frag mich nicht, wie oft das jemand übersehen hat. Es steht trotzdem hier.
+ob er schreiben darf. **Kernfunktion: Ich falsifiziere die Annahmen des
+Coders** (unabhängige Prüfung derselben Daten; die Divergenz der Urteile ist
+der Gap, den der Loop schließt). Ich selbst schreibe **niemals** in das zu
+prüfende Projekt — die einzige Schreibausnahme ist die vom Nutzer bestätigte
+Workflow-Instruction (Modus dokumentiert, siehe Bootstrap).
 
 **Terminal-UI (Phase 1 + 2) ist implementiert und live verdrahtet** — siehe unten.
 Die sichtbare manuelle Abnahme (Checkpoints UI-030/034/035/038) ist noch offen;
@@ -61,6 +64,18 @@ Ein Scope ist genau ein Kontext. Jeder Job startet eine neue
 Modell-Konversation und darf ausschließlich die Ergebnisse seines eigenen
 Scopes verwenden.
 
+### Umsetzbarkeits-Puffer (Intent → Execution)
+
+FalsifyMe steht zwischen dem gesendeten User-Input (= Scope-Header, der
+Intent) und der Execution: Bevor das Modell läuft, prüft ein deterministischer
+read-only-Check, ob die Einreichung überhaupt umsetzbar ist — Whitelist-
+Dateien müssen unter dem Root existieren, Pfade dürfen nicht aus dem
+Arbeitsverzeichnis ausbrechen, und der Plan muss den Kopf des Auftrags
+adressieren (kein Literalismus-Drift). Schlägt der Check fehl, endet der Job
+sofort mit `VERDICT: PLAN` oder `RESEARCH` ohne Modell-Call (`core/feasibility.mjs`);
+ist er grün, läuft alles unverändert weiter. Dadurch blockt FalsifyMe
+fehlerhafte Absichten, ohne das System zu stören.
+
 ### Verdicts (so entscheide ich)
 
 | Verdict | Bedeutung |
@@ -108,7 +123,8 @@ Installieren automatisch bestimmt und angelegt.
 
 Die Installation legt nichts in dein Projekt an: Das Programm liegt im
 npm-globalen Ordner, alle Laufzeitdaten (SQLite, Keys, Logs) entstehen
-automatisch unter `FALSIFY_HOME` (Default: `~/.Falsify`), außerhalb des Repos.
+automatisch unter `FALSIFY_HOME` (Default: `~/.Falsify_Private` — private
+Wissensdaten, getrennt vom Programm in `~/.Falsify_Core`), außerhalb des Repos.
 
 ### INSTALL (ein Befehl, global)
 
@@ -134,7 +150,7 @@ etwas fehlt) und `OK`, wenn alles passt.
 ### Erster Auftrag (User-Workflow)
 
 ```bash
-falsify ensure-home                                    # FALSIFY_HOME (~/.Falsify) anlegen
+falsify ensure-home                                    # FALSIFY_HOME (~/.Falsify_Private) anlegen
 falsify scope new "Mein Auftrag 1:1"                   # Scope mit HEADER = User-Input
 # Plan-Datei anlegen (z.B. plan.txt), dann:
 falsify submit --scope <scope-id> --plan-file plan.txt --root <projekt> --files "app.js,lib/auth.js"
@@ -158,6 +174,74 @@ falsify models        # listet verfügbare Modelle des konfigurierten Endpunkts
 Keys liegen ausschließlich in `FALSIFY_HOME/.env` (private Rechte), nie im
 Repo und nie in `config.json`.
 
+### API-Key / `.env` manuell einrichten
+
+> Wegweiser: Der automatische Key-Onboarding ist als Task `UI-073` im PLAN
+> notiert; bis dahin gilt diese Anleitung. Der häufigste Fehler: `falsify doctor`
+> meldet `Kein API-Key`, obwohl die Datei existiert — dann enthält die `.env`
+> nur die leere Vorlage aus `ensureFalsifyHome()` (Werte hinter `=` fehlen).
+
+**Schritt 1 — `FALSIFY_HOME` finden** (Default `~/.Falsify_Private` — die
+privaten Wissensdaten von FalsifyMe, getrennt vom Programm in
+`~/.Falsify_Core`; per `FALSIFY_HOME`-Env-Variable überschreibbar):
+
+```bash
+falsify ensure-home        # legt ~/.Falsify_Private mit .env-Vorlage + logs/ an
+```
+
+**Schritt 2 — Key eintragen.** Entweder per CLI (empfohlen, schreibt automatisch
+mit privaten Rechten):
+
+```bash
+# Provider-neutral: Name des Key laut Dienste-Anbieter wählen
+falsify settings set apiKeyName="NVIDIA_API_KEY" apiKey="<dein-key>"
+# bzw. für einen anderen OpenAI-kompatiblen Endpunkt:
+falsify settings set apiBase="https://mein.endpunkt/v1" model="mein/modell"
+```
+
+Oder direkt die Datei `~/.Falsify_Private/.env` (Windows:
+`%USERPROFILE%\.Falsify_Private\.env`) mit einem Editor öffnen und den Wert
+hinter das `=` setzen:
+
+```text
+# ~/.Falsify_Private/.env  (UTF-8, eine Zeile je Key, KEINE Anführungszeichen nötig)
+NVIDIA_API_KEY=abc123…
+OPENAI_API_KEY=
+FALSIFY_API_KEY=
+```
+
+**Schritt 3 — verifizieren:**
+
+```bash
+falsify doctor
+```
+
+Erwartet: `✅ Config: …` und `✅ API-Key` (bzw. kein `Kein API-Key`-Eintrag).
+Der Key ist nie leer auszufüllen: `NVIDIA_API_KEY=` (ohne Wert) zählt als
+„nicht konfiguriert". Nach dem Setzen wirken Änderungen beim nächsten
+CLI-Aufruf — `falsify settings set …` muss einmalig ausgeführt werden, damit
+auch `config.json` (`apiKeyName`) passend geschrieben wird.
+
+**Hinweis Open-Source/Backup:** Die `.env` enthält private Zugangsdaten —
+niemals committen, niemals teilen; bei Migrationen `FALSIFY_HOME` sichern.
+
+### Onboarding (FALSIFYME redet direkt mit dir)
+
+Nach der Installation kannst du die Ersteinrichtung als echten Dialog laufen
+lassen — FalsifyMe fragt dich Schritt für Schritt:
+
+```bash
+falsify onboard            # interaktiv: API-Endpunkt → Modell → Key-Name →
+                           # API-Key (maskiert) → /models abrufen? → Dock-Start
+falsify onboard --skip-dock
+```
+
+Der Dialog schreibt die Runtime-Settings (Keys nur in `FALSIFY_HOME/.env`,
+Rechte 0600, nie in Ausgabe/JSON), ruft optional die Modellliste des
+Endpunkts live ab und startet danach das sichtbare Worker-Dock (Windows).
+Ohne Terminal verweigert der Befehl ehrlich (Exit 2) und verweist Agents auf
+`falsify settings set …`.
+
 ### Fehlerfälle (erwartetes Verhalten)
 
 | Situation | Ausgabe / Verhalten |
@@ -167,6 +251,7 @@ Repo und nie in `config.json`.
 | Node < 22.5 | npm-Warnung `EBADENGINE`; `falsify doctor` meldet die Node-Anforderung |
 | FalsifyMe/Worker nicht erreichbar | Job bleibt `QUEUED`; `falsify wait` pollt weiter (kein Fake-Verdict) |
 | Provider nicht erreichbar | HTTP-Fehler von `falsify submit`/`run`, Exit 3 |
+| `falsify onboard` ohne Terminal | klare Meldung + Hinweis auf `settings set`, Exit 2 |
 
 ### Volle Installation (optional: Desktop-Icons, Worker-Dock, Agent-Skills)
 
@@ -175,9 +260,11 @@ node "$(npm root -g)/falsifyme/install.mjs"
 ```
 
 Installiert die Desktop-Icons (`FalsifyMe.lnk`, `FalsifyMe-TUI-Test.lnk`),
-legt den Worker-Dock an und kopiert die Agent-Skills (`falsifyme` und
-`falsifyme-falsiflow`) nach `~/.agents/skills/`. Überspringen mit
-`--no-desktop`.
+legt den Worker-Dock an und kopiert die Agent-Skills (`falsifyme`,
+`falsifyme-falsiflow` und `falsifyme-selfinstall`) nach `~/.agents/skills/`.
+`falsifyme-selfinstall` weist den Coding-Agenten an, sich selbst einen
+funktionierenden, ausführbaren FalsifyMe-Skill einzurichten (siehe auch
+`skills/falsifyme-selfinstall.md`). Überspringen mit `--no-desktop`.
 
 ---
 
@@ -190,6 +277,7 @@ an:
 - SQLite, API-Keys und Logs: `%USERPROFILE%\\.Falsify_Private`
 - globale Agent-Skills: `%USERPROFILE%\\.agents\\skills\\falsifyme`
 - FalsiFlow-Session-Skill: `%USERPROFILE%\\.agents\\skills\\falsifyme-falsiflow`
+- Self-Install-Skill: `%USERPROFILE%\\.agents\\skills\\falsifyme-selfinstall`
 - Windows-Desktop-Icons: `FalsifyMe.lnk` (startet den Worker-Dock, echte Jobs
   live sichtbar) + `FalsifyMe-TUI-Test.lnk` (kompletter Verifikationslauf);
   Überspringbar mit `--no-desktop`
@@ -217,7 +305,9 @@ GitHub-Release-Workflow eingerichtet ist.
 ## Betrieb
 
 Alle Laufzeitdaten liegen **ausserhalb des Repos** in `FALSIFY_HOME`
-(Standard: `~/.Falsify` bzw. `%USERPROFILE%\.Falsify`):
+(Standard: `~/.Falsify_Private` bzw. `%USERPROFILE%\.Falsify_Private` —
+private Wissensdaten des Nutzers, kein Sammeln, keine Telemetrie; die
+Programmdateien liegen getrennt in `~/.Falsify_Core`):
 
 ```text
 FALSIFY_HOME/
@@ -307,8 +397,13 @@ WIRING.md + `ui/PLAN.md` (BLOCK 6), nie nur in eine Antwort.
 falsify ensure-home | doctor
 falsify scope new "<user-input>" | scope show <id> | scope list
 falsify submit --scope <id> --plan-file plan.txt --root <dir> --files "a,b"
-falsify wait <job-id> | status <job-id> | jobs | state
+falsify wait <job-id> [--ping|--abort] | status <job-id> | jobs | state
+#   --ping = eine Auswertungsrunde (STATUS <zustand> <sek>; Exit 4 = läuft noch,
+#   der Coder wertet selbst aus) · --abort = Job abbrechen (keine Freigabe)
+falsify abort <job-id>          # CLI-Abbruch: setzt Flag, Worker killt den Job echt
 falsify log <job-id> | answer <job-id> | history
+falsify onboard [--skip-dock]   # interaktive Ersteinrichtung (Dialog)
+falsify uninstall [--dry-run]   # vollständige Deinstallation
 ```
 
 `--files` ist die Whitelist des Modellzugriffs. Die Agent-Tools können nur
@@ -373,7 +468,9 @@ node cli/bootstrap.mjs
 # Oder über die Bash-CLI:
 falsify bootstrap
 
-# Flags: --dry-run (kein Schreiben), --skip-dock (kein Dock-Start)
+# Flags: --dry-run (kein Schreiben), --skip-dock (kein Dock-Start),
+#        --no-desktop (keine Desktop-Icons; Default = volle Installation
+#        inkl. Icons, wie node install.mjs)
 # Node-CLI-Pfad: node cli/main.mjs bootstrap
 ```
 
@@ -392,16 +489,40 @@ Der Bootstrap:
    auf anderen Plattformen meldet der Bootstrap das ehrlich und nennt
    den Worker-Aufruf (`node ui/worker.mjs`).
 
+**Zwingende Entscheidung (Skill `falsifyme-selfinstall`):** Nach der
+Installation legt der Coding-Agent mit dem Nutzer Reichweite (`projekt` /
+`global` / `aus`) und Betriebsmodus (`PFLICHT` / `optional`) fest und
+dokumentiert ihn als Kopfzeile in der Instruction-Datei. **Nur bei `PFLICHT`**
+wird FalsifyMe zum letzten Git-Check-Gate (Agent bleibt bis `VERDICT: WRITE`
+read-only); bei `optional` ist FalsifyMe Empfehlung ohne Enforcement. Keine
+stille Gate-Aktivierung.
+
 Rollen: FalsifyMe = unabhängiger read-only Falsifizierungs-Agent ·
 Coding-Agent = eigentliche Arbeits-/Write-Instanz ·
 Dock = sichtbare Visualisierung der laufenden FalsifyMe-Arbeit ·
 Installation = aktiviert die FalsifyMe-Workflow-Integration.
+
+**Deinstallation (vollständig und sauber):**
+
+```bash
+node uninstall.mjs --dry-run          # Vorschau, ändert nichts
+node uninstall.mjs --project-root DIR  # + Zielprojekt-Instruction entfernen
+node uninstall.mjs                    # komplette Rückabwicklung
+```
+
+Entfernt Worker-Fenster, `~/.Falsify_Core`, `~/.Falsify_Private`,
+`~/.agents/skills/falsifyme*`, die Instruction-Dateien und Profil-Marker,
+den Instruction-Block im Zielprojekt, `~/.Falsify_Private` (FALSIFY_HOME inkl.
+DB/Logs; enthaltene API-Keys werden VORHER nach
+`~/.Falsify.env.uninstall-backup` gesichert) und npm-Global-Shims.
+`--keep-env` behält FALSIFY_HOME.
 
 Verifikation:
 
 ```bash
 node --test tests/bootstrap.test.mjs
 node cli/bootstrap.mjs --dry-run --skip-dock
+node uninstall.mjs --dry-run
 ```
 
 FalsifyMe bleibt read-only; der Coding-Agent bleibt für alle Änderungen

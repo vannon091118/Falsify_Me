@@ -7,15 +7,26 @@
 //   Instruction-Datei (AGENTS.md / FALSIFYME-WORKFLOW.md) und {{ROOT}} in
 //   allen Templates.
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { detectAgent } from "./detect.mjs";
 import { runInstall, readInstallLocation } from "./install.mjs";
 import { writeInstruction } from "./instructions.mjs";
 import { startDock } from "./dock.mjs";
 
-export async function runBootstrap({ root, projectRoot, homeDir, dryRun = false, skipDock = false } = {}) {
+export async function runBootstrap({ root, projectRoot, homeDir, dryRun = false, skipDock = false, noDesktop = false, mode = "optional", reichweite = "projekt" } = {}) {
   // 1. Installation (existierendes install.mjs aus dem Paket-Root)
-  const install = runInstall({ root, dryRun });
-  if (!install.ok) return { ok: false, stage: "install", ...install };
+  //    noDesktop:true unterdrueckt Desktop-Icons (Agent-/Headless-Kontext);
+  //    Default (false) = volle Installation inkl. Icons, wie node install.mjs.
+  //    Bereits installiert (install-location.json vorhanden) -> Kopie
+  //    ueberspringen: kein zweiter Verteilweg, keine Doppelkopie.
+  let install;
+  if (!dryRun && existsSync(path.join(homeDir, ".Falsify_Core", "install-location.json"))) {
+    console.log("Bereits installiert (install-location.json) - Kopie uebersprungen.");
+    install = { ok: true, existing: true, skipped: true };
+  } else {
+    install = runInstall({ root, dryRun, noDesktop });
+    if (!install.ok) return { ok: false, stage: "install", ...install };
+  }
 
   const installLocation = dryRun
     ? { coreDir: path.join(homeDir, ".Falsify_Core"), privateDir: path.join(homeDir, ".Falsify_Private") }
@@ -46,6 +57,8 @@ export async function runBootstrap({ root, projectRoot, homeDir, dryRun = false,
         root: targetRoot,
         homeDir,
         coreDir: installLocation.coreDir,
+        mode,
+        reichweite,
       });
 
   // 4. Sichtbares Dock

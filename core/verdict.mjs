@@ -18,6 +18,35 @@ export function parseVerdict(content) {
   return null;
 }
 
+/**
+ * Challenge-Nachweis (Anti-Self-Check-Bias, Thinker): Der Review muss den
+ * Falsifikationsversuch belegen (Struktur "## Falsifikationsversuche" oder
+ * eine BEFUND-Zeile). Ohne diesen Beleg ist WRITE ein Rubber-Stamp und wird
+ * als UNKNOWN behandelt (keine Freigabe).
+ */
+export function hasChallengeEvidence(content) {
+  const c = String(content || "");
+  return /##\s*Falsifikationsversuche/i.test(c) || /BEFUND:\s*\S+/i.test(c);
+}
+
+/** Echte Finding-Severity je Verdict (info/warning/critical, UI-065-Befund 3). */
+export function findingSeverity(verdict) {
+  const v = String(verdict || "").toUpperCase();
+  if (v === "WRITE") return "discovered";
+  if (v === "PLAN" || v === "RESEARCH") return "warning";
+  return "critical";
+}
+
+/**
+ * Erzwingt den Challenge-Nachweis vor WRITE: WRITE ohne Beleg -> null
+ * (UNKNOWN, keine Freigabe); sonst das (großgeschriebene) Verdict.
+ */
+export function enforceWriteChallenge(content, verdict) {
+  const v = String(verdict || "").toUpperCase();
+  if (v === "WRITE" && !hasChallengeEvidence(content)) return null;
+  return v || null;
+}
+
 export function parseBefund(content) {
   const lines = content.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   for (let i = lines.length - 1; i >= 0; i--) {

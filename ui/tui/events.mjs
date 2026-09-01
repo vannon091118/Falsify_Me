@@ -93,7 +93,8 @@ export const apply = (state, evt, now = Date.now()) => {
       return true;
     }
     case "selftest": {
-      // Echter Startup-Selftest-Fortschritt (Spec §6). Der Worker emit-t
+      // Echter Startup-Selftest-Fortschritt (ui/README-tui.md, Spec: Boot &
+      // Selftest). Der Worker emit-t
       // strukturierte Steps mit echtem Ergebnis (ok: true/false), sobald er
       // die jeweilige Pruefung durchgefuehrt hat. Keine Fake-Ergebnisse: ein
       // Step ist nur dann ok=true, wenn die echte Pruefung bestanden wurde.
@@ -203,7 +204,8 @@ export const apply = (state, evt, now = Date.now()) => {
 // Global: Boot-Intro ohne Job endet ehrlich im Warte-Zustand — ABER nur,
 // wenn der echte Selftest abgeschlossen ist (testResult pass/fail). Laeuft
 // der Selftest noch (Steps vorhanden, aber kein Ergebnis), bleibt das
-// Boot-Intro aktiv, damit der Benutzer den echten Fortschritt sieht (Spec §6).
+// Boot-Intro aktiv, damit der Benutzer den echten Fortschritt sieht
+// (ui/README-tui.md, Spec: Boot & Selftest).
 export const tick = (state, now = Date.now()) => {
   for (const slot of state.slots) {
     if (slot.state === "STARTING" && now - slot.bootAt >= SOFT_CAP_MS) {
@@ -213,7 +215,7 @@ export const tick = (state, now = Date.now()) => {
   if (state.jobsStarted === 0 && state.state === "STARTING" && now - state.bootAt >= SOFT_CAP_MS) {
     // Selftest noch am Laufen (Steps da, aber kein Ergebnis)? Boot halten.
     // Selftest fehlgeschlagen (testResult=fail)? Boot im Fehlerzustand
-    // halten — NICHT in den normalen Idle fallen (Spec §6.6).
+    // halten — NICHT in den normalen Idle fallen (ui/README-tui.md, Spec §6.6).
     const selftestRunning = Array.isArray(state.testSteps) && state.testSteps.length > 0 && state.testResult == null;
     const selftestFailed = state.testResult === "fail";
     if (!selftestRunning && !selftestFailed) {

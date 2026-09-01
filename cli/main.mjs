@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import { fileURLToPath } from "node:url";
 import { runScope } from "./scope.mjs";
-import { runStatus, runJobs } from "./jobs.mjs";
+import { runStatus, runJobs, runPing, runAbort } from "./jobs.mjs";
 import { runHistory } from "./history.mjs";
 import { runLog } from "./log.mjs";
 import { runAnswer } from "./answer.mjs";
 import { ensureFalsifyHome } from "../artifacts/db.mjs";
 import { runDoctor } from "./doctor.mjs";
 import { runSettings, runModels } from "./settings.mjs";
+import { runOnboardCli } from "./onboard.mjs";
 import { HELP_TEXT } from "./help.mjs";
 import { fail } from "./util.mjs";
 
@@ -17,6 +18,8 @@ async function main() {
   switch (cmd) {
     case "status": runStatus(args[1]); break;
     case "jobs": runJobs(); break;
+    case "ping": runPing(args[1]); break;
+    case "abort": runAbort(args[1]); break;
     case "history": runHistory(args.slice(1)); break;
     case "scope": runScope(args.slice(1)); break;
     case "log": runLog(args[1]); break;
@@ -30,11 +33,28 @@ async function main() {
     }
     case "bootstrap": {
       const { runBootstrap } = await import("./bootstrap/main.mjs");
-      const os = await import("node:os");
+      const { bootstrapFlags } = await import("./bootstrap.mjs");
       const { packageRoot } = await import("./bootstrap/install.mjs");
-      const r = await runBootstrap({ root: packageRoot, homeDir: os.homedir() });
+      const os = await import("node:os");
+      const bArgs = args.slice(1);
+      const bFlags = bootstrapFlags(bArgs);
+      const r = await runBootstrap({
+        root: packageRoot,
+        homeDir: os.homedir(),
+        dryRun: bFlags.dryRun,
+        skipDock: bFlags.skipDock,
+        noDesktop: bFlags.noDesktop,
+        projectRoot: bFlags.projectRoot,
+        mode: bFlags.mode,
+        reichweite: bFlags.reichweite,
+      });
       if (!r.ok) process.exit(1);
       console.log();
+      break;
+    }
+    case "onboard": {
+      const r = await runOnboardCli(args.slice(1));
+      if (r && !r.ok) process.exit(2);
       break;
     }
     case "doctor": await runDoctor(); break;

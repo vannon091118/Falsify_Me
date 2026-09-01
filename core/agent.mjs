@@ -116,7 +116,15 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
         const shown = Object.values(args).filter((v) => typeof v === "string" && v).join(", ");
         // Phase 2: echte Tool-Aktivitaet (Tool + Datei/Arg) an den Aufrufer
         // melden - additiv, ohne Aufrufer bleibt alles wie bisher.
-        const fileArg = Object.values(args).find((v) => typeof v === "string" && v);
+        // Echte Dateipfad-Extraktion (UI-065-Befund 1): Nur Argumente, die wie
+        // Pfade aussehen (Pfad-Separator oder Datei-Endung), werden als
+        // Datei gemeldet - Suchbegriffe/JSON/IDs sind KEINE Dateien.
+        const looksLikePath = (v) => {
+          if (typeof v !== "string" || !v.trim()) return false;
+          if (/[\/\\]/.test(v)) return true;                       // enthält Pfad-Separator
+          return /^[^\s"']+\.\w{1,10}$/.test(v.trim());            // Datei-Endung
+        };
+        const fileArg = Object.values(args).find((v) => looksLikePath(v));
         onTool?.({ tool: tc.name, file: typeof fileArg === "string" && fileArg ? fileArg : null });
         console.log(`⟳ Agent liest: ${tc.name}(${shown || ""})`);
         let result;

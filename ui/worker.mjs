@@ -15,7 +15,8 @@
 // ui/start-dock.cmd (öffnet ein sichtbares Fenster; kein headless Start).
 //
 // API-Key-Slots (mehrere Keys) kommen später; aktuell teilen sich alle Fenster
-// den konfigurierten API-Key (aus ~/.Falsify/.env, provider-neutral).
+// den konfigurierten API-Key (aus FALSIFY_HOME/.env, Default
+// ~/.Falsify_Private, provider-neutral).
 // ─────────────────────────────────────────────────────────────────────────────
 import fs from "node:fs";
 import path from "node:path";
@@ -26,6 +27,7 @@ import {
   claimNextJob, getJob, jobDone,
   registerWorker, unregisterWorker, heartbeatWorker,
   workerScope, setWorkerScope, workerPid, isWorkerAlive, listWorkers, listJobs,
+  isAbortRequested, clearJobAbort,
 } from "../artifacts/jobs.mjs";
 // ── Phase 2: Terminal-UI im Worker-Fenster ───────────────────────────────────
 import { createTui } from "./tui.mjs";
@@ -40,6 +42,8 @@ const WINDOW_IDX = Number(process.env.FALSIFY_WINDOW || 1);
 const title = (t) => process.stdout.write(`\x1b]0;${t}\x07`);
 const bell = () => process.stdout.write("\x07");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+let hbTimer = null; // kontinuierlicher Herzschlag (Status-API-Grundlage)
 
 const DEBUG_LOG = path.join(falsifyHome(), "logs", "worker.debug.log");
 // logs/ sicherstellen: In einem frischen FALSIFY_HOME fehlt der Ordner und
@@ -65,9 +69,29 @@ import { loadConfig } from "../core/config.mjs";
 
 async function runRealSelftest({ ui, windowIdx, db }) {
   const slot = windowIdx;
-  const emit = (step) => ui?.applyEvent({ t: "selftest", step, slot });
-  const emitStatus = (status) => ui?.applyEvent({ t: "selftest", status, slot });
-  const emitResult = (result) => ui?.applyEvent({ t: "selftest", result, slot });
+  // Echter Selftest-Nachweis: Ergebnisse landen zusaetzlich im Log
+  // (FALSIFY_HOME/logs/selftest.log), damit die Verifikation auch ohne
+  // sichtbares Fenster pruefbar ist (kein Mock, keine Demo-Behauptung).
+  const SELFTEST_LOG = path.join(falsifyHome(), "logs", "selftest.log");
+  const logSelf = (line) => {
+    try {
+      fs.mkdirSync(path.dirname(SELFTEST_LOG), { recursive: true });
+      fs.appendFileSync(SELFTEST_LOG, `${new Date().toISOString()} ${line}\n`);
+    } catch { /* egal */ }
+  };
+  logSelf(`SELFTEST START fenster=${windowIdx} pid=${process.pid}`);
+  const emit = (step) => {
+    logSelf(`step ${step.name} ${step.ok ? "OK" : "FAIL"} ${step.detail ?? ""}`);
+    ui?.applyEvent({ t: "selftest", step, slot });
+  };
+  const emitStatus = (status) => {
+    logSelf(`status ${status}`);
+    ui?.applyEvent({ t: "selftest", status, slot });
+  };
+  const emitResult = (result) => {
+    logSelf(`RESULT ${result}`);
+    ui?.applyEvent({ t: "selftest", result, slot });
+  };
 
   // Schritt 1: Runtime (Node-/Prozess-Umgebung).
   emitStatus("BOOT → SELFTEST");
@@ -144,39 +168,16 @@ async function runRealSelftest({ ui, windowIdx, db }) {
   emitStatus(criticalFail ? "SELFTEST FAILED" : "SELFTEST PASS");
 }
 
-// Alle registrierten Fenster-Zeilen sind nur dann echte Worker, wenn ihre PID
-// wirklich ein ui/worker.mjs-Prozess ist. PID-Recycling-Guard: Wird ein Fenster
-// hart gekillt (taskkill //T z.B. aus dem Selftest-Cleanup), bleibt die Zeile
-// stehen — und die PID kann an einen fremden Prozess neu vergeben werden.
-// Ohne diesen Guard wuerde --check/--state dann ein falsches RUNNING/BUSY
-// melden (und z.B. der Skill wuerde das Dock nicht neu starten).
-function realWorkerPids() {
-  try {
-    const ps = spawnSync(
-      "powershell.exe",
-      ["-NoProfile", "-Command", "(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' }) | ForEach-Object { return (\"$($_.ProcessId);$($_.CommandLine)\") }"],
-      { encoding: "utf8", timeout: 15000 },
-    );
-    if (ps.status !== 0 || !ps.stdout) return null;
-    return new Set(
-      ps.stdout
-        .split(/\r?\n/)
-        .filter((l) => l.includes("worker.mjs"))
-        .map((l) => l.split(";")[0].trim())
-        .filter(Boolean),
-    );
-  } catch {
-    return null;
-  }
-}
-
+// Status-API (--check/--state) liest NUR die Queue: ein registrierter Worker
+// zaehlt nur, wenn seine PID lebt UND sein Heartbeat frisch ist (siehe
+// WORKER_STALE_MS in artifacts/jobs.mjs). Der Worker heartbeated seit der
+// Registrierung kontinuierlich (setInterval) - hart gekillte Fenster altern
+// dadurch aus (Root-Cause-Fix; der fruehere PowerShell-CIM-Abgleich ist
+// entfernt, kein Querschnitts-Check mehr).
 function reportWorkers(filter) {
   const db = openDb();
   const workers = listWorkers(db, MAX_WINDOWS);
-  const realPids = realWorkerPids(); // null => PowerShell nicht verfuegbar: DB-Aliveness als Fallback
-  const alive = workers.filter((w) =>
-    w.alive && (realPids ? realPids.has(String(w.pid)) : true)
-  );
+  const alive = workers.filter((w) => w.alive);
   const hits = alive.filter(filter ?? (() => true));
   closeDb();
   return { workers: alive, hits };
@@ -206,6 +207,7 @@ if (!(WINDOW_IDX >= 1 && WINDOW_IDX <= MAX_WINDOWS)) {
 const db = openDb();
 
 function cleanup() {
+  if (hbTimer) clearInterval(hbTimer);
   unregisterWorker(db, WINDOW_IDX);
   dlog(`EXIT fenster=${WINDOW_IDX}`);
   try { closeDb(); } catch { /* egal */ }
@@ -231,6 +233,14 @@ async function main() {
     process.exit(0);
   }
   registerWorker(db, WINDOW_IDX, process.pid);
+
+  // ── Kontinuierlicher Herzschlag (auch waerend Jobs) ───────────────────────
+  // Grundlage der Status-API: --check/--state zaehlen nur frische Heartbeats.
+  // Der Intervall laeuft fuer die Lebensdauer des Prozesses; beim Exit wird
+  // unregisterWorker aufgerufen (siehe cleanup).
+  hbTimer = setInterval(() => {
+    try { heartbeatWorker(db, WINDOW_IDX); } catch { /* egal */ }
+  }, 5000);
 
   // ── Phase 2: TUI im sichtbaren Worker-Fenster (nur bei TTY) ───────────────
   // Die Anzeige ist reine Beobachtung: Events kommen von run.mjs (FM-EVT:-Marker)
@@ -291,6 +301,10 @@ async function main() {
   say("");
 
   for (;;) {
+    // Abort-Race-Guard: waehrend abortFlow laeuft (killDelay), darf KEIN neuer
+    // Job geclaimt werden (childRef waere sonst ueberschrieben). Erst nach
+    // abgeschlossenem Abort wird weitergemacht.
+    if (aborting) { await sleep(500); continue; }
     heartbeatWorker(db, WINDOW_IDX);
     const preferred = workerScope(db, WINDOW_IDX);
     let job;
@@ -324,6 +338,7 @@ async function main() {
         : { stdio: "inherit" }),
     });
     childRef = child;
+    let abortedByCli = false;
     if (TTY) {
       const parser = createParser({
         onEvent: (evt) => ui.applyEvent({ ...evt, slot: WINDOW_IDX }),
@@ -335,14 +350,31 @@ async function main() {
         for (const l of chunk.toString().split("\n")) if (l.trim()) ui?.noteLine(l);
       });
     }
+    // CLI-Abort (`falsify abort <id>` / `falsify wait --abort`): der Worker
+    // pollt das Flag waehrend des laufenden Kindprozesses und killt den Job
+    // echt (createAbort, PID-verifiziert). Kein Fake-Verdict.
+    const abortPoller = setInterval(() => {
+      try {
+        if (isAbortRequested(db, job.id) && !aborting) {
+          abortedByCli = true;
+          dlog(`CLI-Abort angefordert fuer ${job.id}`);
+          uiEvt({ t: "state", s: "ABORTING" });
+          createAbort({ child, killDelayMs: 2000 }).request().catch(() => {});
+        }
+      } catch { /* egal */ }
+    }, 1000);
     const code = await new Promise((resolve) => child.on("close", resolve));
-    childRef = null;
+    clearInterval(abortPoller);
+    clearJobAbort(db, job.id);
+    // Nur freigeben, wenn wirklich noch DIESER Kindprozess referenziert wird
+    // (Abort-Race-Fix: ein neuer Claim darf childRef nicht ungueltig machen).
+    if (childRef === child) childRef = null;
     dlog(`job ${job.id} beendet code=${code}`);
 
-    // Falls run.mjs den Job nicht abgeschlossen hat (Crash), hier nachziehen.
+    // Falls run.mjs den Job nicht abgeschlossen hat (Crash/Abort), hier nachziehen.
     const done = getJob(db, job.id);
     if (!done || done.status === "RUNNING") {
-      jobDone(db, job.id, null, `Worker-Abbruch (Exit-Code ${code})`);
+      jobDone(db, job.id, null, abortedByCli ? "Abgebrochen (CLI)" : `Worker-Abbruch (Exit-Code ${code})`);
       uiEvt({ t: "state", s: "ERROR" });
     }
 

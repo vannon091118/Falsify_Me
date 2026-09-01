@@ -107,8 +107,11 @@ Rules:
  * @param {string} [p.diffText]    Diff der Iteration
  * @param {string} p.root          Arbeitsverzeichnis
  * @param {string[]} [p.whitelist] Zugriffs-Whitelist
+ * @param {string[]} [p.feasibilityNotes] read-only Validierungs-Hinweise
+ *   (Umsetzbarkeits-Puffer) – gehen als KONTEXT an den Falsifikations-Agent;
+ *   sie erteilen selbst KEIN Verdict (Verdict-Hoheit bleibt beim Thinker).
  */
-export function buildUserContent({ header, phase, lastBefund, findings = [], subPrompt, planText, diffText, root, whitelist = [] }) {
+export function buildUserContent({ header, phase, lastBefund, findings = [], subPrompt, planText, diffText, root, whitelist = [], feasibilityNotes = [] }) {
   const parts = [];
   if (header) {
     parts.push(`# Anforderung (User-Input 1:1 – HEADER)\n${header}`);
@@ -127,6 +130,9 @@ export function buildUserContent({ header, phase, lastBefund, findings = [], sub
     if (subPrompt) {
       parts.push(`## Sub-Prompt (FALLBACK gegen Drift – vom Modell nach dem letzten Review aktualisiert)\n\nWenn du vom Scope abdriftest (den HEADER aus dem Blick verlierst oder Kontext vergisst), nutze diesen Sub-Prompt als Anker: Er passt den FalsifyMe-Prompt an und ergänzt wichtigen Scope-Kontext.\n\n${subPrompt}`);
     }
+  }
+  if (feasibilityNotes.length) {
+    parts.push(`## Validierungs-Hinweise (deterministischer Pre-Check, read-only)\n\nDiese Hinweise sind KEIN Verdict – falsifiziere die eingereichte Iteration selbst und pruefe die genannten Punkte gegen die echten Dateien:\n${feasibilityNotes.map((n) => `- ${n}`).join("\n")}`);
   }
   parts.push(`## Diese Iteration\n${planText}`);
   if (diffText) parts.push(`## Diff der Iteration\n\n\`\`\`diff\n${diffText}\n\`\`\``);

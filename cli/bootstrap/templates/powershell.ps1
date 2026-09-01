@@ -1,4 +1,5 @@
 # FalsifyMe Workflow-Instructions fuer PowerShell-Agenten
+{{MODE_HEADER}}
 #
 # FalsifyMe = unabhaengiger read-only Falsifizierungs-Agent
 # Coding-Agent = eigentliche Arbeits-/Write-Instanz

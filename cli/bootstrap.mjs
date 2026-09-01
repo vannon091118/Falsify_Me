@@ -8,66 +8,153 @@
 // ROOT-Vertrag: packageRoot (diese Datei liegt im FalsifyMe-Paket) ist nur
 // die Installationsquelle; Zielprojekt fuer Instructions/{{ROOT}} ist die
 // cwd des Aufrufs (oder --project-root).
+//
+// Modus-Entscheid (UI-075, keine stille Gate-Aktivierung):
+//   Vor dem Schreiben der Instruction-Datei wird Reichweite (projekt/global/aus)
+//   und Betriebsmodus (PFLICHT/optional) festgelegt und als Kopfzeile
+//   (FALSIFYME-MODUS) in der Instruction dokumentiert. Ohne --mode-Flag:
+//   interaktiv (TTY) ueber den Prompter aus cli/onboard/prompts.mjs, sonst
+//   Default `optional` + explizite Warnung. PFLICHT entsteht NIE still.
 // ─────────────────────────────────────────────────────────────────────────────
 import os from "node:os";
 import { runBootstrap } from "./bootstrap/main.mjs";
 import { packageRoot } from "./bootstrap/install.mjs";
-import { loadApiKey, keyNames } from "../core/keys.mjs";
 
-const argv = process.argv.slice(2);
-const flags = new Set(argv.filter((a) => a.startsWith("--")));
-const dryRun = flags.has("--dry-run");
-const skipDock = flags.has("--skip-dock");
+const REICHWEITEN = new Set(["projekt", "global", "aus"]);
 
-// --project-root <dir>: explizites Zielprojekt; Default = cwd des Aufrufs.
-let projectRoot;
-const pri = argv.indexOf("--project-root");
-if (pri !== -1 && argv[pri + 1] && !argv[pri + 1].startsWith("--")) {
-  projectRoot = argv[pri + 1];
+/** Parst die Bootstrap-Flags (pure, testbar). */
+export function bootstrapFlags(argv = []) {
+  const flags = new Set(argv.filter((a) => a.startsWith("--")));
+  const val = (name) => {
+    // --name=wert und --name wert gleichermaßen akzeptieren
+    const eq = argv.find((a) => a.startsWith(`${name}=`));
+    if (eq) return eq.slice(name.length + 1);
+    const i = argv.indexOf(name);
+    return i !== -1 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : undefined;
+  };
+  let projectRoot = val("--project-root");
+  let mode = val("--mode");
+  let reichweite = val("--reichweite");
+  if (mode !== undefined) {
+    const m = String(mode).toLowerCase();
+    if (m === "pflich" || m === "pflicht") mode = "PFLICHT";
+    else if (m === "optional") mode = "optional";
+    else throw new Error(`Ungueltiger --mode: ${mode} (erlaubt: PFLICHT | optional)`);
+  }
+  if (reichweite !== undefined) {
+    const r = String(reichweite).toLowerCase();
+    if (!REICHWEITEN.has(r)) throw new Error(`Ungueltige --reichweite: ${reichweite} (erlaubt: projekt | global | aus)`);
+    reichweite = r;
+  }
+  return {
+    dryRun: flags.has("--dry-run"),
+    skipDock: flags.has("--skip-dock"),
+    noDesktop: flags.has("--no-desktop"),
+    projectRoot,
+    mode,
+    reichweite,
+  };
 }
 
-try {
-  const result = await runBootstrap({
-    root: packageRoot,
-    projectRoot,
-    homeDir: os.homedir(),
-    dryRun,
-    skipDock,
-  });
-
-  if (!result.ok) {
-    console.error(`Bootstrap fehlgeschlagen in Stage "${result.stage}": ${result.error}`);
-    process.exit(1);
+/**
+ * Legt den Modus-Entscheid fest (nie still): explizite Flags gewinnen;
+ * sonst interaktiv (TTY) via Prompter; sonst Default optional + Warnung.
+ */
+export async function resolveModeDecision({ mode, reichweite, isTTY = Boolean(process.stdin.isTTY) }) {
+  if (mode) {
+    return { mode, reichweite: reichweite || "projekt", interactive: false, explicit: true };
   }
+  if (isTTY) {
+    const { defaultPrompter } = await import("./onboard/prompts.mjs");
+    const prompter = defaultPrompter();
+    try {
+      const scope = await prompter.ask(
+        "FALSIFYME ▸ Reichweite der Integration? (projekt = nur dieses Projekt · global = alle Projekte · aus = nur Werkzeug)",
+        { defaultValue: "projekt" },
+      );
+      const r = String(scope || "projekt").trim().toLowerCase();
+      const reichweiteFinal = REICHWEITEN.has(r) ? r : "projekt";
+      const pflich = await prompter.confirm(
+        "FALSIFYME ▸ Betriebsmodus PFLICHT aktivieren? (PFLICHT = letztes Git-Check-Gate vor Write/Commit · optional = Empfehlung ohne Enforcement)",
+        { defaultValue: false },
+      );
+      const modeFinal = pflich ? "PFLICHT" : "optional";
+      console.log(`FALSIFYME-MODUS: ${reichweiteFinal} · ${modeFinal} (im Instruction-Kopf dokumentiert)`);
+      return { mode: modeFinal, reichweite: reichweiteFinal, interactive: true, explicit: true };
+    } finally {
+      prompter.close();
+    }
+  }
+  console.warn("WARNUNG: Kein --mode angegeben und kein Terminal – FalsifyMe ist damit Empfehlung, KEIN Pflicht-Gate (Modus wird als 'optional' dokumentiert).");
+  console.warn("Fuer ein Pflicht-Gate: falsify bootstrap --mode=PFLICHT --reichweite=projekt|global");
+  return { mode: "optional", reichweite: reichweite || "projekt", interactive: false, explicit: false };
+}
 
-  const { agent, instruction, dock, projectRoot: targetRoot } = result;
-  console.log("");
-  console.log("=".repeat(60));
-  console.log("  FALSIFYME WORKFLOW AKTIV - Bootstrap abgeschlossen");
-  console.log("=".repeat(60));
-  console.log(`   Agent:       ${agent.label}`);
-  console.log(`   Zielprojekt: ${targetRoot}`);
-  console.log(`   Instruction: ${instruction.target}`);
-  console.log(`   Skills:      ${instruction.skillsDir}`);
-  console.log(`   FalsiFlow:   ${instruction.falsiflowSkillDir}`);
-  console.log(`   Dock:        ${dock.ok ? (dock.skipped ? "uebersprungen (--skip-dock)" : "RUNNING") : "NICHT bestaetigt"}`);
-  console.log("");
-  console.log("Workflow: Coding-Agent -> FalsifyMe -> Dock -> Verdict -> Coding-Agent");
-  console.log("Bis VERDICT: WRITE bleibt der Coding-Agent READ-ONLY.");
-  console.log(`Naechster Schritt: Instruction lesen (${instruction.target}) und folgen.`);
-
-  // API-Key-Status: ohne Key endet jeder echte Job mit Exit 3 (keine Freigabe).
-  let apiKey = null;
-  try { apiKey = loadApiKey(); } catch { /* Konfiguration noch nicht lesbar */ }
-  if (dryRun) {
-    console.log("API-Key: (dry-run - nicht geprueft)");
-  } else if (apiKey) {
-    console.log(`API-Key: konfiguriert (${keyNames().join(", ")})`);
+async function main() {
+  const argv = process.argv.slice(2);
+  let flags;
+  try {
+    flags = bootstrapFlags(argv);
+  } catch (e) {
+    console.error(`FEHLER: ${e.message}`);
+    process.exit(2);
+  }
+  if (flags.dryRun) {
+    // Trockenlauf: kein Dialog, kein Schreiben – Modus nur protokollieren.
+    flags.mode = flags.mode || "optional";
+    flags.reichweite = flags.reichweite || "projekt";
   } else {
-    console.warn("WARNUNG: Kein API-Key konfiguriert - jeder echte Job endet mit Exit 3 (keine Freigabe).");
-    console.warn("  Trage einen Key ein: falsify settings set apiKeyName=MEIN_KEY apiKey=secret");
+    const decision = await resolveModeDecision({ mode: flags.mode, reichweite: flags.reichweite });
+    flags.mode = decision.mode;
+    flags.reichweite = decision.reichweite;
   }
-} catch (e) {
-  console.error(`Bootstrap fehlgeschlagen: ${e?.message || e}`);
-  process.exit(1);
+
+  try {
+    const result = await runBootstrap({
+      root: packageRoot,
+      projectRoot: flags.projectRoot,
+      homeDir: os.homedir(),
+      dryRun: flags.dryRun,
+      skipDock: flags.skipDock,
+      noDesktop: flags.noDesktop,
+      mode: flags.mode,
+      reichweite: flags.reichweite,
+    });
+
+    if (!result.ok) {
+      console.error(`Bootstrap fehlgeschlagen in Stage "${result.stage}": ${result.error}`);
+      process.exit(1);
+    }
+
+    const { agent, instruction, dock, projectRoot: targetRoot } = result;
+    console.log("");
+    console.log("=".repeat(60));
+    console.log("  FALSIFYME WORKFLOW AKTIV - Bootstrap abgeschlossen");
+    console.log("=".repeat(60));
+    console.log(`  Agent        : ${agent.label}`);
+    console.log(`  Zielprojekt  : ${targetRoot}`);
+    console.log(`  Modus        : ${flags.reichweite} · ${flags.mode}${flags.mode !== "PFLICHT" ? " (Empfehlung, kein Pflicht-Gate)" : " (PFLICHT = letztes Git-Check-Gate)"}`);
+    if (instruction && instruction.target && !flags.dryRun) {
+      console.log(`  Instruction  : ${instruction.target}`);
+    }
+    if (dock && dock.ok) {
+      console.log(dock.alreadyRunning ? "  Dock         : laeuft bereits (RUNNING)" : "  Dock         : gestartet und bestaetigt");
+    } else if (dock && dock.unsupportedPlatform) {
+      console.log("  Dock         : Windows-only – headless Worker: node ui/worker.mjs");
+    } else if (dock && dock.skipped) {
+      console.log("  Dock         : uebersprungen (--skip-dock)");
+    } else if (dock) {
+      console.log(`  Dock         : nicht bestaetigt (${dock.error || "unbekannt"}) – manuell: ui/start-dock.cmd`);
+    }
+    console.log("");
+    console.log("  Naechste Schritte: falsify onboard (Key-Dialog) · falsify scope new \"<auftrag>\" · falsify submit …");
+    console.log("");
+  } catch (e) {
+    console.error(`Bootstrap fehlgeschlagen: ${e?.message || e}`);
+    process.exit(3);
+  }
+}
+
+if (process.argv[1] === import.meta.url || import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
+  main();
 }

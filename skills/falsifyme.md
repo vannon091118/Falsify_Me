@@ -88,4 +88,7 @@ angestoßen. Sie trennt Programmdateien (`.Falsify_Core`) von privaten Daten
 Zusätzlich wird der Session-Workflow-Skill `falsifyme-falsiflow` unter
 `.agents/skills/falsifyme-falsiflow/SKILL.md` installiert — er beschreibt den
 kompletten FalsiFlow (Fenster, Scope, Submit, Verdict-Schleife) mit
-aufgelösten statt hartkodierten Pfaden.
+aufgelösten statt hartkodierten Pfaden. Der Self-Install-Skill
+`falsifyme-selfinstall` (`.agents/skills/falsifyme-selfinstall/SKILL.md`)
+weist einen Coding-Agenten an, sich selbst diesen ausführbaren Skill
+nach `~/.agents/skills/` einzurichten und zu verifizieren.

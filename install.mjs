@@ -64,6 +64,11 @@ await copyTree(path.join(root, "skills"), path.join(skillsDir, "falsifyme"));
 const falsiflowSkillDir = path.join(skillsDir, "falsifyme-falsiflow");
 await fs.mkdir(falsiflowSkillDir, { recursive: true });
 await fs.copyFile(path.join(root, "skills", "falsifyme-falsiflow.md"), path.join(falsiflowSkillDir, "SKILL.md"));
+// Self-Install-Skill: weist den Coding-Agenten an, sich selbst den
+// ausfuehrbaren FalsifyMe-Skill nach ~/.agents/skills/ einzurichten.
+const selfinstallSkillDir = path.join(skillsDir, "falsifyme-selfinstall");
+await fs.mkdir(selfinstallSkillDir, { recursive: true });
+await fs.copyFile(path.join(root, "skills", "falsifyme-selfinstall.md"), path.join(selfinstallSkillDir, "SKILL.md"));
 
 if (!noDesktop && process.platform === "win32") {
   const desktop = path.join(home, "Desktop");
@@ -131,4 +136,5 @@ console.log(`FalsifyMe installiert: ${coreDir}`);
 console.log(`Private Daten: ${privateDir}`);
 console.log(`Agent-Skills: ${path.join(skillsDir, "falsifyme")}`);
 console.log(`FalsiFlow-Skill: ${falsiflowSkillDir}`);
+console.log(`Self-Install-Skill: ${selfinstallSkillDir}`);
 if (process.platform === "win32") console.log(`Desktop-Icons: ${noDesktop ? "übersprungen" : "FalsifyMe.lnk + FalsifyMe-TUI-Test.lnk"}`);

@@ -4,8 +4,48 @@
 // Lese-Zugriffe auf die SQLite-Warteschlange (artifacts/jobs.mjs).
 // ─────────────────────────────────────────────────────────────────────────────
 import { openDb, closeDb } from "../artifacts/db.mjs";
-import { getJob, listJobs } from "../artifacts/jobs.mjs";
+import { getJob, listJobs, setJobAbort } from "../artifacts/jobs.mjs";
 import { fail } from "./util.mjs";
+
+// ── ping <job-id> (Wait-Auswertung für Coder/Skill) ─────────────────────────
+// `falsify wait --ping <id>` = EINE Auswertungsrunde statt blockierendem Loop.
+// Denk-/Schreibdauer ist anbieterabhängig nicht abschätzbar – deshalb gibt es
+// KEINEN festen Timeout; der Coder bewertet den Ping und entscheidet über
+// Weiterwarten oder Abbruch (falsify abort <id>).
+// Ausgabe: STATUS <zustand> <verstrichene Sekunden>
+// Exit: 0 = DONE WRITE · 1 = DONE PLAN/RESEARCH · 3 = ERROR/kein Verdict ·
+//       4 = läuft noch (QUEUED/RUNNING – Coder wertet aus)
+export function runPing(id) {
+  const db = openDb();
+  const job = getJob(db, id);
+  if (!job) fail(`Unbekannter Job: ${id}`);
+  const t0 = new Date(job.started_at || job.created_at || Date.now()).getTime();
+  const elapsed = Math.max(0, Math.round((Date.now() - t0) / 1000));
+  console.log(`STATUS ${job.status} ${elapsed}s`);
+  closeDb();
+  if (job.status === "DONE WRITE") process.exitCode = 0;
+  else if (job.status === "DONE PLAN" || job.status === "DONE RESEARCH") process.exitCode = 1;
+  else if (job.status.startsWith("ERROR") || job.status.startsWith("DONE")) process.exitCode = 3;
+  else process.exitCode = 4; // QUEUED/RUNNING: läuft noch – Coder wertet aus
+}
+
+// ── abort <job-id> (CLI-Abbruch eines Queue-Jobs) ───────────────────────────
+// Setzt das Abort-Flag in der Queue; der Worker pollt es während des laufenden
+// Kindprozesses und killt den Job echt. Kein Fake-Verdict: Der Job endet als
+// ERROR "Abgebrochen (CLI)" – keine Freigabe.
+export function runAbort(id) {
+  const db = openDb();
+  const job = getJob(db, id);
+  if (!job) fail(`Unbekannter Job: ${id}`);
+  if (job.status.startsWith("DONE") || job.status.startsWith("ERROR")) {
+    console.log(`Job ${id} ist bereits beendet (${job.status}).`);
+    closeDb();
+    return;
+  }
+  setJobAbort(db, id);
+  console.log(`Abort angefordert für ${id} – der Worker bricht den Job ab (keine Freigabe).`);
+  closeDb();
+}
 
 // ── status <job-id> ──────────────────────────────────────────────────────────
 export function runStatus(id) {

@@ -4,7 +4,8 @@
 // Der Soft-Cap (STARTING -> IDLE) lebt in events.tick (SOFT_CAP_MS).
 // Pure, kein I/O.
 
-// Spec §5: visueller Startup als F A L S I F Y _ M E (mit Unterstrich, gespaced).
+// ui/README-tui.md „Spec: Boot & Selftest“ (vorher „Spec §5“): visueller
+// Startup als F A L S I F Y _ M E (mit Unterstrich, gespaced).
 export const WORD = "FALSIFY_ME";
 export const BUILD_MS = 900;
 export const CONDENSE_MS = 600;

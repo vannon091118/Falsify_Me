@@ -14,7 +14,8 @@
     "test:phase2": "node --test tests/phase2.test.mjs",
     "selftest": "bash selbsttest.sh",
     "doctor": "bash falsify doctor",
-    "install:user": "node install.mjs"
+    "install:user": "node install.mjs",
+    "uninstall:user": "node uninstall.mjs"
   },
   "dependencies": { "ink": "^7.1.1", "react": "^19.2.8" },
   "description_runtime": "Runtime-Dependencies fuer die Terminal-UI: ink + react (zero-dependency Produktkern). SQLite wird über node:sqlite bereitgestellt. CLI, Worker und SQLite laufen auf Windows/Linux/macOS; sichtbare .cmd-Fensterstarter sind Windows-spezifisch."

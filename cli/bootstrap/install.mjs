@@ -20,14 +20,24 @@ export function readInstallLocation(homeDir) {
   return JSON.parse(readFileSync(locationPath, "utf8"));
 }
 
-export function runInstall({ root = packageRoot, dryRun = false } = {}) {
+export function installArgs(noDesktop = false) {
+  // Explizit entscheidbar, kein stilles Sonderverhalten (Root-Cause-Fix,
+  // 2026-09-01): Default = volle Installation inkl. Desktop-Icons, wie bei
+  // `node install.mjs` direkt. noDesktop:true nur fuer Agent-/Headless-
+  // Kontexte (analog install.mjs --no-desktop).
+  const args = [path.join(packageRoot, "install.mjs")];
+  if (noDesktop) args.push("--no-desktop");
+  return args;
+}
+
+export function runInstall({ root = packageRoot, dryRun = false, noDesktop = false } = {}) {
   const installScript = path.join(root, "install.mjs");
   if (!existsSync(installScript)) {
     return { ok: false, error: `install.mjs nicht gefunden: ${installScript}` };
   }
   if (dryRun) return { ok: true, dryRun: true, installScript };
 
-  const result = spawnSync(process.execPath, [installScript, "--no-desktop"], {
+  const result = spawnSync(process.execPath, installArgs(noDesktop), {
     cwd: root,
     stdio: "inherit",
   });

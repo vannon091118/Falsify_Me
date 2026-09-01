@@ -30,6 +30,16 @@ test("install: Pfad auf Paket-Root (install.mjs liegt im Root, nicht in cli/)", 
   assert.equal(packageRoot, ROOT, "packageRoot muss Repo-Root sein");
   assert.ok(fs.existsSync(path.join(packageRoot, "install.mjs")), "install.mjs im Paket-Root");
 
+  // ROOT-CAUSE-TEST (Bug, 2026-09-01): runInstall darf install.mjs NICHT
+  // still mit --no-desktop aufrufen - der Bootstrap ist als Vollinstallation
+  // dokumentiert (README "INSTALL + BOOTSTRAP"). Desktop-Icons nur bei
+  // explizitem noDesktop:true unterdruecken.
+  const { installArgs } = await import(B("install.mjs"));
+  assert.deepEqual(installArgs(false), [path.join(ROOT, "install.mjs")],
+    "Default: KEIN --no-desktop - Icons werden wie bei node install.mjs erzeugt");
+  assert.deepEqual(installArgs(true), [path.join(ROOT, "install.mjs"), "--no-desktop"],
+    "explizites noDesktop:true unterdrueckt Icons (Agent-Kontext)");
+
   // Fehlender install.mjs -> sauberes { ok:false }, kein Crash
   const fakeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bs-root-"));
   const r = runInstall({ root: fakeRoot, dryRun: false });
@@ -71,6 +81,52 @@ test("instructions: persistente Datei wird REAL geschrieben (Enforcement)", asyn
   // bash-Template erzeugt valides Bash
   const resBash = await writeInstruction({ type: "bash", label: "Y" }, { root, homeDir: home, coreDir });
   assert.ok(fs.existsSync(resBash.target));
+});
+
+test("instructions: Modus-Kopfzeile (UI-075) – PFLICHT/optional, nie still", async () => {
+  const { writeInstruction, modeHeader } = await import(B("instructions.mjs"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "bs-mode-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bs-mode-proj-"));
+  const coreDir = path.join(home, ".Falsify_Core");
+
+  // Explizit PFLICHT + global -> Kopfzeile dokumentiert
+  const p = await writeInstruction({ type: "codebuff", label: "X" }, { root, homeDir: home, coreDir, mode: "PFLICHT", reichweite: "global" });
+  const textP = fs.readFileSync(p.target, "utf8");
+  assert.ok(textP.includes("<!-- FALSIFYME-MODUS: global · PFLICHT -->"), "PFLICHT-Kopfzeile (md)");
+
+  // Default ohne Modus -> optional + Marker (keine stille Aktivierung)
+  const root2 = fs.mkdtempSync(path.join(os.tmpdir(), "bs-mode-proj2-"));
+  const d = await writeInstruction({ type: "codebuff", label: "X" }, { root: root2, homeDir: home, coreDir });
+  const textD = fs.readFileSync(d.target, "utf8");
+  assert.ok(textD.includes("<!-- FALSIFYME-MODUS: projekt · optional -->"), "Default = optional, dokumentiert");
+
+  // sh/ps1-Format: #-Kommentar
+  assert.equal(modeHeader("bash", { mode: "PFLICHT", reichweite: "projekt" }), "# FALSIFYME-MODUS: projekt · PFLICHT");
+  assert.equal(modeHeader("powershell", { mode: "optional", reichweite: "aus" }), "# FALSIFYME-MODUS: aus · optional");
+  assert.equal(modeHeader("generic", { mode: "optional", reichweite: "projekt" }), "<!-- FALSIFYME-MODUS: projekt · optional -->");
+
+  // Keine unersetzten Platzhalter in allen Formaten
+  const { renderTemplate } = await import(B("instructions.mjs"));
+  for (const type of ["codebuff", "bash", "powershell", "generic"]) {
+    const t = renderTemplate(type, {
+      SKILLS: "/s", FALSIFLOW_SKILL: "/f", CORE: "/c", ROOT: "/r",
+      MODE_HEADER: modeHeader(type, { mode: "optional", reichweite: "projekt" }),
+    });
+    assert.ok(!t.includes("{{"), `${type}: keine unersetzten Platzhalter`);
+  }
+});
+
+test("bootstrapFlags: --mode/--reichweite werden geparst und validiert", async () => {
+  const { bootstrapFlags } = await import(pathToFileURL(path.join(ROOT, "cli", "bootstrap.mjs")).href);
+  const f = bootstrapFlags(["--mode=pflich", "--reichweite=global", "--skip-dock"]);
+  assert.equal(f.mode, "PFLICHT");
+  assert.equal(f.reichweite, "global");
+  assert.equal(f.skipDock, true);
+  const o = bootstrapFlags(["--mode=optional"]);
+  assert.equal(o.mode, "optional");
+  assert.equal(o.reichweite, undefined, "ohne --reichweite bleibt Default dem Aufrufer ueberlassen");
+  assert.throws(() => bootstrapFlags(["--mode=unsicher"]), /Ungueltiger --mode/);
+  assert.throws(() => bootstrapFlags(["--reichweite=ueberall"]), /Ungueltige --reichweite/);
 });
 
 test("bootstrap: dry-run schreibt weder Instruction noch Home-Datei", async () => {

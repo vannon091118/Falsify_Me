@@ -9,6 +9,32 @@ und neue Integrationsaufgaben stehen verbindlich in `ui/PLAN.md`.
 
 ---
 
+## 0. KERNPRINZIP (unverhandelbar)
+
+Die Kernfunktion ist die **FALSIFIKATION der Coder-Annahmen** – eine kritische
+Peer-Review durch einen unabhängigen Betrachter: Coder und FalsifyMe pruefen
+UNABHAENGIG voneinander dieselben Daten; FalsifyMe versucht, die Annahmen des
+Coders zu WIDERLEGEN. Die Divergenz der beiden abschliessenden Urteile ist der
+**GAP**, den der Loop schliesst. `RESEARCH` ist nur ein MODUL der
+Datenbeschaffung fuer die Falsifikation, nie der Kern.
+
+Invarianten (jede Aenderung wird dagegen geprueft):
+- **Eine Job/Scope-Queue** (`artifacts/jobs.mjs` + `artifacts/scopes.mjs`) ist
+  die EINZIGE Wahrheit; kein Codepfad schreibt Job-/Scope-Zustand ausserhalb
+  dieser Module.
+- **Verdict-Hoheit** liegt ausschliesslich beim Falsifikations-Agent (Modell).
+  Deterministische Pre-Checks (feasibility) liefern nur Kontext-Hinweise und
+  erteilen KEIN Verdict, schliessen KEINEN Job.
+- **Wissen gehoert dem Nutzer**: lokal in `FALSIFY_HOME` (Default
+  `~/.Falsify_Private`), kein Sammeln, keine Telemetrie; Modell-Nutzung via
+  API ist Nutzerentscheidung. Der Scope-HEADER (User-Input 1:1) ist der
+  Drift-Anker.
+- Jede Komponente (TUI, Dock, Skills, Installer) existiert nur, um die
+  Falsifikation effizienter/verlaesslicher zu machen; nichts umgeht den
+  Falsifikations-Pfad. Neue Systeme sind begruendungspflichtig gegen §0.
+
+---
+
 ## 1. SO IST DIE LANDKARTE (30 Sekunden)
 
 ```
@@ -25,12 +51,18 @@ ui/                        ← Terminal-UI (Phase 1+2, live verdrahtet)
   demo-agent.mjs           ← Fake-Agent (echter Stream, FM-EVT:-Marker)
   tui/                     ← Bausteine (1 Modul = 1 Verantwortung, siehe §5)
 core/settings.mjs          ← Runtime-Provider/Model/Key + live /models-Abfrage
+core/feasibility.mjs       ← Umsetzbarkeits-Puffer (Intent→Execution, §14)
 cli/settings.mjs           ← settings show/set + models (siehe §6)
   tui/views/               ← React/Ink Views (NUR Darstellung, stateless)
 worker.mjs                 ← PRODUKT: TUI-Host (createTui + Parser-Feed, Phase 2)
 cli/run.mjs                ← PRODUKT: FM-EVT:-Marker (Kindprozess des Workers)
 core/agent.mjs             ← additiver onTool-Callback (echte Tool-Aktivitaet)
 ui/start-dock.cmd          ← sichtbarer Worker-Start (Fenster 1..3)
+cli/onboard.mjs            ← Onboarding-Dialog (falsify onboard, siehe §13)
+cli/jobs.mjs               ← status/jobs/ping/abort (Wait-Auswertung + CLI-Abbruch)
+cli/onboard/prompts.mjs    ← echter readline-Dialog: ask/askSecret(maskiert)/confirm
+cli/onboard/steps.mjs      ← Onboarding-Ablauf (Settings abfragen, Dock-Start)
+uninstall.mjs              ← vollständige Deinstallation (Gegenstück zu install.mjs)
 ```
 
 ### START / TEST (Run-Optionen)
@@ -43,7 +75,7 @@ START-TUI.cmd --auto       ausdrücklich opt-in: Demo-Timeline mit 5 Jobs auf Sl
                            (bis zu 3 feste Slots parallel im einen Terminal-pid)
 START-TUI.cmd -desktop     nur Desktop-Icons anlegen (opt-in, einmalig)
 TEST-TUI.cmd               kompletter Verifikationslauf (105 Tests + Intro + Demo + Kill-Check)
-Desktop: FalsifyMe-TUI-Start.lnk / FalsifyMe-TUI-Test.lnk  (sobald opt-in erteilt)
+Desktop: FalsifyMe.lnk (Dock) / FalsifyMe-TUI-Test.lnk (Verifikation)
 ```
 
 **Jobs von ausserhalb (der eigentliche Betrieb):** Das Fenster ist REINE
@@ -112,7 +144,7 @@ Marker-Zeilen im Kindprozess-Stream: `FM-EVT: <json>` — werden vom Parser
 diesen Slot. Ohne Angabe wirkt es auf den Fokus-Slot (folgt dem neuesten Job).
 Ein `job`-Event belegt einen freien Slot (belegten Wunsch-Slot → naechster
 freier) und zieht den Fokus auf sich. Fokus wechseln: `{t:"focus", slot:n}`.
-`{t:"selftest", status | step | result}` — echter Startup-Selftest (nur TTY-Worker): `step {name, ok, detail}` = Ergebnis EINER echten Pruefung (RUNTIME/DATABASE/CONFIG/API KEY/QUEUE/WORKER/READ-ONLY, ✓/✕ je realem Ausgang), `result pass|fail` = Endzustand (fail haelt den Boot im Fehlerzustand, Spec §6.6), `status` = kurzes Label (kompatibel). Kein Job-Event, nur im Boot-Intro sichtbar; keine hardcodierten Erfolgs-Steps.
+`{t:"selftest", status | step | result}` — echter Startup-Selftest (nur TTY-Worker): `step {name, ok, detail}` = Ergebnis EINER echten Pruefung (RUNTIME/DATABASE/CONFIG/API KEY/QUEUE/WORKER/READ-ONLY, ✓/✕ je realem Ausgang), `result pass|fail` = Endzustand (fail haelt den Boot im Fehlerzustand, vgl. ui/README-tui.md „Spec: Boot & Selftest"), `status` = kurzes Label (kompatibel). Kein Job-Event, nur im Boot-Intro sichtbar; keine hardcodierten Erfolgs-Steps; Ergebnis wird zusaetzlich nach `FALSIFY_HOME/logs/selftest.log` geschrieben.
 Alle Slots endzustaendig (IDLE/SUCCESS/ERROR/TIMEOUT/ABORTED) ⇒ `globalIdle`
 ⇒ WARTE-AUF-EINGABE-Screen.
 
@@ -175,11 +207,15 @@ oder:         start "FalsifyMe-TUI" cmd /k node ui\tui-demo.mjs %*
 ## 6. INSTALLATION UND FALSIFLOW-SKILLS
 
 `node install.mjs` installiert die Programmdateien benutzerweit nach
-`%USERPROFILE%\\.Falsify_Core` bzw. `~/.Falsify_Core`, getrennt von privaten
-Laufzeitdaten unter `.Falsify_Private`. Der Installer prüft den globalen
+`%USERPROFILE%\\.Falsify_Core` bzw. `~/.Falsify_Core`, getrennt von den
+privaten Wissensdaten unter `FALSIFY_HOME` (Default `~/.Falsify_Private` =
+SQLite, Keys, Logs). Der Installer prüft den globalen
 `.agents`-Ordner und legt `skills/falsifyme` dort an; fehlt `.agents`, wird er
 angelegt. Zusätzlich installiert er den FalsiFlow-Session-Skill
-`falsifyme-falsiflow` unter `.agents/skills/falsifyme-falsiflow/SKILL.md`.
+`falsifyme-falsiflow` unter `.agents/skills/falsifyme-falsiflow/SKILL.md`
+und den Self-Install-Skill `falsifyme-selfinstall` unter
+`.agents/skills/falsifyme-selfinstall/SKILL.md` (weist den Coding-Agenten
+an, sich selbst einen ausführbaren FalsifyMe-Skill einzurichten).
 Unter Windows werden zwei Desktop-Icons erzeugt: `FalsifyMe.lnk`
 (startet den Worker-Dock, echte Jobs live sichtbar) und `FalsifyMe-TUI-Test.lnk`
 (kompletter Verifikationslauf). Option: `node install.mjs --no-desktop`.
@@ -210,6 +246,8 @@ falsify models --api-base "https://host/v1" --api-key "$PROVIDER_KEY"
 `core/settings.mjs` schreibt nicht ins Repo: Konfiguration liegt in
 `FALSIFY_HOME/config.json`, der API-Key in `FALSIFY_HOME/.env` mit privaten
 Dateirechten (POSIX 0600; Windows ACLs bleiben dem Benutzerkonto überlassen).
+`FALSIFY_HOME`-Default ist `~/.Falsify_Private` (Programm = `.Falsify_Core`);
+die Env-Variable `FALSIFY_HOME` bleibt als Override nutzbar.
 `settings show` gibt keinen Key aus. `/models` ist provider-neutral und nutzt
 den konfigurierten Endpunkt; Pricing wird nur aus Provider-Antwort oder
 lokaler Konfiguration übernommen, niemals erfunden. Die bestehende
@@ -230,14 +268,27 @@ node ui/tui-demo.mjs --plain --fast
 node ui/tui-demo.mjs --plain --stress --abort-after=1500 --scenarios=write
 # Externer Feed (Agent -> TUI via stdin-JSONL):
 node ui/tui-demo.mjs --plain < jobs.jsonl
+
+# Onboarding-Dialog (siehe §13):
+node --test tests/onboard.test.mjs   # Dialog: detectInstallation/collectSettings/
+                                     # updateRuntimeSettings/Key-Maskierung/Prompter
+
+# Queue-Invarianten (Batch-Refactor 2026-09-01): wait --ping/--abort,
+# Heartbeat-Staleness, GAP-Erfassung, WRITE-Challenge, Modus-Kopfzeile:
+node --test tests/queue.test.mjs tests/bootstrap.test.mjs tests/feasibility.test.mjs
+
+# Umsetzbarkeits-Puffer (siehe §14):
+node --test tests/feasibility.test.mjs  # 7 Tests: leerer Plan / fehlende Whitelist-
+                                        # Datei (RESEARCH) / Zugriffsrahmen-Warning /
+                                        # ..-Traversal / Intent-Drift / Header-Passung
 ```
 
 ## 9. OFFENE UND AUFGESCHOBENE TASKS
 
-`ui/PLAN.md` ist die maßgebliche Aufgabenliste. Aktuell offen sind nur die
-manuellen User-Checkpoints `UI-030`, `UI-034`, `UI-035` und `UI-038` sowie der
-Abschluss-Task `UI-040`. Sie dürfen nicht als abgeschlossen behauptet werden,
-solange der User die sichtbare Prüfung nicht bestätigt hat.
+`ui/PLAN.md` ist die maßgebliche Aufgabenliste. Aktuell offen ist nur
+`UI-073` (API-Key-Abfrage beim Install/Bootstrap; bis dahin: README
+„API-Key / .env manuell einrichten" + `falsify onboard`). Alle anderen
+Tasks sind DONE (Stand 2026-09-01, Batch-Refactor).
 
 Die Phase-2-Integration in Worker/CLI ist umgesetzt und via
 `npm run test:phase2` verifiziert (BLOCK 6 in `ui/PLAN.md`); die sichtbare
@@ -249,6 +300,10 @@ Antworten/Commits leben.
 
 ## 10. REGELN (unverhandelbar)
 
+- **KERNPRINZIP §0:** Falsifikation der Coder-Annahmen; eine Job/Scope-Queue;
+  Verdict-Hoheit nur beim Falsifikations-Agent; Wissen lokal für den Nutzer.
+  Neue Systeme sind begründungspflichtig — kein zweiter Verteilweg, keine
+  zweite Orchestrierungsebene, kein zweiter Status-/Verdict-Pfad.
 - **SCOPE:** Phase 1 = nur `ui/` + `package.json` deps. Phase 2 (BLOCK 6,
   abgeschlossen) umfasst `cli/run.mjs` (nur Marker addieren), `ui/worker.mjs`
   (TUI-Host), `ui/start-dock.cmd` (neu) und `core/agent.mjs` (nur additiver
@@ -266,68 +321,7 @@ Antworten/Commits leben.
 4. `VERIFY`-Kommando ausführen · 5. `RESULT` + `STATUS` persistieren.
 ---
 
-## 12. BOOTSTRAP (neu, §12)
-
-Der Bootstrap ist der Einstiegspunkt, wenn ein Coding-Agent den Befehl
-`"INSTALLIER BITTE https://github.com/vannon091118/Falsify_Me"` erhält.
-
-### Bootstrap-Ablauf
-
-```text
-Coding-Agent
-    ↓
-"INSTALLIER BITTE …"
-    ↓
-node install.mjs / falsify bootstrap
-    ↓
-1. Installation (existierendes install.mjs)
-2. Agent-Detektion (Codebuff/Bash/PowerShell/generic)
-3. Sichtbares Dock starten (ui/start-dock.cmd)
-4. Workflow-Protokoll ausgeben
-    ↓
-Coding-Agent → FalsifyMe → Dock → Verdict → Coding-Agent
-```
-
-### Implementierte Komponenten
-
-| Datei | Verantwortung |
-|---|---|
-| `cli/bootstrap.mjs` | Bootstrap-Einstieg: Installation, Agent-Detektion, Dock-Start, Workflow-Protokoll |
-| `cli/falsify.sh` | Neuer Befehl `falsify bootstrap` |
-| `cli/help.mjs` | Hilfetext um `falsify bootstrap` erweitert |
-| `README.md` | Dokumentation des Bootstrap-Verfahrens |
-
-### Agent-Detektion
-
-Die Funktion `detectAgent()` in `cli/bootstrap.mjs` erkennt:
-
-- **Codebuff/Freebuff**: Node.js-Umgebungsmarker → Instruction-Format `.mjs`
-- **Bash-Agent**: `SHELL` enthält `bash` → Instruction-Format `.sh`
-- **PowerShell-Agent**: Windows + `PSModulePath` → Instruction-Format `.ps1`
-- **Generisch**: Fallback → Node.js-Modul
-
-### Instruction-Formate
-
-Jedes Format nutzt die existierenden FalsifyMe-Skills:
-
-- `~/.agents/skills/falsifyme/agent-skill-falsify.sh` (Bash)
-- `~/.agents/skills/falsifyme/agent-skill-falsify.mjs` (Node.js)
-- `~/.agents/skills/falsifyme/agent-skill-falsify.ps1` (PowerShell)
-- `~/.agents/skills/falsifyme-falsiflow/SKILL.md` (FalsiFlow-Dokumentation)
-
-Das Bootstrap generiert keine neuen Skills – es erzeugt nur das
-agentenspezifische Instruction-Format, das auf die existierenden Skills verweist.
-
-### Regeln
-
-- Keine Duplizierung des install.mjs – das bestehende install.mjs wird aufgerufen.
-- Keine neue Queue, Scope- oder Verdict-Logik – alles existiert.
-- Kein headless Dock – das Dock muss sichtbar sein (WIRING §4).
-- Der Bootstrap aktiviert sofort den Workflow – keine weitere manuelle Aktivierung.
-
----
-
-## 13. BOOTSTRAP (modular, revidiert)
+## 12. BOOTSTRAP (modular, revidiert)
 
 Der Bootstrap (`falsify bootstrap` / `node cli/bootstrap.mjs`) ist modular
 aufgebaut — Logik in `cli/bootstrap/`, Templates als statische Dateien in
@@ -340,11 +334,20 @@ Dateien nicht mehr durch Escape-Fehler kaputtgehen koennen).
 |---|---|
 | `cli/bootstrap.mjs` | duenner Einstiegspunkt (Flags: `--dry-run`, `--skip-dock`) |
 | `cli/bootstrap/detect.mjs` | Agent-Detektion (pure, testbar: env/platform als Parameter) |
-| `cli/bootstrap/install.mjs` | ruft das EXISTIERENDE `install.mjs` im **Paket-Root** auf (`packageRoot`); liest `install-location.json` |
+| `cli/bootstrap/install.mjs` | ruft das EXISTIERENDE `install.mjs` im **Paket-Root** auf (`packageRoot`); liest `install-location.json`; `installArgs(noDesktop)` — Default: volle Installation inkl. Desktop-Icons, `--no-desktop` nur explizit (Root-Cause-Fix 2026-09-01, UI-077). Bereits installiert (install-location.json vorhanden) → Kopie wird uebersprungen (kein zweiter Verteilweg) |
 | `cli/bootstrap/instructions.mjs` | schreibt die persistente Instruction-Datei (Enforcement) |
 | `cli/bootstrap/dock.mjs` | sichtbares Dock: Windows-only, Retry-Poll, kein Fake-Erfolg |
 | `cli/bootstrap/main.mjs` | Kompositionswurzel (`runBootstrap`) |
 | `cli/bootstrap/templates/*.md/.sh/.ps1` | Instruction-Templates mit `{{PLATZHALTERN}}` |
+
+### Modus-Entscheid (UI-075, keine stille Gate-Aktivierung)
+
+Vor dem Schreiben der Instruction-Datei wird Reichweite (`projekt`/`global`/
+`aus`) und Betriebsmodus (`PFLICHT`/`optional`) festgelegt: interaktiv ueber
+den Prompter (`cli/onboard/prompts.mjs`) oder per Flags `--mode=`/
+`--reichweite=`. Default ohne Flag = `optional` + Warnung; PFLICHT entsteht
+NIE still. Die Kopfzeile `FALSIFYME-MODUS: <reichweite> · <modus>` wird in
+jeder Instruction-Datei dokumentiert (md-Kommentar bzw. #-Kommentar).
 
 ### Enforcement (Review-Fehler 2 behoben)
 
@@ -368,9 +371,83 @@ den headless Worker-Aufruf, statt einen nicht existierenden Fensterstart zu
 behaupten. Die RUNNING-Bestaetigung erfolgt per Retry-Poll (30x1s, UI-064-
 Muster), nicht per 2s-Einzelcheck.
 
+### Deinstallation (uninstall.mjs, Gegenstück zu install.mjs)
+
+`node uninstall.mjs` wickelt die Benutzerinstallation vollständig ab:
+Worker stoppen (PIDs aus `ui/worker.mjs --check`), `~/.Falsify_Core` +
+`~/.Falsify_Private` entfernen, `~/.agents/skills/falsifyme*` und
+Instruction-Dateien + Profil-Marker entfernen, den markierten
+Instruction-Block aus `AGENTS.md`/`FALSIFYME-WORKFLOW.md` des Zielprojekts
+(`--project-root` oder aktuelle cwd), `~/.Falsify` (FALSIFY_HOME: Key-Inhalt
+vorher nach `~/.Falsify.env.uninstall-backup` gesichert; `--keep-env` behält
+alles) und npm-Global-Shims. Flags: `--dry-run`, `--keep-env`, `--project-root`.
+Idempotent; `package.json`: `npm run uninstall:user`. Der Modus-Entscheid
+(Reichweite/Betriebsmodus, nur `PFLICHT` = Gate) ist im Skill
+`falsifyme-selfinstall` verankert.
+
 ### Verifikation
 
 ```bash
-node --test tests/bootstrap.test.mjs   # 4 Tests: detect/install/instructions/dock
+node --test tests/bootstrap.test.mjs   # detect/install/instructions/dock + Modus-Kopfzeile
 node cli/bootstrap.mjs --dry-run --skip-dock   # echter Trockenlauf ohne Installation
+node uninstall.mjs --dry-run           # Deinstallations-Trockenlauf
 ```
+
+## 13. ONBOARDING (falsify onboard, modular)
+
+`falsify onboard` ist der interaktive Ersteinrichtungs-Dialog: FALSIFYME
+redet DIREKT mit dem Nutzer (kein stiller Setup-Lauf). Er fragt API-Endpunkt,
+Modell, Key-Name und API-Key (maskiert) ab, schreibt die Runtime-Settings
+(Keys nur in `FALSIFY_HOME/.env`, 0600), bietet live `/models` an und
+startet danach das sichtbare Dock (Windows, TUI).
+
+### Module (1 Datei = 1 Verantwortung)
+
+| Datei | Verantwortung |
+|---|---|
+| `cli/onboard.mjs` | duenner Einstiegspunkt: Flags `--skip-dock`/`--help`, TTY-Guard (ohne Terminal: klare Fehlermeldung + Agent-Hinweis auf `falsify settings set …`, Exit 2) |
+| `cli/onboard/prompts.mjs` | Dialog-Bausteine: `ask` (Default aus Antwort), `askSecret` (jeder Tastendruck = \*), `confirm`, `fakePrompter` für Tests (injizierbar, Default-Verhalten identisch) |
+| `cli/onboard/steps.mjs` | `runOnboard` (Kompositionswurzel): `showStatus` → `collectSettings` → `updateRuntimeSettings` → optional `/models` → Dock-Start → `showSummary`; Prompter/Plattform injizierbar |
+
+### Regeln / Verträge
+
+- **Ehrlichkeit:** leerer Key / leere Antwort = „keine Änderung", kein Ratten; der
+  Key erscheint NIE im Klartext (weder in Fragen noch in Ausgabe/JSON).
+
+## 14. UMSETZBARKEITS-PUFFER (Intent → Execution, UI-078)
+
+FalsifyMe ist der Puffer zwischen dem gesendeten User-Input (= Scope-Header,
+der Intent) und der Execution: Bevor irgendein Modell-Call läuft, prüft
+`core/feasibility.mjs` deterministisch und read-only, ob die Einreichung
+überhaupt umsetzbar ist. Bei `feasible=false` endet der Job SOFORT mit
+`VERDICT: PLAN` (Plan adressiert den Intent nicht) oder `RESEARCH` (Dateien/
+Whitelist fehlen) und Exit 1 — ohne API-Kosten, ohne ins Projekt zu schreiben.
+Bei `feasible=true` bleibt der Lauf unverändert (additiv, kein System-Eingriff).
+
+### Prüfungen (1 Datei = 1 Verantwortung, deterministisch)
+
+| Prüfung | Verhalten |
+|---|---|
+| Plan leer | blockt (immer) |
+| Whitelist-Datei existiert nicht unter root | blockt → RESEARCH (FalsifyMe braucht echte Dateien) |
+| Whitelist `..`-Traversal / absoluter Pfad | blockt (Pfadsicherheit) |
+| Plan nennt existierende Datei ausserhalb Whitelist | Warning „Zugriffsrahmen" (Agent darf sie nicht lesen) |
+| Plan nennt neue/nicht existierende Datei | Warning „Annahmen prüfen" |
+| Kein signifikanter Header-Begriff im Plan (Intent-Drift) | Warning „Plan gegen Auftrag schärfen" |
+
+### Integration + Testfallen (empirisch, 2026-09-01)
+
+- Aufruf: `cli/run.mjs` → `main()` direkt nach `enforceRateLimit`, vor `runAgent`.
+  UI-Events (FINDINGS/verdict/done), Scope-Finding + `jobDone` werden wie bei
+  einem normalen Verdict gesetzt — das Dock zeigt den Abbruch ehrlich an.
+- **Testfalle:** `--job-id`-Lauf von Hand liest ohne `--plan-file` stdin und
+  wartet auf EOF — immer `< /dev/null` dranhängen (der Worker startet run.mjs
+  mit geschlossenem stdin). Schnelle Folgeläufe hängen im bestehenden
+  Rate-Limit (40/min) — kein Puffer-Fehler.
+- **Agenten ohne Terminal:** `falsify onboard` verweigert ohne TTY ehrlich (Exit 2)
+  und verweist auf `falsify settings set …` — kein stilles Hängen.
+- **TUI/Dock:** das sichtbare Dock wird NUR auf Windows gestartet und per
+  Retry-Poll bestätigt (bootstrap/dock.mjs); auf anderen Plattformen ehrliche
+  Meldung. `--skip-dock` unterdrückt den Start.
+- **Settings-Zentrale** bleibt `core/settings.mjs` (updateRuntimeSettings/
+  getRuntimeSettings) — onboard dupliziert keine Logik.

@@ -1,3 +1,5 @@
+{{MODE_HEADER}}
+
 # FalsifyMe Workflow-Anweisung (AGENTS.md)
 
 Dieses AGENTS.md wird vom Coding-Agenten gelesen und zwingt ihn in den

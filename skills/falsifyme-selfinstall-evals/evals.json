@@ -1,0 +1,23 @@
+{
+  "skill_name": "falsifyme-selfinstall",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Installier bitte falsifyme von github",
+      "expected_output": "Vollständige Selbst-Installation für den Coding-Agenten: node install.mjs → ~/.Falsify_Core, ~/.agents/skills/falsifyme (ausführbare .mjs/.sh/.ps1), ~/.agents/skills/falsifyme-selfinstall/SKILL.md; Bootstrap mit Agent-Erkennung; Ausführbarkeit verifiziert (--help Exit 0); ehrlicher API-Key-Hinweis statt erfundener Erfolg.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Prüfe, ob der Falsify-Skill für dich als Agent wirklich läuft",
+      "expected_output": "Verifikation statt Neuinstallation: node ~/.agents/skills/falsifyme/agent-skill-falsify.mjs --help (Exit 0), falsify doctor (FALSIFY_HOME/DB/Dependencies), worker --check (RUNNING), klare ✓/✕-Liste.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Bootstrap falsifyme",
+      "expected_output": "Trigger trotz Kurzform ohne Wort 'Skill': Selbst-Install-Ablauf wird gestartet/verifiziert und der User erhält den Abschlussbericht (installiert, ausführbar, Dock, API-Key-Status).",
+      "files": []
+    }
+  ]
+}

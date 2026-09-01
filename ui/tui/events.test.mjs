@@ -211,7 +211,7 @@ test("files: Event mit Liste speichert echte Scan-Dateien (begrenzt auf 20)", ()
   assert.equal(s.slots[0].filesList.length, 20);
 });
 
-test("selftest: echter Status fuer Boot-Intro (Spec §6)", () => {
+test("selftest: echter Status fuer Boot-Intro (ui/README-tui.md, Spec: Boot & Selftest)", () => {
   const s = createUiState();
   apply(s, { t: "boot" }, t0);
   assert.equal(s.testStatus ?? null, null, "vor selftest-Event: kein Status");

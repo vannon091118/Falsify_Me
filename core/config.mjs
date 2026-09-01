@@ -3,7 +3,8 @@
 // -----------------------------------------------------------------------------
 // KEINE hartkodierten Pfade/APIs: alles kommt aus (Priorität absteigend)
 //   1) Env-Variablen (FALSIFY_*)
-//   2) ~/.Falsify/config.json   (optional, ausserhalb des Repos)
+//   2) FALSIFY_HOME/config.json (optional, ausserhalb des Repos;
+//      Default-Home: ~/.Falsify_Private)
 //   3) sinnvolle Defaults (OpenAI-kompatibel; NVIDIA NIM ist nur ein Beispiel)
 //
 // Jeder OpenAI-kompatible Endpunkt funktioniert: NVIDIA NIM, OpenAI,

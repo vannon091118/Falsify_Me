@@ -41,7 +41,7 @@ neuen Fenster geöffnet; alles bleibt im selben Terminal-Prozess/PID.
 ```text
 Doppelklick:  ui\START-TUI.cmd   Intro -> WARTE AUF EINGABE
               ui\TEST-TUI.cmd    Testsequenz inklusive Intro
-Desktop:      FalsifyMe-TUI-Start.lnk / FalsifyMe-TUI-Test.lnk
+Desktop:      FalsifyMe.lnk (Dock) / FalsifyMe-TUI-Test.lnk (Verifikation)
 ```
 
 ### Opt-in-Demo: `--auto`
@@ -228,3 +228,23 @@ Live-Fenster 10 s anschauen, **ohne Text zu lesen**:
 
 Wenn der manuelle Check eine Schwäche zeigt: Layout vereinfachen — nicht mehr
 Elemente hinzufügen.
+
+## Spec: Boot & Selftest (vorher „Spec §5/§6" — jetzt im Repo)
+
+Dieser Abschnitt ersetzt die frueheren externen Spec-Verweise („Spec §5/§6",
+„Spec §6.6") und ist der verbindliche Vertrag fuer Boot-Intro und
+Startup-Selftest:
+
+- **Boot-Wort (Spec §5):** Das Intro baut visuell `F A L S I F Y _ M E`
+  (mit Unterstrich, gespaced) auf — `boot.mjs` `WORD = "FALSIFY_ME"`.
+- **Selftest (Spec §6):** Der Worker emit-t beim Startup echte Pruefungen als
+  `{t:"selftest", step:{name,ok,detail}}` in dieser Reihenfolge: RUNTIME →
+  DATABASE → CONFIG → API KEY → QUEUE → WORKER → READ-ONLY. Jeder Schritt ist
+  das Ergebnis EINER echten Pruefung (kein Fake, kein Timer); `API KEY` darf
+  ehrlich ✕ melden (erwartetes Verhalten, blockiert nicht). Zusaetzlich wird
+  das Ergebnis nach `FALSIFY_HOME/logs/selftest.log` geschrieben.
+- **Endzustand (Spec §6.6):** `{t:"selftest", result:"fail"}` haelt das
+  Boot-Intro im Fehlerzustand (kein stummer Fall auf Idle), solange ein
+  Pflicht-Schritt (DB/CONFIG/QUEUE/WORKER/READ-ONLY) fehlgeschlagen ist.
+- **Kein Mock:** Das Produkt zeigt keinen Demo-/Fake-Screen; die TUI zeigt
+  echte Jobs, `tui-demo.mjs` bleibt reines Test-/Demo-Harness.

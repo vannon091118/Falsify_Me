@@ -2,11 +2,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // FalsifyMe 2.0 · artifacts/db.mjs – SQLite-Grundlage (EINZIGE Persistenzquelle)
 // -----------------------------------------------------------------------------
-// Alle Daten liegen AUSSERHALB des Repos in FALSIFY_HOME (Default: ~/.Falsify):
+// Alle Daten liegen AUSSERHALB des Repos in FALSIFY_HOME (Default:
+// ~/.Falsify_Private — das private Wissensverzeichnis, getrennt vom Programm
+// in ~/.Falsify_Core):
 //   .env          → API-Keys (lokal, nichts für GitHub)
 //   falsify.db    → SQLite (WAL) – Scopes, Findings (Befunde), Jobs, Meta
 //   logs/         → Fenster-/Dock-Logs, optionale Antwort-Exporte
 //   .rate_limit   → 40-RPM-Persistenz
+//
+// Privacy-Vertrag: Die Daten gehören dem NUTZER und sind NUR für das lokale
+// FalsifyMe verfügbar (kein Sammeln, kein Telemetrie-Upload). Modelle, die
+// FalsifyMe via API nutzt, sehen nur das, was der Nutzer selbst einreicht
+// (Nutzerentscheidung). Der Scope-HEADER (User-Input 1:1) ist der Drift-Anker.
 //
 // Dieses Modul stellt Verbindung + Schema + Meta bereit. Die fachlichen
 // Zugriffe sind granular aufgeteilt:
@@ -25,7 +32,10 @@ export function falsifyHome() {
   if (process.env.FALSIFY_HOME && process.env.FALSIFY_HOME.trim()) {
     return path.resolve(process.env.FALSIFY_HOME.trim());
   }
-  return path.join(os.homedir(), ".Falsify");
+  // Default: ~/.Falsify_Private (private Wissensdaten, getrennt vom Programm
+  // ~/.Falsify_Core). FALSIFY_HOME bleibt als Override nutzbar (z. B. Tests,
+  // Migration bestehender Installationen).
+  return path.join(os.homedir(), ".Falsify_Private");
 }
 
 /** Legt FALSIFY_HOME an (inkl. logs/ und .env-Vorlage), falls er fehlt. */
@@ -46,7 +56,7 @@ export function ensureFalsifyHome() {
           "OPENAI_API_KEY=",
           "FALSIFY_API_KEY=",
           "",
-          "# Ziel/Modell überschreiben (alternativ ~/.Falsify/config.json oder Env-Vars):",
+          "# Ziel/Modell überschreiben (alternativ ~/.Falsify_Private/config.json oder Env-Vars):",
           "# FALSIFY_API_BASE=https://integrate.api.nvidia.com/v1",
           "# FALSIFY_MODEL=nvidia/nemotron-3-ultra-550b-a55b",
           "",
@@ -127,6 +137,14 @@ function migrate(db) {
   // Migration: Spalte sub_prompt bei bestehenden Datenbanken nachrüsten.
   try {
     db.exec("ALTER TABLE scopes ADD COLUMN sub_prompt TEXT");
+  } catch { /* Spalte existiert bereits */ }
+  // Migration: Spalte last_gap (GAP-Erfassung: offener Divergenz-Befund).
+  try {
+    db.exec("ALTER TABLE scopes ADD COLUMN last_gap TEXT");
+  } catch { /* Spalte existiert bereits */ }
+  // Migration: abort_requested (CLI-Abbruch für Queue-Jobs).
+  try {
+    db.exec("ALTER TABLE jobs ADD COLUMN abort_requested INTEGER DEFAULT 0");
   } catch { /* Spalte existiert bereits */ }
 
   setMeta(db, "schema_version", SCHEMA_VERSION);

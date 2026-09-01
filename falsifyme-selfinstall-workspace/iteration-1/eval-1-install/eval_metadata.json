@@ -1,0 +1,11 @@
+{
+  "eval_id": 1,
+  "eval_name": "install",
+  "prompt": "Installier bitte falsifyme von github",
+  "assertions": [
+    { "text": "SKILL.md liegt unter ~/.agents/skills/falsifyme-selfinstall/", "passed": true, "evidence": "exists: /c/Users/Vannon/.agents/skills/falsifyme-selfinstall/SKILL.md" },
+    { "text": "Ausführbarer Skill liefert Exit 0 (node agent-skill-falsify.mjs --help)", "passed": true, "evidence": "exit=0, Hilfe-Text ausgegeben" },
+    { "text": "agent-skill-falsify.mjs unter ~/.agents/skills/falsifyme/ installiert", "passed": true, "evidence": "exists: /c/Users/Vannon/.agents/skills/falsifyme/agent-skill-falsify.mjs" },
+    { "text": "Ehrlicher API-Key-Hinweis statt erfundener Erfolg (doctor exit=2 wegen fehlendem Key)", "passed": true, "evidence": "doctor: Kein API-Key -> Hinweis im Abschlussbericht; kein Installationsfehler" }
+  ]
+}

@@ -2,8 +2,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # falsify – Bash-CLI (Hauptwerkzeug ALLER Agents) · FalsifyMe 2.0
 # -----------------------------------------------------------------------------
-# Alle Persistenz liegt in SQLite (WAL) unter FALSIFY_HOME (~/.Falsify) –
-# ausserhalb des Repos: Keys, DB, Logs. Parallele, konfliktfreie Nutzung:
+# Alle Persistenz liegt in SQLite (WAL) unter FALSIFY_HOME (Default
+# ~/.Falsify_Private, private Wissensdaten) – ausserhalb des Repos: Keys, DB,
+# Logs. Parallele, konfliktfreie Nutzung:
 # Agents reichen Jobs ein und fragen sie ab, ohne sich (oder die Worker-
 # Fenster) zu stoeren. Bis zu 3 Worker-Fenster verarbeiten die Queue parallel.
 #
@@ -21,7 +22,16 @@
 #   falsify history [--last n]
 #   falsify run <Plan-Text...> [Optionen]    direkter API-Lauf (ohne Worker-Fenster)
 #   falsify ensure-home                      FALSIFY_HOME anlegen/prüfen
+#   falsify settings show|set key=value …   Runtime-Settings (provider-neutral)
+#   falsify models [--api-base URL]          Modelle des Endpunkts abrufen
+#   falsify bootstrap [--mode=… --reichweite=…]  Installation + Agent-Integration
+#   falsify onboard [--skip-dock]            interaktive Ersteinrichtung
+#   falsify abort <job-id>                   laufenden Job abbrechen (keine Freigabe)
+#   falsify uninstall [--dry-run]            vollständige Deinstallation
 #   falsify help
+#
+#   falsify wait <job-id> [--ping|--abort]   --ping = EINE Auswertungsrunde
+#     (STATUS <zustand> <sek>; Exit 4 = läuft noch) · --abort = Job abbrechen
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Skript-Lage robust aufloesen (auch via PATH/Symlink, egal welche cwd) ────
@@ -82,15 +92,34 @@ case "$cmd" in
     exec bash "$V2_DIR/cli/falsify.sh" wait "$id"
     ;;
   wait)
-    # STILLER CHECKBACK: pollt jede Sekunde die SQLite-DB, KEIN Timeout.
-    id="${1:-}"
-    [ -n "$id" ] || fail "Nutzung: falsify wait <job-id>"
+    # Poll-Ping mit Coder-Auswertung (KEIN fester Timeout): Denk-/Schreibdauer
+    # ist anbieterabhängig nicht abschätzbar. Der Coder bewertet den Zustand
+    # und entscheidet ueber Weiterwarten oder Abbruch (falsify abort <id>).
+    ping=0; abort_flag=0
+    for a in "$@"; do [ "$a" = "--ping" ] && ping=1; [ "$a" = "--abort" ] && abort_flag=1; done
+    id="$(printf '%s\n' "$@" | grep -v '^--' | head -1)"
+    [ -n "$id" ] || fail "Nutzung: falsify wait <job-id> [--ping] [--abort]"
+    if [ "$abort_flag" = "1" ]; then
+      node "$V2_DIR/cli/main.mjs" abort "$id" || exit 2
+      exit 0
+    fi
+    if [ "$ping" = "1" ]; then
+      # EINE Auswertungsrunde: STATUS <zustand> <sek>; Exit 4 = laeuft noch.
+      node "$V2_DIR/cli/main.mjs" ping "$id"
+      exit $?
+    fi
     node "$V2_DIR/cli/main.mjs" status "$id" >/dev/null 2>&1 || fail "Unbekannter Job: $id"
-    echo "Warte auf $id (Checkback jede Sekunde, Ergebnis kommt sofort)..." >&2
+    echo "Warte auf $id (Poll-Ping jede Sekunde; Auswertung alle 10 s; Abbruch: falsify abort $id)..." >&2
+    i=0
     while :; do
       line="$(node "$V2_DIR/cli/main.mjs" status "$id" 2>/dev/null | head -1)"
       case "$line" in
-        QUEUED*|RUNNING*) sleep 1 ;;
+        QUEUED*|RUNNING*)
+          i=$((i+1))
+          if [ $((i % 10)) -eq 0 ]; then
+            echo "[$i s] $line – bewerten: weiter warten oder falsify abort $id" >&2
+          fi
+          sleep 1 ;;
         DONE*|ERROR*) break ;;
         *) sleep 1 ;;
       esac
@@ -100,13 +129,23 @@ case "$cmd" in
       "DONE WRITE"*) exit 0 ;;
       "DONE PLAN"*|"DONE RESEARCH"*)
         echo "⚠️  VERDICT: ${line#DONE } – nicht freigegeben. Kritik lesen (falsify log $id), Loop fortsetzen." >&2
-        exit 1 ;;      "DONE UNBEKANNT"*)
+        exit 1 ;;
+      "DONE UNBEKANNT"*)
         echo "⚠️  KEIN gültiges Verdict erkannt – keine Freigabe (Exit 3)." >&2
-        exit 3
- ;;
+        exit 3 ;;
       ERROR*) exit 3 ;;
       *) exit 3 ;;
     esac
+    ;;
+  abort)
+    id="${1:-}"
+    [ -n "$id" ] || fail "Nutzung: falsify abort <job-id>"
+    node "$V2_DIR/cli/main.mjs" abort "$id"
+    ;;
+  ping)
+    id="${1:-}"
+    [ -n "$id" ] || fail "Nutzung: falsify ping <job-id>"
+    node "$V2_DIR/cli/main.mjs" ping "$id"
     ;;
   status)
     id="${1:-}"
@@ -150,6 +189,12 @@ case "$cmd" in
     ;;
   bootstrap)
     node "$V2_DIR/cli/bootstrap.mjs" "$@"
+    ;;
+  onboard)
+    node "$V2_DIR/cli/main.mjs" onboard "$@"
+    ;;
+  uninstall)
+    node "$V2_DIR/uninstall.mjs" "$@"
     ;;
   -h|--help)
     sed -n '2,34p' "$0"

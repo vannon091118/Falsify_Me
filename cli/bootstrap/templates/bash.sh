@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+{{MODE_HEADER}}
 # FalsifyMe Workflow-Instructions fuer Bash-Agenten
 #
 # FalsifyMe = unabhaengiger read-only Falsifizierungs-Agent
