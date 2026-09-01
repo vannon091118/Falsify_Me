@@ -170,9 +170,19 @@ falsify_mandatory_check() {
   # ── 2. Bestätigen: Job IST IM DOCK-FENSTER SICHTBAR (Claim) – VOR dem
   #    blockierenden Warten. Ein Worker-Fenster muss laufen (--check) und den
   #    Job geclaimt haben (Status RUNNING = FM-EVT-Pipeline im Fenster).
-  local dock_check
-  dock_check=$(node "$V2_DIR/ui/worker.mjs" --check 2>&1)
-  if echo "$dock_check" | grep -q "RUNNING"; then
+  #    Retry-Poll: Ein gerade startendes Fenster (Node-/INK-Boot ~2-4s) darf
+  #    NICHT als fehlend gemeldet werden; erst nach ~10s gilt es als abwesend.
+  local dock_check=""
+  local dock_ok=0
+  for _i in $(seq 1 10); do
+    dock_check=$(node "$V2_DIR/ui/worker.mjs" --check 2>&1)
+    if echo "$dock_check" | grep -q "RUNNING"; then
+      dock_ok=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "$dock_ok" = "1" ]; then
     log_ok "Dock-Fenster läuft ($(echo "$dock_check" | grep -oP 'RUNNING \K.*' | head -1))"
   else
     log_warn "Kein laufendes Dock-Fenster – Job bleibt in der Queue. Fenster starten: ui/start-dock.cmd, dann erneut einreichen."
@@ -194,7 +204,10 @@ falsify_mandatory_check() {
   if [ "$claimed" = "1" ]; then
     log_ok "Job $job_id ist im Dock sichtbar (Fenster-Claim: Status $st) – warte auf Verdict ..."
   else
-    log_warn "Job $job_id noch QUEUED – kein Worker-Claim erkannt (Status: ${st:-?}). Dock prüfen: falsify state"
+    # Kein Worker hat geclaimt: Job bleibt QUEUED. ABBRUCH statt Endlos-
+    # Warten - falsify wait pollt per Design OHNE Timeout („loopt“-Falle).
+    log_error "Job $job_id ist NICHT im Dock sichtbar (Status: ${st:-?}) – kein Worker-Fenster hat geclaimt. Abbruch statt Endlos-Warten. Dock starten (ui/start-dock.cmd), dann erneut einreichen."
+    return 3
   fi
 
   # ── 3. Blockierend auf das Verdict warten (PFLICHT) ───────────────────────

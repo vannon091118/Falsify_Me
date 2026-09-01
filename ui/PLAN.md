@@ -614,3 +614,25 @@ waere ein false RUNNING 6012 gemeldet worden). Test-Harness-Lektion
 dokumentiert: `source` von Windows-Pfad-Kontextdateien fraesst Backslashes
 (FALSIFY_HOME wurde zu „C:Users..." -> Worker registrierte sich unter
 kaputtem Pfad) - Wegwerf-Home-Werte kuenftig direkt setzen, nicht sourcen.
+
+ID: UI-064
+TASK: agent-skill-falsify.sh - Dock-Sichtbarkeitspruefung nach dem Submit
+mit kurzem RETRY-POLL (bis 10x1s, worker --check auf RUNNING) statt
+Einzel-Check: Ein gerade startendes Fenster (Node-/INK-Boot ~2-4s) wird
+nicht mehr faelschlich als fehlend gemeldet. Zusaetzlich: Wird nach
+Retry-Poll + Claim-Poll (10x) KEIN Worker-Claim erkannt (Job bleibt
+QUEUED), bricht der Skill mit log_error + Exit 3 ab, statt endlos in
+falsify wait zu laufen (das pollt per Design OHNE Timeout - die
+bekannte „loopt/hängt"-Klasse).
+STATUS: DONE
+DEPENDS_ON: UI-063
+VERIFY: bash -n; E2E A: Fenster starten, nach 1s der Skill (Boot-Race) ->
+log_ok statt Warnung, Claim, Verdict Exit 3; E2E B: ohne vorher geoeffnetes
+Fenster -> Skill oeffnet es selbst (UI-063-Start-Process) -> gleicher
+vollstaendiger Flow, Exit 3; danach keine Restprozesse
+RESULT: PASS — 2026-09-01: A (9,4s): „Dock-Fenster läuft (2672)",
+Claim „Status ERROR API-Key fehlt", Verdict UNBEKANNT, Exit 3. B (16,4s):
+Skill-eigener Fensterstart (1264) lieferte denselben kompletten Flow inkl.
+Abbruchpfad-Kontrolle; beide Male sauberes Ende statt Haenger. E2E B
+bestätigt zusaetzlich den MSYS-sicheren Fensterstart aus UI-063 im echten
+Flow (beim vorherigen Lauf hatte der Test das Fenster vorgeoeffnet).
