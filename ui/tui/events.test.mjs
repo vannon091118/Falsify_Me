@@ -16,8 +16,9 @@ test("boot: IDLE -> STARTING", () => {
 test("job: belegt Slot (window/slot) + Fokus folgt + resettet Slot-Anzeigen", () => {
   const s = createUiState();
   apply(s, { t: "job", id: "job-8f42-77", scope: "scope-31a7", window: 2 }, t0);
-  assert.equal(s.jobId, "JOB8");
-  assert.equal(s.scopeId, "SCOP");
+  // shortId = LETZTE 4 (unterscheidbarer Suffix, seit 2026-09-01)
+  assert.equal(s.jobId, "4277");
+  assert.equal(s.scopeId, "31A7");
   assert.equal(s.activeSlotIdx, 2, "Fokus folgt dem neuesten Job");
   assert.equal(s.slots[1].state, "STARTING");
   assert.equal(s.state, "STARTING", "Spiegel = aktiver Slot");
