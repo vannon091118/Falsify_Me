@@ -26,7 +26,7 @@ import path from "node:path";
 import os from "node:os";
 import { DatabaseSync } from "node:sqlite";
 
-export const SCHEMA_VERSION = "4";
+export const SCHEMA_VERSION = "5";
 
 // ── FALSIFY_HOME auflösen / anlegen ─────────────────────────────────────────
 export function falsifyHome() {
@@ -183,6 +183,15 @@ function migrate(db) {
   // Anker. Wird beim Review-Commit gesetzt/geleert (Ein-Wahrheit-Pfad).
   try {
     db.exec("ALTER TABLE scopes ADD COLUMN last_divergence TEXT");
+  } catch { /* existiert */ }
+
+  // ── Schema-Version 5 (UI-094): Whitelist-Nachforderung ───────────────────
+  // RESEARCH kann Dateien konkret benennen, die der Thinker fuer die weitere
+  // Falsifikation lesen will. Diese werden hier persistiert (kommagetrennt,
+  // wie jobs.files) und beim naechsten Submit automatisch in die Whitelist
+  // gemerged. WRITE leert die Liste. Null = keine offene Nachforderung.
+  try {
+    db.exec("ALTER TABLE scopes ADD COLUMN research_additions TEXT");
   } catch { /* existiert */ }
 
   setMeta(db, "schema_version", SCHEMA_VERSION);

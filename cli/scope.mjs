@@ -43,6 +43,8 @@ function scopeShow(rest) {
   console.log(`HEADER (1:1): ${scope.header}`);
   if (scope.last_befund) console.log(`Letzter Befund: ${scope.last_befund}`);
   if (scope.sub_prompt) console.log(`Sub-Prompt (Modell-Update, Fallback gegen Drift):\n${scope.sub_prompt}`);
+  // UI-094: offene Whitelist-Nachforderung sichtbar (was beim naechsten Submit automatisch ergaenzt wird).
+  if (scope.research_additions) console.log(`Whitelist-Nachforderung (RESEARCH, beim naechsten Submit automatisch ergaenzt): ${scope.research_additions}`);
   console.log(`Angelegt: ${scope.created_at}`);
   if (scope.done_at) console.log(`Abgeschlossen: ${scope.done_at}`);
   const findings = getFindings(db, scope.id);

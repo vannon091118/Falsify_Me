@@ -1131,14 +1131,26 @@ VERIFY: offen — Welle evil muss Findings mit wave='evil' erzeugen; WRITE
 erst nach replan ohne belastbaren Widerspruch.
 
 ID: UI-094
-TASK: Dynamische Whitelist-Nachforderung (Vision): Protokoll, mit dem der
-Thinker fehlende Dateien als finding meldet und die Whitelist der naechsten
-Einreichung automatisch erweitert werden kann (E2E-Befund 1: heute Loesung
-per Konvention — Einreicher nimmt befundrelevante Module auf).
-STATUS: TODO
-DEPENDS_ON: UI-093
-VERIFY: offen — Nachforderung muss pruefbar auditiert werden (kein
-unbeschraenkter Zugriff).
+TASK: Dynamische Whitelist-Nachforderung: Protokoll, mit dem der Thinker
+fehlende Dateien als RESEARCH-Nachforderung meldet und die Whitelist der
+naechsten Einreichung automatisch erweitert (E2E-Befund 1: Loesung per
+Konvention abgeloest — der Einreicher muss befundrelevante Module nicht mehr
+manuell nachziehen).
+STATUS: DONE
+DEPENDS_ON: UI-093 (RESEARCH-Vertrag), UI-090 (Scope-Datenmodell)
+VERIFY: node --test tests/research-additions.test.mjs (Extraktion,
+Security-Filter, Cap, Root-Filter, Persistenz, Submit-Merge-E2E);
+Live: RESEARCH-Verdict meldet "Whitelist-Nachforderung …", naechster Submit
+oehne --files besteht dank Nachforderung.
+RESULT: Schema v5 (scopes.research_additions, ALTER-only, kommagetrennt wie
+jobs.files); core/verdict.mjs extractResearchAdditions (relative Pfade mit
+bekannter Endung, kein Traversal/Absolut/Drive/URL, dedup, Cap 20, Root-
+Existenz-Filter); scopes.updateScopeAfterReview 7. Param (RESEARCH setzt,
+WRITE leert, sonst unveraendert) + artifactView-Zeile; cli/run.mjs: Submit
+mergt Nachforderungen VOR dem --files-Check (nur existierende Dateien,
+ehrliche Meldung der Ergaenzungen + uebersprungener Fantasie-Pfade),
+RESEARCH-Extraktion nach dem Research-Contract; falsify scope show zeigt
+die Nachforderung. 99/99 Core + 114/114 UI gruen.
 
 ID: UI-095
 TASK: Drei-Werte-Gate-Finalisierung (Vision): Ausgabe „belastbar / weitere

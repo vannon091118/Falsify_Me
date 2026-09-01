@@ -32,7 +32,7 @@ import { loadApiKey, keyEnvFile, keyNames } from "../core/keys.mjs";
 import { loadConfig } from "../core/config.mjs";
 import { enforceRateLimit } from "../core/ratelimit.mjs";
 import { SYSTEM_DE, SYSTEM_EN, buildUserContent } from "../core/prompt.mjs";
-import { parseVerdict, parseBefund, parseSubPrompt, enforceWriteChallenge, enforceStructuralCoherence, findingSeverity, parseScopeDivergence, enforceResearchContract } from "../core/verdict.mjs";
+import { parseVerdict, parseBefund, parseSubPrompt, enforceWriteChallenge, enforceStructuralCoherence, findingSeverity, parseScopeDivergence, enforceResearchContract, extractResearchAdditions } from "../core/verdict.mjs";
 import { runTwinCheck, extractClaims } from "../core/twin.mjs";
 import { runAgent } from "../core/agent.mjs";
 import { checkFeasibility } from "../core/feasibility.mjs";
@@ -176,20 +176,7 @@ if (submitMode) {
     closeDb();
     process.exit(2);
   }
-  let filesList = (filesArg || "").split(",").map((s) => s.trim()).filter(Boolean);
-  if (!filesList.length) {
-    console.error(red('FEHLER: --files ist Pflicht beim Einreichen (kommagetrennte Dateiliste relativ zu --root), z. B.: --files "app.js,lib/auth.js"'));
-    closeDb();
-    process.exit(2);
-  }
-  // Self-Review-Regel (core/selfreview.mjs): kein blinder Bereich bei
-  // Selbstprüfung – Kern-Komponenten automatisch ergänzen (nur existierende,
-  // nur wenn <root> ein eigenes Checkout ist).
-  const selfReview = ensureSelfReviewWhitelist(path.resolve(rootArg || process.cwd()), filesList);
-  filesList = selfReview.files;
-  if (selfReview.added.length) {
-    console.log(dim(`Selbstprüfung erkannt: ${selfReview.added.length} Kern-Komponenten automatisch im Prüf-Scope`));
-  }
+  const root = path.resolve(rootArg || process.cwd());
   let scope = null;
   if (scopeArg) {
     scope = getScope(db, scopeArg);
@@ -199,7 +186,45 @@ if (submitMode) {
       process.exit(2);
     }
   }
-  const root = path.resolve(rootArg || process.cwd());
+  let filesList = (filesArg || "").split(",").map((s) => s.trim()).filter(Boolean);
+  // ── UI-094: Whitelist-Nachforderung (RESEARCH) automatisch mergen ───────
+  // VOR dem --files-Pflicht-Check: Dateien, die der Thinker in der letzten
+  // RESEARCH-Runde zur Falsifikation nachgefordert hat (scopes.
+  // research_additions), kommen automatisch in die Whitelist. Nur Dateien,
+  // die unter <root> real existieren — Fantasie-Pfade duerfen die
+  // Einreichung nicht vergiften (UI-094-VERIFY: kein unbeschraenkter
+  // Zugriff). Dem Agenten wird EXPLIZIT gemeldet, was ergaenzt wurde.
+  const additions = scope && scope.research_additions
+    ? scope.research_additions.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  const addedFiles = [];
+  let skippedAdditions = 0;
+  for (const a of additions) {
+    if (filesList.includes(a)) continue;
+    let exists = false;
+    try { exists = fs.existsSync(path.join(root, a)); } catch { exists = false; }
+    if (exists) { filesList.push(a); addedFiles.push(a); }
+    else skippedAdditions += 1;
+  }
+  if (addedFiles.length) {
+    console.log(dim(`Whitelist automatisch ergänzt (RESEARCH-Nachforderung aus Scope ${scope.id}): ${addedFiles.join(", ")}`));
+  }
+  if (skippedAdditions > 0) {
+    console.log(dim(`${skippedAdditions} nachgeforderte Datei(en) existieren nicht unter ${root} und wurden übersprungen.`));
+  }
+  if (!filesList.length) {
+    console.error(red('FEHLER: --files ist Pflicht beim Einreichen (kommagetrennte Dateiliste relativ zu --root), z. B.: --files "app.js,lib/auth.js"'));
+    closeDb();
+    process.exit(2);
+  }
+  // Self-Review-Regel (core/selfreview.mjs): kein blinder Bereich bei
+  // Selbstprüfung – Kern-Komponenten automatisch ergänzen (nur existierende,
+  // nur wenn <root> ein eigenes Checkout ist).
+  const selfReview = ensureSelfReviewWhitelist(root, filesList);
+  filesList = selfReview.files;
+  if (selfReview.added.length) {
+    console.log(dim(`Selbstprüfung erkannt: ${selfReview.added.length} Kern-Komponenten automatisch im Prüf-Scope`));
+  }
   const id = createJob(db, {
     scopeId: scope ? scope.id : null,
     payload: planText,
@@ -461,6 +486,18 @@ async function main() {
     console.warn(yellow("\n⚠ RESEARCH ohne konkret benanntes fehlendes Datum (BEFUND nennt keine fehlende Datei/kein fehlendes Datum) – als PLAN behandelt. Der Loop braucht eine präzise Anfrage, keinen Datensammel-Lauf."));
     verdict = "PLAN";
   }
+  // ── UI-094: Whitelist-Nachforderung (RESEARCH) ──────────────────────────
+  // Der Thinker benennt konkret fehlende Dateien fuer die weitere
+  // Falsifikation. Diese werden persistiert und beim naechsten Submit
+  // automatisch in die Whitelist gemerged (kein manuelles Nachziehen von
+  // befundrelevanten Modulen mehr — E2E-Befund 1). Nur bei echtem RESEARCH.
+  let researchAdditions = null;
+  if (verdict === "RESEARCH") {
+    researchAdditions = extractResearchAdditions(result.content, { root: ROOT });
+    if (researchAdditions.length) {
+      console.log(dim(`Whitelist-Nachforderung (RESEARCH): ${researchAdditions.join(", ")} — wird beim nächsten Submit automatisch ergänzt.`));
+    }
+  }
   // Regel 5 (UI-103): ein formales Gate macht keine kaputte Basis grün —
   // WRITE gegen harte strukturelle Blocker wird zu PLAN (nicht freigegeben).
   const structural = feasibility.blocks || [];
@@ -546,7 +583,7 @@ async function main() {
         // Loop-Anker: Konform schliesst den Anker (null), Divergenz setzt ihn,
         // fehlende Sektion laesst ihn unveraendert (keine Schlussfolgerung).
         updateScopeAfterReview(db, scope.id, verdict, befund, subPrompt,
-          anchor.konform ? null : (anchor.divergence ?? undefined));
+          anchor.konform ? null : (anchor.divergence ?? undefined), researchAdditions);
         addFinding(db, {
           scopeId: scope.id,
           jobId,

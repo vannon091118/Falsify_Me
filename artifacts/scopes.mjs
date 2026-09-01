@@ -49,11 +49,23 @@ export function listScopes(db, { onlyActive = true } = {}) {
  * - ASK:           Aufgabe mehrdeutig – kein Fortschritt, kein neuer Widerspruch;
  *                  Phase + Konfliktzähler bleiben, Status active (nicht gehärtet)
  * - sonst (UNBEKANNT): Zähler/Status unverändert
+ *
+ * UI-094 (dynamische Whitelist-Nachforderung): researchAdditions (string[]
+ * oder null) werden bei RESEARCH persistiert (kommagetrennt), bei WRITE
+ * geleert, sonst unverändert gelassen — nur echte Verdicts schreiben den
+ * Zustand.
  */
-export function updateScopeAfterReview(db, scopeId, verdict, befund, subPrompt, divergence) {
+export function updateScopeAfterReview(db, scopeId, verdict, befund, subPrompt, divergence, researchAdditions) {
   const v = String(verdict || "").toUpperCase();
   const cur = getScope(db, scopeId) || {};
   const phase = v === "ASK" ? (cur.phase || "plan") : (verdictToPhase(v) || cur.phase || "plan");
+  // Whitelist-Nachforderung (UI-094): RESEARCH setzt, WRITE leert.
+  if (v === "RESEARCH") {
+    const add = Array.isArray(researchAdditions) && researchAdditions.length ? researchAdditions.join(",") : null;
+    db.prepare("UPDATE scopes SET research_additions = ? WHERE id = ?").run(add, scopeId);
+  } else if (v === "WRITE") {
+    db.prepare("UPDATE scopes SET research_additions = NULL WHERE id = ?").run(scopeId);
+  }
   // GAP-Erfassung (Divergenz-Loop): Der Gap ist offen, solange das
   // Falsifikations-Ergebnis die Coder-Annahme nicht freigibt (PLAN/RESEARCH/ASK).
   // Mit WRITE ist der Gap geschlossen (last_gap = null).
@@ -114,6 +126,11 @@ export function artifactView(scope, findings) {
   else if (scope.phase === "write") lines.push("- GAP: geschlossen (WRITE-Freigabe nach Falsifikations-Challenge)");
   if (scope.last_befund) lines.push(`- Letzter Befund: ${scope.last_befund}`);
   if (scope.sub_prompt) lines.push(`- Sub-Prompt (Fallback gegen Drift): ${scope.sub_prompt}`);
+  // UI-094: offene Whitelist-Nachforderung sichtbar machen (was beim naechsten
+  // Submit automatisch ergaenzt wird).
+  if (scope.research_additions) {
+    lines.push(`- Whitelist-Nachforderung (RESEARCH, beim nächsten Submit automatisch ergänzt): ${scope.research_additions}`);
+  }
   if (findings?.length) {
     lines.push(`- Alle Befunde (${findings.length}):`);
     for (const f of findings) {

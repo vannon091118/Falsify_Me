@@ -314,6 +314,12 @@ node --test tests/prompt.test.mjs       # vier System-Prompts laden + Marker,
 node --test tests/stats.test.mjs        # Gesamtzahlen (jobs/findings/scopes/
                                         # rate_limit), UNBEKANNT aus dem Status,
                                         # Ein-Satz-Anker, READ-ONLY-Beweis
+
+# Dynamische Whitelist-Nachforderung (UI-094, scopes.research_additions):
+node --test tests/research-additions.test.mjs  # extractResearchAdditions (Pfad-
+                                        # Form + Security-Filter + Cap + Root),
+                                        # Persistenz RESEARCH->set/WRITE->null,
+                                        # Submit-Merge vor dem --files-Check
 ```
 
 ## 9. OFFENE UND AUFGESCHOBENE TASKS

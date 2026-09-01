@@ -246,6 +246,42 @@ export function enforceResearchContract(content, verdict) {
   return hasMissing ? "RESEARCH" : null;
 }
 
+/** Bekannte Datei-Endungen der Nachforderungs-Extraktion (keine Fantasie-Worte). */
+const RESEARCH_ADD_EXT = /\.(?:js|mjs|cjs|ts|tsx|jsx|py|json|md|sh|ps1|css|html|sql|ya?ml|toml|txt|c|cpp|h|go|rs|java)$/i;
+
+/**
+ * UI-094 (dynamische Whitelist-Nachforderung): extrahiert aus einer
+ * RESEARCH-Antwort die KONKRET benannten Dateien, die der Thinker fuer die
+ * weitere Falsifikation lesen will. Diese werden als research_additions
+ * persistiert und beim naechsten Submit automatisch in die Whitelist gemerged
+ * (der Einreicher muss befundrelevante Module nicht mehr manuell nachziehen —
+ * E2E-Befund 1, bislang Loesung per Konvention).
+ *
+ * Sicherheit (kein unbeschraenkter Zugriff, UI-094-VERIFY):
+ *   - nur relative Pfade (kein Absolut-/Windows-Drive-/URL-Praefix, kein "..")
+ *   - nur Pfade mit bekannter Datei-Endung
+ *   - dedupliziert + gedeckelt (max, Default 20)
+ *   - mit root: nur Dateien, die unter <root> tatsaechlich existieren
+ * @returns {string[]}
+ */
+export function extractResearchAdditions(content, { root = null, max = 20 } = {}) {
+  const text = String(content || "");
+  const found = new Set();
+  // Kandidaten: Pfad mit Verzeichnis-Separator ODER bare Datei mit Endung.
+  // Grenze links: Start ODER Nicht-Wort-Zeichen — aber NICHT / \ : (sonst
+  // wuerde "https://…" bzw. "C:\x\y.js" als relativ gelesen).
+  const CAND = /(?:^|[^\w./\\:-])((?:[\w.-]+\/)+[\w.-]+\.\w{1,12}|[\w.-]+\.\w{1,12})/g;
+  for (const m of text.matchAll(CAND)) {
+    let p = (m[1] || "").replace(/\\/g, "/").replace(/^\.\//, "");
+    if (!p || p.startsWith("/") || /^[A-Za-z]:/.test(p)) continue; // absolut / Drive
+    if (p.split("/").includes("..")) continue;                     // Traversal
+    if (!RESEARCH_ADD_EXT.test(p)) continue;                          // Fantasie-Worte
+    if (root && !existsSync(path.join(root, p))) continue;            // muss real existieren
+    found.add(p);
+  }
+  return [...found].slice(0, Math.max(1, Number(max) || 20));
+}
+
 /**
  * Regel 5 (UI-103): Ein formales Gate macht keine kaputte Basis „grün".
  * WRITE ist nur belastbar, wenn die Einreichung selbst strukturell kohärent
