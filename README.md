@@ -1,6 +1,6 @@
 ![FalsifyMe Banner](falsifyme-banner.svg)
 
-# FALSIFYME — v0.02 Beta (`0.2.0-beta`)
+# FALSIFYME — v0.05 Beta (`0.5.0-beta`)
 
 Ich bin das read-only Falsifikations-Gateway für Coding-Agenten. Ein Agent
 behauptet, deine Änderung sei sicher? Ich prüfe das erst — und nur ich sage,

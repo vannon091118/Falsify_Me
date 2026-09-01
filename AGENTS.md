@@ -215,6 +215,13 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
 - Der Dock-Start zeigt einen echten „Falsify lädt"-Boot (F A L S I F Y _ M E)
   mit Selftest-Fortschritt; die echten Selftest-Schritte landen zusätzlich in
   `FALSIFY_HOME/logs/selftest.log` (kein Mock, kein Demo-Screen).
+- OCR für Screenshots (2026-09-01, Screenshot-Verifikation): `python ocr.py
+  <png>…` im Repo-Root (pytesseract+PIL; Tesseract unter `C:\Program Files\
+  Tesseract-OCR` mit NUR eng-Paket — UI-Text/ASCII/Zahlen liest es zuverlässig,
+  Umlaute teils verhunzt). Immer mit `PYTHONUTF8=1` starten (Mojibake-Falle wie
+  generate_review.py); 2x-Upscale+autocontrast steckt im Skript. WinRT-OCR
+  (Windows.Media.Ocr, de-DE verfügbar) scheitert im PowerShell-5.1-Interop
+  (AsTask-AggregateException) — der Tesseract-Pfad ist der verlässliche.
 
 ## Skill-Creator-Werkzeuge (eigene Fallen)
 

@@ -1,6 +1,6 @@
 {
   "name": "falsifyme",
-  "version": "0.2.0-beta",
+  "version": "0.5.0-beta",
   "description": "Externes read-only Falsifikations-Gateway mit SQLite-WAL, sichtbaren Windows-Workern und OpenAI-kompatibler API.",
   "type": "module",
   "private": true,
