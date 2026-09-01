@@ -31,11 +31,33 @@ export const SEV = { CRITICAL: "critical", WARNING: "warning", INFO: "discovered
  *                                dann muessen die Whitelist-Dateien existieren
  * @returns {{feasible:boolean, blocks:string[], findings:{severity:string,text:string}[]}}
  */
-export function checkFeasibility({ header, planText, root, whitelist = [], hasDiff = false } = {}) {
+export function checkFeasibility({ header, planText, root, whitelist = [], hasDiff = false, diffText = null } = {}) {
   const blocks = [];
   const findings = [];
   const base = path.resolve(root || process.cwd());
   const exists = (p) => { try { return fs.existsSync(p); } catch { return false; } };
+  const norm = (p) => String(p || "").replace(/^\/|\\/g, "").replace(/\\/g, "/").replace(/^\.\//, "");
+  const whitelistSet = new Set(whitelist.map(norm).filter(Boolean));
+
+  // ── (0b) Strukturelle Kohärenz (Regel 5): Diff ────────────────────────────
+  // Berührte Dateien aus dem Diff – müssen im Zugriffsrahmen liegen, sonst
+  // ist die Einreichung selbst widersprüchlich (sie ändert, was sie nicht
+  // ändern darf). Kein Verdict-Steuerwort (E2E-Befund 3).
+  const diffFiles = [];
+  if (diffText && String(diffText).trim()) {
+    for (const m of String(diffText).matchAll(/^[+-]{3} [ab]\/(.+)$/gm)) {
+      const f = norm(m[1]);
+      if (f && f !== "dev/null" && !diffFiles.includes(f)) diffFiles.push(f);
+    }
+    for (const m of String(diffText).matchAll(/^diff --git a\/(.+?) b\/(.+)$/gm)) {
+      const f = norm(m[2]);
+      if (f && !diffFiles.includes(f)) diffFiles.push(f);
+    }
+    const outside = diffFiles.filter((f) => !whitelistSet.has(f));
+    if (outside.length) {
+      blocks.push(`Der Diff verändert Dateien ausserhalb des Zugriffsrahmens: ${outside.join(", ")} – diese Dateien herausnehmen oder den Zugriffsrahmen anpassen, bevor erneut eingereicht wird.`);
+    }
+  }
 
   // ── (1) Plan vorhanden ─────────────────────────────────────────────────────
   if (!planText || !String(planText).trim()) {
@@ -60,8 +82,7 @@ export function checkFeasibility({ header, planText, root, whitelist = [], hasDi
     }
     if (!exists(abs)) missingWhitelist.push(f);
   }
-  if (missingWhitelist.length > 0) {
-    blocks.push(`Diese Dateien der Whitelist existieren nicht unter ${base}: ${missingWhitelist.join(", ")} (RESEARCH nötig – FalsifyMe braucht echte Dateien / korrekte Pfade).`);
+  if (missingWhitelist.length > 0) {      blocks.push(`Diese Dateien der Whitelist existieren nicht unter ${base}: ${missingWhitelist.join(", ")} – die Behauptung ist ohne echte Dateien/korrekte Pfade nicht gegenpruefbar (Daten oder Whitelist ergaenzen).`);
   }
 
   // ── (3) Plan erwaehnte Datei-Pfade gegen Whitelist + Realitaet ────────────
@@ -73,7 +94,6 @@ export function checkFeasibility({ header, planText, root, whitelist = [], hasDi
     if (!EXT.test(tok)) return false;
     return tok.split("/").length - 1 <= 1; // max. ein Verzeichnis-Segment
   }))];
-  const whitelistSet = new Set(whitelist);
   const unknownMentioned = mentioned.filter((tok) => {
     if (whitelistSet.has(tok)) return false;
     const abs = path.resolve(base, tok);
@@ -92,6 +112,16 @@ export function checkFeasibility({ header, planText, root, whitelist = [], hasDi
   });
   if (outsideWhitelist.length > 0) {
     findings.push({ severity: SEV.WARNING, text: `Plan nennt Dateien ausserhalb der Zugriffs-Whitelist (Agent kann sie nicht lesen): ${outsideWhitelist.join(", ")} – Whitelist erweitern oder Plan anpassen.` });
+  }
+
+  // ── (5) Plan ↔ Diff-Divergenz (Regel 5): Der Plan nennt konkrete Dateien,
+  //      die eingereichte Aenderung betrifft aber KEINE davon — struktureller
+  //      Widerspruch zwischen Ankündigung und Umsetzung (Scope-Drift). ───────
+  if (diffFiles.length && planText) {
+    const planTargets = mentioned.filter((tok) => whitelistSet.has(tok));
+    if (planTargets.length && planTargets.every((t) => !diffFiles.includes(t))) {
+      blocks.push(`Der Plan nennt ${planTargets.join(", ")}, aber die eingereichte Aenderung betrifft ${diffFiles.join(", ")} – Plan und Aenderung widersprechen sich (Divergenz aufloesen, dann erneut einreichen).`);
+    }
   }
 
   // ── Intent-Drift: Header-Signaturen fehlen komplett im Plan (Literalismus-  ──

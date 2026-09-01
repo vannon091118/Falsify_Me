@@ -25,7 +25,7 @@ import path from "node:path";
 import os from "node:os";
 import { DatabaseSync } from "node:sqlite";
 
-export const SCHEMA_VERSION = "2";
+export const SCHEMA_VERSION = "3";
 
 // ── FALSIFY_HOME auflösen / anlegen ─────────────────────────────────────────
 export function falsifyHome() {
@@ -95,10 +95,12 @@ function migrate(db) {
     CREATE TABLE IF NOT EXISTS scopes(
       id          TEXT PRIMARY KEY,
       header      TEXT NOT NULL,            -- User-Input 1:1 (HEADER, nie umformuliert)
-      status      TEXT NOT NULL DEFAULT 'active',   -- active | done
+      status      TEXT NOT NULL DEFAULT 'active',   -- active | hardened | done
       phase       TEXT NOT NULL DEFAULT 'plan',     -- plan | research | write
       last_befund TEXT,                             -- letzter vollständiger zusammenfassender Befund
       sub_prompt  TEXT,                             -- vom Modell aktualisierter Sub-Prompt (Fallback gegen Drift)
+      open_conflicts INTEGER NOT NULL DEFAULT 0,    -- offene belastbare Widersprüche (PLAN/RESEARCH-Zyklen)
+      hardened_at TEXT,                             -- Zeitpunkt der Härtung (letztes WRITE mit 0 offenen Konflikten)
       created_at  TEXT NOT NULL,
       updated_at  TEXT NOT NULL,
       done_at     TEXT
@@ -108,10 +110,11 @@ function migrate(db) {
       scope_id   TEXT NOT NULL REFERENCES scopes(id),
       job_id     TEXT,
       round      INTEGER NOT NULL,          -- 1..n innerhalb des Scopes
+      wave       TEXT,                      -- scan | plan | evil | replan (Etage 2: Wellen-Dimension)
       mode       TEXT,                      -- plan | research | write
       befund     TEXT,                      -- BEFUND-Zeile der Antwort
       content    TEXT,                      -- volle Antwort (Kritik/Ergebnis)
-      verdict    TEXT,                      -- PLAN | RESEARCH | WRITE | ...
+      verdict    TEXT,                      -- PLAN | RESEARCH | WRITE | ASK | ...
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_findings_scope ON findings(scope_id);
@@ -122,6 +125,9 @@ function migrate(db) {
       diff_text   TEXT,
       root        TEXT,
       files       TEXT,                     -- Whitelist (kommagetrennt)
+      agent_intent TEXT,                    -- Etage 2: Agent-eigenes Verständnis der Aufgabe (NEU)
+      affected    TEXT,                     -- Etage 2: betroffene Daten (kommagetrennt, optional)
+      wave        TEXT NOT NULL DEFAULT 'scan', -- Etage 2: Wellen-Dimension (scan|plan|evil|replan)
       mode        TEXT,                     -- plan | research | write (bei Einreichung)
       status      TEXT NOT NULL DEFAULT 'QUEUED',   -- QUEUED | RUNNING | DONE <V> | ERROR
       verdict     TEXT,
@@ -146,6 +152,28 @@ function migrate(db) {
   try {
     db.exec("ALTER TABLE jobs ADD COLUMN abort_requested INTEGER DEFAULT 0");
   } catch { /* Spalte existiert bereits */ }
+
+  // ── Etage 2 (Schema-Version 3): Intake-Felder, Wave-Dimension, Härtung ────
+  // Bestehende Datenbanken bekommen die neuen Spalten per ALTER TABLE –
+  // alles nullable bzw. mit Default, kein Datenumzug nötig.
+  try {
+    db.exec("ALTER TABLE jobs ADD COLUMN agent_intent TEXT");
+  } catch { /* existiert */ }
+  try {
+    db.exec("ALTER TABLE jobs ADD COLUMN affected TEXT");
+  } catch { /* existiert */ }
+  try {
+    db.exec("ALTER TABLE jobs ADD COLUMN wave TEXT NOT NULL DEFAULT 'scan'");
+  } catch { /* existiert */ }
+  try {
+    db.exec("ALTER TABLE findings ADD COLUMN wave TEXT");
+  } catch { /* existiert */ }
+  try {
+    db.exec("ALTER TABLE scopes ADD COLUMN open_conflicts INTEGER NOT NULL DEFAULT 0");
+  } catch { /* existiert */ }
+  try {
+    db.exec("ALTER TABLE scopes ADD COLUMN hardened_at TEXT");
+  } catch { /* existiert */ }
 
   setMeta(db, "schema_version", SCHEMA_VERSION);
 }

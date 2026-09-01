@@ -7,6 +7,7 @@ export const MAP = Object.freeze({
   WRITE: { symbol: "✓", color: "green", label: "FALSIFICATION PASS", hint: "FREIGABE: READ-ONLY → WRITE" },
   PLAN: { symbol: "!", color: "yellow", label: "REVISION NEEDED", hint: "PLAN ÜBERARBEITEN" },
   RESEARCH: { symbol: "?", color: "blue", label: "MORE DATA NEEDED", hint: "READ-ONLY RECHERCHE" },
+  ASK: { symbol: "?", color: "cyan", label: "TASK AMBIGUOUS", hint: "RÜCKFRAGE AN DEN USER" },
   ERROR: { symbol: "✕", color: "red", label: "FALSIFICATION FAILED", hint: "" },
   TIMEOUT: { symbol: "✕", color: "red", label: "FALSIFICATION FAILED", hint: "TIMEOUT" },
 });

@@ -69,6 +69,14 @@ export async function runDoctor() {
     const jm = db.prepare("PRAGMA journal_mode").get();
     if (String(jm.journal_mode).toLowerCase() === "wal") ok("DB: WAL-Modus aktiv");
     else bad(`DB: journal_mode=${jm.journal_mode} (WAL erwartet)`);
+
+    // 5) Zustandsmodell-Konsistenz (Regel 3 – keine zweite Wahrheit):
+    // Prüft abgeleitete Zustände gegen ihre Quelldaten (hardened/conflicts,
+    // last_gap/Befund, Orphan-RUNNING, jobs- vs. findings-Verdict, Waisen).
+    const { checkQueueConsistency } = await import("../artifacts/invariants.mjs");
+    const q = checkQueueConsistency(db);
+    if (q.ok) ok("Zustandsmodell: konsistent (hardened/GAP/Verdict/Worker – eine Wahrheit)");
+    else for (const v of q.violations) bad(`Zustandsmodell: ${v}`);
     closeDb();
   } catch (e) {
     bad(`DB: ${e.message}`);

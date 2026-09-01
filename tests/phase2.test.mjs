@@ -109,7 +109,10 @@ test("Worker-Pipeline: run.mjs-Marker -> createParser -> UI-State (kein Crash)",
   assert.ok(state.jobId, "Job-ID im UI-Zustand");
   assert.equal(state.slots[0].state, "ERROR");
   assert.equal(state.state, "IDLE");
-  assert.equal(state.files, 2);
+  // Self-Review-Regel (UI-097): der Lauf mit cwd=Repo ergänzt die
+  // Prüf-Kernkomponenten in die Whitelist (Job: a.js,b.js + Kern) —
+  // der Zähler ist damit echt, nicht hartkodiert 2.
+  assert.ok(state.files > 2, `Selbstprüfung erweitert Whitelist (files=${state.files})`);
 });
 
 test("Worker headless (kein TTY): Claim-Loop + Text unveraendert, keine Marker", async () => {

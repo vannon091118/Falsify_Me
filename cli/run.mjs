@@ -31,9 +31,11 @@ import { loadApiKey, keyEnvFile, keyNames } from "../core/keys.mjs";
 import { loadConfig } from "../core/config.mjs";
 import { enforceRateLimit } from "../core/ratelimit.mjs";
 import { SYSTEM_DE, SYSTEM_EN, buildUserContent } from "../core/prompt.mjs";
-import { parseVerdict, parseBefund, parseSubPrompt, enforceWriteChallenge, findingSeverity } from "../core/verdict.mjs";
+import { parseVerdict, parseBefund, parseSubPrompt, enforceWriteChallenge, enforceStructuralCoherence, findingSeverity } from "../core/verdict.mjs";
+import { runTwinCheck, extractClaims } from "../core/twin.mjs";
 import { runAgent } from "../core/agent.mjs";
 import { checkFeasibility } from "../core/feasibility.mjs";
+import { ensureSelfReviewWhitelist } from "../core/selfreview.mjs";
 
 // ── Umsetzbarkeits-Puffer (Intent → Execution, UI-078, revidiert) ───────────
 // Deterministischer read-only Pre-Check VOR dem API-Call. Er erteilt KEIN
@@ -80,6 +82,9 @@ Verwendung:
 Optionen:
   --plan-file <pfad>   Iterations-Text (Plan/Recherche/Umsetzung) aus Datei lesen
   --diff-file <pfad>   Diff der geplanten/umgesetzten Änderung aus Datei lesen
+  --agent-intent <txt> Agent-eigenes Verständnis der Aufgabe (optional, Etage 2 –
+                       Divergenz zum HEADER wird eigener Prüfpunkt)
+  --affected <liste>   Betroffene Daten, kommagetrennt (optional)
   --root <dir>         Arbeitsverzeichnis für den Agent-Datenzugriff (Default: cwd)
   --files <liste>      Zugriffs-Whitelist (kommagetrennt, relativ zu --root) – PFLICHT bei --submit
   --scope <id>         Scope-ID (HEADER = User-Input 1:1 aus dem Scope-Artefakt)
@@ -100,7 +105,8 @@ Provider/Ziel (Env oder FALSIFY_HOME/config.json):
   FALSIFY_API_KEY_ENV  Key-Namen, kommagetrennt (Default: ${CFG.keyEnvNames.join(",")})
 
 Exit-Codes: 0=WRITE (Freigabe)  1=PLAN/RESEARCH (nicht freigegeben, Loop)
-            2=Konfig-Fehler  3=API-Fehler/kein Verdict`);
+            2=Konfig-Fehler  3=API-Fehler/kein Verdict  5=ASK (Aufgabe mehrdeutig,
+            Rückfrage an den User nötig – keine Freigabe)`);
 }
 
 async function runMain() {
@@ -117,6 +123,8 @@ let jobId = null;
 let rootArg = null;
 let filesArg = null;
 let scopeArg = null;
+let agentIntent = null;
+let affectedArg = null;
 
 const positional = [];
 const args = process.argv.slice(2);
@@ -127,6 +135,8 @@ for (let i = 0; i < args.length; i++) {
     case "-h": case "--help": usage(); process.exit(0);
     case "--plan-file": planFile = next(); break;
     case "--diff-file": diffFile = next(); break;
+    case "--agent-intent": agentIntent = next(); break;
+    case "--affected": affectedArg = next(); break;
     case "--model": model = next(); break;
     case "--lang": lang = next(); break;
     case "--max-rpm": maxRpm = Number(next()); break;
@@ -165,11 +175,19 @@ if (submitMode) {
     closeDb();
     process.exit(2);
   }
-  const filesList = (filesArg || "").split(",").map((s) => s.trim()).filter(Boolean);
+  let filesList = (filesArg || "").split(",").map((s) => s.trim()).filter(Boolean);
   if (!filesList.length) {
     console.error(red('FEHLER: --files ist Pflicht beim Einreichen (kommagetrennte Dateiliste relativ zu --root), z. B.: --files "app.js,lib/auth.js"'));
     closeDb();
     process.exit(2);
+  }
+  // Self-Review-Regel (core/selfreview.mjs): kein blinder Bereich bei
+  // Selbstprüfung – Kern-Komponenten automatisch ergänzen (nur existierende,
+  // nur wenn <root> ein eigenes Checkout ist).
+  const selfReview = ensureSelfReviewWhitelist(path.resolve(rootArg || process.cwd()), filesList);
+  filesList = selfReview.files;
+  if (selfReview.added.length) {
+    console.log(dim(`Selbstprüfung erkannt: ${selfReview.added.length} Kern-Komponenten automatisch im Prüf-Scope`));
   }
   let scope = null;
   if (scopeArg) {
@@ -185,6 +203,8 @@ if (submitMode) {
     scopeId: scope ? scope.id : null,
     payload: planText,
     diffText: diffText || null,
+    agentIntent: agentIntent || null,
+    affected: affectedArg || null,
     root,
     files: filesList.join(","),
     mode: scope ? scope.phase : "plan",   // PLAN ist immer Init – danach lenkt das Verdict
@@ -202,7 +222,11 @@ if (submitMode) {
 
 // ── Arbeitsverzeichnis + Zugriffs-Whitelist ─────────────────────────────────
 let ROOT = path.resolve(rootArg || process.cwd());
-let FILE_WHITELIST = (filesArg || "").split(",").map((s) => s.trim()).filter(Boolean);
+// Self-Review-Regel (UI-097): bei erkannter Selbstprüfung werden die
+// Prüf-Kernkomponenten automatisch ergänzt – an JEDER Stelle, die von hier
+// aus startet (Direkt-Run, --job-id, --submit nutzt den gleichen Pfad vor
+// createJob; rig-Review 2026-09-01: der Direkt-Run übersprang die Ergänzung).
+let FILE_WHITELIST = ensureSelfReviewWhitelist(ROOT, (filesArg || "").split(",").map((s) => s.trim()).filter(Boolean)).files;
 let job = null;
 let scope = null;
 
@@ -225,7 +249,10 @@ if (jobId) {
   planText = job.payload || planText;
   diffText = job.diff_text || diffText;
   ROOT = path.resolve(job.root || ROOT);
-  FILE_WHITELIST = jobFilesList(job);
+  // Self-Review-Regel auf dem JOB-Root (nicht dem lokalen --root): deckt
+  // Bestands-Jobs ab, die mit unvollständiger Whitelist erstellt wurden
+  // (idempotent; die Initialisierung oben lief gegen den lokalen root).
+  FILE_WHITELIST = ensureSelfReviewWhitelist(ROOT, jobFilesList(job)).files;
 } else {
   if (!planText) {
     console.error(red("FEHLER: Kein Plan übergeben. Nutze ein Argument, --plan-file oder stdin."));
@@ -245,6 +272,8 @@ if (jobId) {
     scopeId: scope ? scope.id : null,
     payload: planText,
     diffText: diffText || null,
+    agentIntent: agentIntent || null,
+    affected: affectedArg || null,
     root: ROOT,
     files: FILE_WHITELIST.join(","),
     mode: scope ? scope.phase : "plan",
@@ -283,6 +312,7 @@ async function main() {
     root: ROOT,
     whitelist: FILE_WHITELIST,
     hasDiff: Boolean(diffText),
+    diffText,
   });
   const feasibilityNotes = [];
   if (feasibility.blocks.length || feasibility.findings.length) {
@@ -324,6 +354,8 @@ async function main() {
     root: ROOT,
     whitelist: FILE_WHITELIST,
     feasibilityNotes,
+    agentIntent: job?.agent_intent || null,
+    affected: (job?.affected || "").split(",").map((s) => s.trim()).filter(Boolean),
   });
 
   const t0 = Date.now();
@@ -363,13 +395,67 @@ async function main() {
   const subPrompt = parseSubPrompt(result.content);
 
   // ── Anti-Self-Check-Bias (Thinker): WRITE nur mit Challenge-Nachweis ─────
-  // Der unabhängige Betrachter muss die Coder-Annahme aktiv falsifiziert haben
-  // (Struktur "## Falsifikationsversuche" oder BEFUND). Ein WRITE ohne jeden
-  // Challenge-Beleg (Rubber-Stamp) wird als UNKNOWN behandelt: KEINE Freigabe.
+  // Regel 2 (UI-098): Ein vorhandenes "## Falsifikationsversuche"-Feld ist KEIN
+  // Nachweis — jeder Versuch braucht konkrete, überprüfbare Evidenz (Datei:
+  // Zeile, Whitelist-Datei, zitiertes Symbol). Verifiziert gegen Whitelist +
+  // Root des Jobs (genannte Pfade müssen existieren/erlaubt sein).
   const parsedVerdict = parseVerdict(result.content);
-  const verdict = enforceWriteChallenge(result.content, parsedVerdict);
+  let verdict = enforceWriteChallenge(result.content, parsedVerdict, {
+    whitelist: FILE_WHITELIST,
+    root: ROOT,
+  });
   if (parsedVerdict === "WRITE" && verdict === null) {
-    console.warn(yellow("\n⚠ WRITE ohne Challenge-Nachweis (kein Falsifikationsversuch im Review) – als UNKNOWN behandelt, KEINE Freigabe."));
+    console.warn(yellow("\n⚠ WRITE ohne Challenge-EVIDENZ (kein Falsifikationsversuch mit konkreter Datei:Zeile-/Symbol-/Whitelist-Referenz) – als UNKNOWN behandelt, KEINE Freigabe."));
+  }
+  // Regel 5 (UI-103): ein formales Gate macht keine kaputte Basis grün —
+  // WRITE gegen harte strukturelle Blocker wird zu PLAN (nicht freigegeben).
+  const structural = feasibility.blocks || [];
+  if (parsedVerdict === "WRITE" && structural.length) {
+    console.warn(yellow(`\n⚠ WRITE trotz struktureller Widersprüche (${structural.length}: ${structural[0]}) – als PLAN behandelt. Ein Gate ist erst belastbar, wenn die zugrunde liegende Behauptung steht (Regel 5).`));
+    verdict = enforceStructuralCoherence(structural, verdict);
+  }
+  // Regel 6 (UI-104): WRITE braucht UNABHÄNGIGE Evidenz (Evil Twin). Der
+  // Erstprüfer hat widerlegt und verifiziert in EINER Konversation – eine
+  // Freigabe ist erst belastbar, wenn eine ZWEITE, kontextgetrennte Instanz
+  // die Widerlegung selbst gegen den Code geprüft hat (eigene frische
+  // Konversation, nur die Behauptungen, nie das Erst-Reasoning). Fail-closed:
+  // WIDERSPRUCH/UNKLAR/Fehler ⇒ PLAN – kein WRITE ohne unabhängige
+  // Bestätigung. Nur WRITE-Kandidaten kosten den zweiten Modell-Call.
+  let twin = null;
+  if (verdict === "WRITE") {
+    uiEvt({ t: "state", s: "VERIFYING" });
+    enforceRateLimit(maxRpm, false); // zweiter Call: Budget teilen, nie wegen Budget failen
+    console.log(dim("Gegenprüfung (Evil Twin – unabhängige Konversation) läuft …"));
+    twin = await runTwinCheck({
+      header: scope ? scope.header : null,
+      planText,
+      befund,
+      claims: extractClaims(result.content),
+      lang,
+      model,
+      apiKey,
+      apiBase: CFG.apiBase,
+      opts: {
+        maxTokens: CFG.maxTokens,
+        reasoningEffort: CFG.reasoningEffort,
+        maxToolRounds: CFG.maxToolRounds,
+        temperature: CFG.temperature,
+        timeoutMs: CFG.timeoutMs,
+      },
+      root: ROOT,
+      whitelist: FILE_WHITELIST,
+      onTool: (info) => {
+        uiEvt({ t: "state", s: "TOOL_ACTIVITY" });
+        uiEvt({ t: "activity", tool: info.tool, file: info.file, label: `${info.tool}(${info.file ?? ""})` });
+      },
+    });
+    if (twin.verdict === "BESTAETIGT") {
+      console.log(green(dim("Gegenprüfung BESTÄTIGT: die Widerlegung hält unabhängiger Nachprüfung stand.")));
+    } else {
+      const reason = twin.befund || twin.error || "keine belastbare Bestätigung";
+      console.warn(yellow(`\n⚠ WRITE ohne unabhängige Bestätigung (Gegenprüfung: ${twin.verdict}) – als PLAN behandelt. ${reason}`));
+      verdict = "PLAN";
+    }
   }
 
   // Finding-Severity echt (UI-065-Befund 3): info/warning/critical je Verdict,
@@ -385,11 +471,29 @@ async function main() {
       scopeId: scope.id,
       jobId,
       round: nextRound(db, scope.id),
+      wave: job?.wave || "scan",
       mode: job?.mode || scope.phase,
       befund,
       content: result.content,
       verdict: verdict || "UNBEKANNT",
     });
+    // Gegenprüfung als eigenes Finding mit Welle 'evil-twin' – Letztes
+    // Finding trägt IMMER das final geltende Urteil (Invariante 4 bleibt
+    // gültig: jobs.verdict == letztes findings.verdict).
+    if (twin) {
+      addFinding(db, {
+        scopeId: scope.id,
+        jobId,
+        round: nextRound(db, scope.id),
+        wave: "evil-twin",
+        mode: job?.mode || scope.phase,
+        befund: twin.befund
+          ? `GEGENPRÜFUNG ${twin.verdict}: ${twin.befund}`
+          : `GEGENPRÜFUNG ${twin.verdict}${twin.error ? ` (${twin.error})` : ""}`,
+        content: twin.content || "",
+        verdict: verdict || "UNBEKANNT",
+      });
+    }
   }
   jobDone(db, jobId, verdict, null);
 
@@ -408,6 +512,19 @@ async function main() {
     if (scope) console.log(green("GAP: geschlossen – die Coder-Annahme hat die Falsifikations-Challenge überstanden."));
     closeDb();
     process.exitCode = 0;
+    return;
+  }
+  if (verdict === "ASK") {
+    // Etage 2 (UI-082): Aufgaben-Mehrdeutigkeit – kein Fortschritt, keine
+    // Freigabe; die Phase bleibt, was sie war. Der User muss die Rückfrage
+    // beantworten, dann wird neu eingereicht.
+    uiEvt({ t: "verdict", v: "ASK" });
+    uiEvt({ t: "done" });
+    console.log(cyan(`\nVERDICT: ASK – die Aufgabe selbst ist mehrdeutig (keine Freigabe)`));
+    if (scope && befund) console.log(cyan(`Rückfrage an den User nötig: ${befund}`));
+    console.log(cyan("→ Phase unverändert; nach Klärung erneut einreichen."));
+    closeDb();
+    process.exitCode = 5;
     return;
   }
   if (verdict === "RESEARCH" || verdict === "PLAN") {

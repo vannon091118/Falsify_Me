@@ -83,10 +83,25 @@ Dadurch blockt FalsifyMe fehlerhafte Absichten, ohne das System zu stören.
 |---|---|
 | `PLAN` | Plan überarbeiten und mit derselben Scope-ID erneut einreichen. |
 | `RESEARCH` | FalsifyMe braucht Daten: read-only recherchieren, erneut einreichen. |
+| `ASK` | Aufgaben-Mehrdeutigkeit: die Anforderung selbst ist unklar — Rückfrage an den User, danach neu einreichen (Phase bleibt). |
 | `WRITE` | Freigabe: der aufrufende Agent darf von read-only auf write wechseln. Ich selbst bleibe read-only. |
 | Fehler / kein Verdict | keine Freigabe. Punkt. |
 
-### Exit-Codes (verifiziert in `cli/run.mjs`)
+### Unabhängige Gegenprüfung (Evil Twin)
+
+FalsifyMe prüft nicht, ob ein Agent die vorgeschriebene Form erfüllt — es
+prüft, ob dessen Behauptungen durch **unabhängige Evidenz** belastbar sind.
+Deshalb durchläuft jeder `WRITE`-Kandidat (nach Form-, Evidenz- und
+Struktur-Gate) eine **zweite, kontextgetrennte Konversation**: Der
+Gegenprüfer (Evil Twin) kennt nur die Falsifikationsversuche des Erstprüfers,
+liest die zitierten Dateien selbst und bestätigt (`BESTAETIGT`),
+widerspricht (`WIDERSPRUCH`) oder erklärt sie für ungeprüft (`UNKLAR`).
+**Fail-closed:** Nur ein sauberes `BESTAETIGT` lässt `WRITE` stehen — jede
+Abweichung (auch ein API-Fehler) wird ehrlich als `PLAN` beantwortet, und die
+Gegenprüfung landet als eigenes Finding (`wave=evil-twin`) im Scope-Artefakt.
+Im Dock erscheint die Phase als `VERIFYING`.
+
+### Exit-Codes (verifiziert in `cli/run.mjs` + `core/verdict.mjs`)
 
 | Code | Bedeutung |
 |---:|---|
@@ -94,6 +109,7 @@ Dadurch blockt FalsifyMe fehlerhafte Absichten, ohne das System zu stören.
 | 1 | `VERDICT: PLAN` oder `RESEARCH` — erneut einreichen |
 | 2 | ungültige Argumente oder Konfiguration |
 | 3 | API-, Laufzeit- oder Verdict-Fehler — **keine Zusage** |
+| 5 | `VERDICT: ASK` — Aufgabe mehrdeutig, Rückfrage an den User |
 
 ### Scope-Protokoll (Kernregeln)
 
@@ -158,7 +174,15 @@ falsify submit --scope <scope-id> --plan-file plan.txt --root <projekt> --files 
 ```
 
 - Der Submit legt den Job in die SQLite-Queue (`JOB_ID=…`) und wartet bis zum
-  Verdict (Exit 0=WRITE · 1=PLAN/RESEARCH · 3=Fehler).
+  Verdict (Exit 0=WRITE · 1=PLAN/RESEARCH · 5=ASK · 3=Fehler).
+- Optional beim Einreichen: `--agent-intent "…"` (Agent-eigenes Verständnis
+der Aufgabe — FalsifyMe prüft die Divergenz zum User-Wunsch als eigenen
+Punkt) und `--affected "a.js,b.js"` (betroffene Daten).
+- **Selbstprüfung ohne blinde Bereiche:** Ist das Ziel ein eigenes
+  FalsifyMe-Checkout (Marker unter `--root`), erweitert FalsifyMe die
+  Whitelist automatisch um die Prüf-Kernkomponenten (`Selbstprüfung
+erkannt: …`) — der Prüfmechanismus ist nie unsichtbar. Fremdprojekte
+  bleiben unverändert.
 - Ein Worker verarbeitet den Job live: sichtbares Dock-Fenster über
   `ui/start-dock.cmd` bzw. das Desktop-Icon, oder headless über
   `node "$(npm root -g)/falsifyme/ui/worker.mjs"`.

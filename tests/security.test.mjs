@@ -58,6 +58,31 @@ test("list_dir blocks directories with no whitelisted descendant", async () => {
   assert.throws(() => api.execTool("list_dir", { path: "sub" }), /außerhalb|Symlink/i);
 });
 
+test("list_dir zeigt NUR freigegebene Namen (Regel 4: keine Namen-Leaks)", async () => {
+  const { root } = fixture();
+  fs.writeFileSync(path.join(root, "forbidden.js"), "x\n");
+  fs.writeFileSync(path.join(root, "secret.db"), "x\n");
+  fs.mkdirSync(path.join(root, "fremd"));
+  fs.writeFileSync(path.join(root, "fremd", "data.txt"), "x\n");
+  const api = await tools(root, ["allowed.js", "sub/nested.js"]);
+
+  // Root: nur freigegebene Datei + Vorfahr-Ordner – keine fremden Namen.
+  const rootList = api.execTool("list_dir", { path: "." });
+  assert.ok(rootList.includes("allowed.js"), "whitelisted Datei sichtbar");
+  assert.ok(rootList.includes("sub/"), "Vorfahr-Ordner freigegebener Datei sichtbar");
+  assert.ok(!rootList.includes("forbidden.js"), "nicht freigegebene Datei unsichtbar");
+  assert.ok(!rootList.includes("secret.db"), "NICHT freigegebener Name leaket nicht");
+  assert.ok(!rootList.includes("fremd"), "fremder Ordner ohne freigegebene Nachkommen unsichtbar");
+
+  // Unterordner: nur die freigegebene Datei darin.
+  const subList = api.execTool("list_dir", { path: "sub" });
+  assert.ok(subList.includes("nested.js"));
+  assert.ok(!subList.includes("secret.db"));
+
+  // Ordner ohne freigegebene Nachkommen bleibt gesperrt.
+  assert.throws(() => api.execTool("list_dir", { path: "fremd" }), /Whitelist/i);
+});
+
 test("read_file and glob enforce whitelist", async () => {
   const { root } = fixture();
   const api = await tools(root, ["allowed.js", "sub/nested.js"]);

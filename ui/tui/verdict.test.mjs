@@ -6,11 +6,11 @@ import { createUiState } from "./state.mjs";
 const t0 = 7_000_000;
 
 test("MAP hat alle Pflicht-Verdicts", () => {
-  for (const c of ["WRITE", "PLAN", "RESEARCH", "ERROR", "TIMEOUT"]) {
+  for (const c of ["WRITE", "PLAN", "RESEARCH", "ASK", "ERROR", "TIMEOUT"]) {
     assert.ok(MAP[c], `fehlt: ${c}`);
     assert.ok(MAP[c].symbol && MAP[c].label && MAP[c].color);
   }
-  assert.equal(CODES.length, 5);
+  assert.equal(CODES.length, 6);
 });
 
 test("WRITE -> gruener Pass, kein Fake", () => {

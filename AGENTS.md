@@ -33,7 +33,17 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   `artifacts/jobs.mjs` + `artifacts/scopes.mjs` (`createJob`/`jobDone`/
   `claimNextJob`/`addFinding`/`updateScopeAfterReview`/`registerWorker`); nur
   `core/ratelimit.mjs` schreibt direkt, aber in eine eigene Tabelle. Es gibt
-  **keine zweite Queue** und keinen zweiten Verdict-Pfad.
+  **keine zweite Queue** und keinen zweiten Verdict-Pfad. Regel 3 wird
+  ERZWUNGEN: `artifacts/invariants.mjs checkQueueConsistency` (read-only,
+  in `falsify doctor` integriert) prüft abgeleitete Zustände (hardened/
+  Konflikte, GAP/Befund, Orphan-RUNNING, jobs- vs. findings-Verdict), und
+  `tests/invariants.test.mjs` scannt das Repo statisch: ALLE Zustands-Writer
+  (`createJob`/`jobToRunning`/`jobDone`/`setJobAbort`/`clearJobAbort`/
+  `claimNextJob`/`reapStaleJobs`/`registerWorker`/`unregisterWorker`/
+  `heartbeatWorker`/`setWorkerScope`/`createScope`/`updateScopeAfterReview`/
+  `markScopeDone`/`addFinding`) dürfen nur aus ihren Heimatmodulen +
+  `cli/run.mjs` + `ui/worker.mjs` + `cli/jobs.mjs` (abort) + `cli/scope.mjs`
+  (new) aufgerufen werden.
 - `falsify wait` hat **keinen festen Timeout** (Laufzeiten sind
   anbieterabhängig): `--ping` pollt den Job und übergibt die Auswertung an den
   Coder (der Agent entscheidet selbst über Abbruch via `--abort`/`falsify
@@ -57,16 +67,70 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
 - `scopes.last_gap` ist NUR der FalsifyMe-Befund bei PLAN/RESEARCH (null bei
   WRITE) — keine gespeicherte Divergenz zweier Urteile: das Coder-Urteil wird
   nirgends erfasst, „Divergenz Coder-Urteil vs. Falsifikation" ist Label.
-- WRITE-Challenge-Gate (`core/verdict.mjs`) seit E2E 2026-09-01: WRITE
+- WRITE-Challenge-Gate (UI-098/UI-102, Regel 2 seit 2026-09-01): WRITE
   braucht den Abschnitt `## Falsifikationsversuche` MIT mind. einem
-  substanziellen nummerierten/Bullet-Versuch (>10 Zeichen, nicht
-  „Keine gefunden") — ein bloßes `BEFUND: …` reicht nicht mehr (Rubber-Stamp).
+  substanziellen Versuch (>10 Zeichen), der eine WIDERLEGUNG mit VERIFIZIERTER
+  Evidenz trägt (`evidenceOf` in core/verdict.mjs): Widerlegungs-Vokabular
+  (Bestätigungen wie „ist korrekt"/„keine Fehler gefunden" zählen NIE),
+  Whitelist-Datei, real im Code vorkommendes Symbol (Backtick, Scan der
+  whitelisted Dateien), Datei:Zeile deren Zeile existiert, existierender
+  Pfad — Fantasie-Symbole/-Zeilen/-Pfade failen. Evidenz darf in der
+  Folgezeile stehen (Bündel). `BEFUND: …` allein ist KEIN Nachweis
+  (WRITE -> UNKNOWN).
 - Abort-Interleaving ist strukturell unmöglich: während `createAbort` läuft,
   parkt die Worker-Main-Loop am `await close` — der `aborting`-Guard im
   Loop ist faktisch tot; Doppel-Aborts fängt der `started`-Guard ab.
 - node:sqlite bindet `undefined` nicht: `getJob(db, undefined)` meldet
   irreführend „Provided value cannot be bound to SQLite parameter 1."
   (Exit 3) — ids VOR jedem DB-Zugriff guarden (`fail`, Exit 2).
+- Etage 2 (UI-090..096): `jobs.agent_intent/affected/wave` +
+  `scopes.open_conflicts/hardened_at` + `findings.wave` (Schema-Version 3,
+  ALTER-only-Migration); `--agent-intent`/`--affected` beim Submit; die
+  Sektion „Agent-Verständnis" im User-Content macht die Divergenz zum HEADER
+  zu einem eigenen Prüfpunkt des Thinkers.
+- Verdict `ASK` = Aufgaben-Mehrdeutigkeit (nicht Umsetzung): Phase und
+  `open_conflicts` bleiben, Status active, Exit 5 — Exit-Codes zentral in
+  `core/verdict.mjs exitCodeOf()` (0 WRITE · 1 PLAN/RESEARCH · 5 ASK · 3 sonst).
+- Härtung: `scopes.status` active|hardened|done; hardened nur nach WRITE mit
+  0 offenen Konflikten (`updateScopeAfterReview`), erneuter PLAN ent-härtet.
+  „hardened/done" sind für `listScopes` abgeschlossen (nur active läuft).
+- `claimNextJob` setzt die Scope-Affinität ATOMAR in der Claim-Transaktion
+  (setWorkerScope INNERHALB BEGIN IMMEDIATE) — das Claim-SELECT MUSS
+  `scope_id` mitnehmen, sonst bleibt der Switch still tot (2026-09-01).
+- Worker-Start ruft `reapStaleJobs` auf (RUNNING-Waisen toter Worker →
+  `ERROR Worker-Abbruch (Recovery)`) — ohne Recovery lügt die Queue ewig
+  (claimt nur QUEUED). `WORKER_STALE_MS` = 15 s (3× Heartbeat; `isWorkerAlive`
+  nutzt bewusst 1 h für Duplikat-Schutz — zwei Staleness-Semantiken,
+  dokumentiert).
+- feasibility-Block-Texte dürfen KEINE Verdict-Steuerworte (PLAN/RESEARCH/
+  WRITE) enthalten (E2E-Befund 3) — die Hinweise sind Kontext, kein Urteil.
+- list_dir-Vertrag (Regel 4): zeigt NUR Whitelist-Dateien + Ordnervorfahren
+  freigegebener Dateien — Namen nicht freigegebener Daten sind unsichtbar
+  (core/tools.mjs; Regressionstest in tests/security.test.mjs).
+- Strukturelle Kohärenz (Regel 5, UI-103): feasibility-Blocker sind NICHT
+  nur Kontext — ein WRITE wird deterministisch auf PLAN runtergestuft,
+  wenn der Diff Dateien außerhalb der Whitelist berührt oder Plan und
+  Diff divergieren (enforceStructuralCoherence in core/verdict.mjs, Einbau
+  cli/run.mjs nach parseVerdict). Ein formales Gate macht eine kaputte
+  Basis nie grün. Diff-Parser: /^[+-]{3} [ab]\/(.+)$/ + /^diff --git a\/(.+?) b\/(.+)$/.
+- Evil-Twin-Gegenprüfung (Regel 6, UI-104): JEDER WRITE-Kandidat (nach den
+  Regel-2/5-Gates) kostet einen ZWEITEN Modell-Call — core/twin.mjs
+  runTwinCheck, kontextgetrennte Konversation (nur header/plan/BEFUND/
+  Claims via extractClaims, nie Erst-Reasoning), Twin-System-Prompt
+  SYSTEM_EVILTWIN_DE/EN. Fail-closed: BESTAETIGT ist die EINZIGE WRITE-
+  tragende Antwort (parseTwinVerdict, strenge Lesart, Default UNKLAR);
+  WIDERSPRUCH/UNKLAR/Fehler ⇒ PLAN mit ehrlicher Warnung. Twin-Finding
+  bekommt wave='evil-twin' und trägt als LETZTES Finding das final geltende
+  Urteil (Invariante 4 unverändert gültig). Zweiter enforceRateLimit-Call
+  (noWait=false); TUI-State VERIFYING.
+- Self-Review-Regel (UI-097/UI-101): `core/selfreview.mjs` ergänzt bei
+  erkannter Selbstprüfung (Marker artifacts/db.mjs + core/tools.mjs +
+  cli/run.mjs unter --root) die Kern-WHITELIST automatisch
+  (SELF_REVIEW_CORE inkl. selfreview.mjs + invariants.mjs, nur existierende
+  Dateien, Union, Meldung „Selbstprüfung erkannt") — an ALLEN Einstiegen
+  (submit, Job-Lauf auf Job-Root, Direkt-Run); Fremdprojekte nie.
+  Install-Tools (uninstall, bootstrap/*) sind bewusst nicht im Kern
+  (kein Prüfmechanismus).
 
 ## Bootstrap & Onboarding (verhaltensrelevante Details)
 
@@ -175,9 +239,12 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
 ## Test-/Verifikationspfade
 
 - Kernsuite: `node --test tests/onboard.test.mjs tests/bootstrap.test.mjs
-  tests/security.test.mjs tests/phase2.test.mjs tests/queue.test.mjs` (Stand
-  2026-09-01, Batch-Commit; `tests/queue.test.mjs` deckt Ping/Abort/
-  Heartbeat-Stale/feasibility-ohne-Verdict ab).
+  tests/security.test.mjs tests/phase2.test.mjs tests/queue.test.mjs
+  tests/feasibility.test.mjs tests/datamodel.test.mjs tests/invariants.test.mjs
+  tests/selfreview.test.mjs` (Stand 2026-09-01; deckt die fünf Regeln ab:
+  Queue eine Wahrheit, list_dir-Namen-Vertrag, WRITE-Challenge-Evidenz,
+  Self-Review-Scope, strukturelle Kohärenz). `tests/settings.test.mjs` läuft
+  separat.
 - Deterministischer Abort-/Kill-E2E ohne echten Key: Dummy-Key in isolierter
   `FALSIFY_HOME/.env` + lokaler HTTP-Server (SSE ohne `[DONE]`, hält run.mjs
   offen) → CLI-Abort killt den hängenden Job beweisbar (`ERROR Abgebrochen

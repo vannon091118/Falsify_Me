@@ -8,11 +8,11 @@
 import { nowIso, genId, setMeta, getMeta, isProcessAlive } from "./db.mjs";
 
 // ── Jobs ─────────────────────────────────────────────────────────────────────
-export function createJob(db, { scopeId, payload, diffText, root, files, mode, status = "QUEUED" }) {
+export function createJob(db, { scopeId, payload, diffText, root, files, agentIntent = null, affected = null, wave = "scan", mode, status = "QUEUED" }) {
   const id = genId("job");
   db.prepare(
-    "INSERT INTO jobs(id, scope_id, payload, diff_text, root, files, mode, status, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)"
-  ).run(id, scopeId ?? null, payload ?? null, diffText ?? null, root ?? null, files ?? null, mode ?? null, status, nowIso());
+    "INSERT INTO jobs(id, scope_id, payload, diff_text, root, files, agent_intent, affected, wave, mode, status, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).run(id, scopeId ?? null, payload ?? null, diffText ?? null, root ?? null, files ?? null, agentIntent ?? null, affected ?? null, wave || "scan", mode ?? null, status, nowIso());
   return id;
 }
 
@@ -75,22 +75,51 @@ export function claimNextJob(db, windowIdx, preferredScopeId = null) {
     let row = null;
     if (preferred) {
       row = db.prepare(
-        "SELECT id FROM jobs WHERE status = 'QUEUED' AND scope_id = ? ORDER BY created_at ASC LIMIT 1"
+        "SELECT id, scope_id FROM jobs WHERE status = 'QUEUED' AND scope_id = ? ORDER BY created_at ASC LIMIT 1"
       ).get(preferred);
     }
     if (!row) {
       row = db.prepare(
-        "SELECT id FROM jobs WHERE status = 'QUEUED' ORDER BY created_at ASC LIMIT 1"
+        "SELECT id, scope_id FROM jobs WHERE status = 'QUEUED' ORDER BY created_at ASC LIMIT 1"
       ).get();
     }
     if (!row) { db.exec("COMMIT"); return null; }
     jobToRunning(db, row.id, windowIdx);
+    // Scope-Affinität ATOMAR mit dem Claim setzen (E2E-Befund 5, 2026-09-01):
+    // Ein separater setWorkerScope-Aufruf NACH dem Claim liesse zwischen Claim
+    // und Scope-Switch einen zweiten Worker denselben Scope claimen. Hier läuft
+    // der Scope-Switch in derselben BEGIN-IMMEDIATE-Transaktion – Fenster koppelt
+    // sich damit fest an den Scope, bis ein Job eines anderen Scopes geclaimt wird.
+    if (row.scope_id) setWorkerScope(db, windowIdx, row.scope_id);
     db.exec("COMMIT");
     return getJob(db, row.id);
   } catch (e) {
     try { db.exec("ROLLBACK"); } catch { /* egal */ }
     throw e;
   }
+}
+
+/**
+ * Worker-Start-Recovery (E2E-Befund 4, 2026-09-01): Schliesst RUNNING-Jobs,
+ * deren registrierter Worker tot ist (hart gekillt, Stromausfall), als
+ * "Worker-Abbruch (Recovery)" – die Queue luegt sonst dauerhaft:
+ * claimNextJob claimt nur QUEUED, ein verwaister RUNNING-Job wuerde nie
+ * fertig werden. Aufruf: worker.mjs beim Start (nach registerWorker).
+ * @returns {string[]} geschlossene Job-IDs
+ */
+export function reapStaleJobs(db, maxWindows = 3) {
+  const reaped = [];
+  for (let i = 1; i <= maxWindows; i++) {
+    const alive = isWorkerAlive(db, i);
+    const jobs = db.prepare("SELECT id FROM jobs WHERE status = 'RUNNING' AND window_idx = ?").all(i);
+    for (const j of jobs) {
+      if (!alive) {
+        jobDone(db, j.id, null, "Worker-Abbruch (Recovery)");
+        reaped.push(j.id);
+      }
+    }
+  }
+  return reaped;
 }
 
 // ── Worker-Registrierung (Fenster 1..MAX_WINDOWS) ────────────────────────────
@@ -123,7 +152,15 @@ export function workerPid(db, windowIdx) {
   return Number(getMeta(db, `worker.${windowIdx}.pid`) || 0);
 }
 
-/** True, wenn für Fenster <windowIdx> ein lebender Worker registriert ist. */
+/**
+ * True, wenn für Fenster <windowIdx> ein lebender Worker registriert ist.
+ * Bewusst ZWEI Staleness-Semantiken (dokumentiert, kein stiller Split):
+ * - isWorkerAlive: 1 h – Duplikat-/Recovery-Schutz (nur ein Fenster pro Slot;
+ *   verhindert, dass ein kurz angehaltener Worker als tot gilt und ein
+ *   zweites Fenster denselben Slot belegt).
+ * - WORKER_STALE_MS (15 s): Status-API (listWorkers/.alive) – frische
+ *   Heartbeats sind die Grundlage von --check/--state.
+ */
 export function isWorkerAlive(db, windowIdx) {
   const pid = workerPid(db, windowIdx);
   if (!isProcessAlive(pid)) return false;
@@ -141,7 +178,11 @@ export function isWorkerAlive(db, windowIdx) {
 // hart gekillte Fenster (taskkill //T) altern dadurch aus und koennen keine
 // false RUNNING/BUSY-Meldung mehr erzeugen (Root-Cause-Fix, ersetzt den
 // frueheren PowerShell-CIM-Prozessabgleich).
-export const WORKER_STALE_MS = 60 * 1000;
+// Worker-Heartbeat-Frische für die Status-API. Der Worker heartbeated alle
+// 5 s; 3x Heartbeat-Intervall (15 s) ist robust gegen GC/Netz-Jitter, aber
+// hart gekillte Fenster altern schnell aus (E2E-Befund 6: 60 s liessen die
+// Status-API bis zu einer Minute lügen).
+export const WORKER_STALE_MS = 15 * 1000;
 
 /** Registrierte/laufende Worker (1..MAX_WINDOWS) als Liste. */
 export function listWorkers(db, maxWindows = 3) {

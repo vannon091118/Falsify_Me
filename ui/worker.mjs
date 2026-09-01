@@ -24,9 +24,9 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { openDb, closeDb, falsifyHome } from "../artifacts/db.mjs";
 import {
-  claimNextJob, getJob, jobDone,
+  claimNextJob, getJob, jobDone, reapStaleJobs,
   registerWorker, unregisterWorker, heartbeatWorker,
-  setWorkerScope, workerPid, isWorkerAlive, listWorkers, listJobs,
+  workerPid, isWorkerAlive, listWorkers, listJobs,
   isAbortRequested, clearJobAbort,
 } from "../artifacts/jobs.mjs";
 // ── Phase 2: Terminal-UI im Worker-Fenster ───────────────────────────────────
@@ -232,6 +232,14 @@ async function main() {
   }
   registerWorker(db, WINDOW_IDX, process.pid);
 
+  // ── Orphan-Recovery beim Start (E2E-Befund 4, 2026-09-01) ────────────────
+  // Hart gekillte Fenster lassen RUNNING-Jobs zurück; claimNextJob claimt nur
+  // QUEUED – ohne Recovery blieben sie dauerhaft hängen ("Queue lügt").
+  try {
+    const reaped = reapStaleJobs(db, MAX_WINDOWS);
+    if (reaped.length) say(`♻ Waisen-Jobs geschlossen (Worker tot): ${reaped.length}`);
+  } catch { /* egal */ }
+
   // ── Kontinuierlicher Herzschlag (auch waerend Jobs) ───────────────────────
   // Grundlage der Status-API: --check/--state zaehlen nur frische Heartbeats.
   // Der Intervall laeuft fuer die Lebensdauer des Prozesses; beim Exit wird
@@ -315,7 +323,8 @@ async function main() {
     }
     if (!job) { await sleep(1000); continue; }
 
-    setWorkerScope(db, WINDOW_IDX, job.scope_id || "");
+    // Scope-Affinität setzt claimNextJob ATOMAR in der Claim-Transaktion
+    // (E2E-Befund 5) – hier kein separater Schreibvorgang mehr.
     title(`Falsify-Dock ${WINDOW_IDX} · ${job.scope_id || "ohne Scope"} · ${job.id}`);
     uiEvt({ t: "job", id: job.id, scope: job.scope_id || null });
     uiEvt({ t: "state", s: "CLAIMING" });

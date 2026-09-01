@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { STATES, canTransition, createUiState, shortId, isActive, STATE_LABEL, activeSlotOf, busySlots, globalIdle } from "./state.mjs";
 
 test("Zustaende enthalten alle Pflicht-Zustaende", () => {
-  for (const s of ["STARTING", "LOADING", "CLAIMING", "THINKING", "TOOL_ACTIVITY", "FINDINGS", "VERDICT", "SUCCESS", "ERROR", "ABORTING", "ABORTED", "IDLE"]) {
+  for (const s of ["STARTING", "LOADING", "CLAIMING", "THINKING", "TOOL_ACTIVITY", "FINDINGS", "VERIFYING", "VERDICT", "SUCCESS", "ERROR", "ABORTING", "ABORTED", "IDLE"]) {
     assert.ok(STATES.includes(s), `fehlt: ${s}`);
   }
 });
@@ -18,6 +18,9 @@ test("canTransition: erlaubte + verbotene Uebergaenge", () => {
   assert.ok(canTransition("IDLE", "STARTING"));
   assert.ok(canTransition("THINKING", "TOOL_ACTIVITY"));
   assert.ok(canTransition("THINKING", "VERDICT"));
+  assert.ok(canTransition("FINDINGS", "VERIFYING"));
+  assert.ok(canTransition("VERIFYING", "FINDINGS"));
+  assert.ok(canTransition("VERIFYING", "VERDICT"));
   assert.ok(canTransition("VERDICT", "SUCCESS"));
   assert.ok(!canTransition("SUCCESS", "THINKING"));
   assert.ok(!canTransition("IDLE", "SUCCESS"));
@@ -25,7 +28,7 @@ test("canTransition: erlaubte + verbotene Uebergaenge", () => {
 });
 
 test("Abbruch-Pfad: jeder aktive Zustand darf ABORTING erreichen", () => {
-  for (const s of ["STARTING", "LOADING", "CLAIMING", "THINKING", "TOOL_ACTIVITY", "FINDINGS", "VERDICT"]) {
+  for (const s of ["STARTING", "LOADING", "CLAIMING", "THINKING", "TOOL_ACTIVITY", "FINDINGS", "VERIFYING", "VERDICT"]) {
     assert.ok(canTransition(s, "ABORTING"), `${s} -> ABORTING`);
   }
   assert.ok(canTransition("ABORTING", "ABORTED"));

@@ -10,8 +10,8 @@
 #
 #   falsify install                          global in PATH einhaengen (einmalig)
 #   falsify scope new "<user-input>"         Scope anlegen (HEADER = User-Input 1:1)
-#   falsify submit --scope <id> --plan-file plan.txt --root <dir> --files "a.js,b.js" [--diff-file d.patch]
-#             BLOCKIERT bis zum Verdict (Exit 0=WRITE 1=PLAN/RESEARCH 3=Fehler):
+#   falsify submit --scope <id> --plan-file plan.txt --root <dir> --files "a.js,b.js" [--diff-file d.patch] [--agent-intent "..."] [--affected "a.js,b.js"]
+#             BLOCKIERT bis zum Verdict (Exit 0=WRITE 1=PLAN/RESEARCH 5=ASK 3=Fehler):
 #             Agents duerfen erst nach VERDICT: WRITE (Freigabe) schreiben.
 #             --no-wait NUR fuer interaktive Tools (danach: falsify wait <id>)
 #   falsify wait <job-id>                    STILLER CHECKBACK (jede Sekunde, KEIN Timeout):
@@ -76,8 +76,8 @@ case "$cmd" in
   submit)
     # PFLICHT-Regel: Agents muessen warten, bis ihr Job geprueft wurde, bevor sie
     # weiterarbeiten. `falsify submit` blockt deshalb standardmaessig bis zum
-    # Verdict (Exit 0=WRITE, 1=PLAN/RESEARCH, 3=Fehler). Nur fuer interaktive
-    # Tools, die die Kritik live im Fenster verfolgen, gibt es --no-wait.
+    # Verdict (Exit 0=WRITE, 1=PLAN/RESEARCH, 5=ASK, 3=Fehler). Nur fuer
+    # interaktive Tools, die die Kritik live im Fenster verfolgen, gibt es --no-wait.
     no_wait=0
     for a in "$@"; do [ "$a" = "--no-wait" ] && no_wait=1; done
     out="$(node "$V2_DIR/cli/run.mjs" --submit "$@")" || { echo "$out" >&2; exit 2; }

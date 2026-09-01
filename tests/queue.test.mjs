@@ -162,20 +162,52 @@ test("Anti-Self-Check-Bias: WRITE ohne Challenge-Nachweis -> UNKNOWN (keine Frei
   assert.equal(parseVerdict("Alles gut.\nVERDICT: WRITE"), "WRITE");
   assert.equal(hasChallengeEvidence("Alles gut.\nVERDICT: WRITE"), false);
   assert.equal(enforceWriteChallenge("Alles gut.\nVERDICT: WRITE", "WRITE"), null, "WRITE ohne Challenge = keine Freigabe");
-  // Echter Challenge-Nachweis (Struktur aus SYSTEM_DE) -> WRITE bleibt.
-  const withChallenge = "## Falsifikationsversuche\n1. Race im Claim\nBEFUND: Claim nicht atomar\nVERDICT: WRITE";
-  assert.equal(enforceWriteChallenge(withChallenge, "WRITE"), "WRITE", "Challenge-Beleg erlaubt WRITE");
+  // Echter Challenge-Nachweis -> WRITE (Widerlegung + verifizierte Evidenz:
+  // Symbol claimNextJob existiert, artifacts/jobs.mjs:78 ist eine echte Zeile).
+  const WL = ["artifacts/jobs.mjs", "core/tools.mjs", "core/verdict.mjs", "artifacts/db.mjs"];
+  const opts = { root: ROOT, whitelist: WL };
+  const withChallenge = "## Falsifikationsversuche\n1. Widerlegt: `claimNextJob` ist racy – der Claim selektiert ohne scope_id (artifacts/jobs.mjs:78)\nBEFUND: Claim nicht atomar\nVERDICT: WRITE";
+  assert.equal(enforceWriteChallenge(withChallenge, "WRITE", opts), "WRITE", "Widerlegung mit verifizierter Evidenz erlaubt WRITE");
   // E2E-Befund 2026-09-01: BEFUND allein ist kein Challenge-Beleg (Rubber-Stamp).
-  assert.equal(enforceWriteChallenge("BEFUND: nix\nVERDICT: WRITE", "WRITE"), null, "BEFUND ohne Abschnitt = kein Beleg");
+  assert.equal(enforceWriteChallenge("BEFUND: nix\nVERDICT: WRITE", "WRITE", opts), null, "BEFUND ohne Abschnitt = kein Beleg");
   // „Keine gefunden“ und Versuche ohne Substanz (<10 Zeichen) zaehlen nicht.
-  assert.equal(hasChallengeEvidence("## Falsifikationsversuche\nKeine gefunden\nVERDICT: WRITE"), false, "Keine gefunden = kein Beleg");
-  assert.equal(hasChallengeEvidence("## Falsifikationsversuche\n1. ok\nVERDICT: WRITE"), false, "Versuch ohne Substanz = kein Beleg");
+  assert.equal(hasChallengeEvidence("## Falsifikationsversuche\nKeine gefunden\nVERDICT: WRITE", opts), false, "Keine gefunden = kein Beleg");
+  assert.equal(hasChallengeEvidence("## Falsifikationsversuche\n1. ok\nVERDICT: WRITE", opts), false, "Versuch ohne Substanz = kein Beleg");
+
+  // ── Rig-Review 2026-09-01: die empirisch durchgereichten Rubber-Stamps ──
+  const rubber = (t) => hasChallengeEvidence(`## Falsifikationsversuche\n${t}\nVERDICT: WRITE`, opts);
+  assert.equal(rubber("1. Geprüft, keine Fehler gefunden in core/verdict.mjs"), false, "Bestätigung + angehängter Whitelist-Pfad ist KEINE Widerlegung");
+  assert.equal(rubber("1. Gegenprobe bestätigt: artifacts/db.mjs ist korrekt"), false, "Bestätigung („ist korrekt“) trotz Whitelist-Datei");
+  assert.equal(rubber("1. Widerlegt: siehe `nonsenseSymbol9997`"), false, "Fantasie-Symbol kommt nicht im Code vor (nur Pfade wurden vorher verifiziert)");
+  assert.equal(rubber("1. core/verdict.mjs:99999 belegt das Gegenteil"), false, "Fantasie-Zeilennummer existiert nicht in der Datei");
+  assert.equal(rubber("1. Bug in artifacts/jobs.mjs"), true, "Widerlegung + Whitelist-Datei = Beleg");
+  assert.equal(rubber("1. Lücke: `claimNextJob` hat keine Orphan-Recovery (artifacts/jobs.mjs)"), true, "Widerlegung + existierendes Symbol + Pfad");
+  // Mehrzeiliges Bündel: Evidenz in der FOLGEZEILE zählt (vorher strukturell blockt).
+  assert.equal(hasChallengeEvidence("## Falsifikationsversuche\n1. Lücke, ungedeckt:\n   `claimNextJob` lässt RUNNING-Waisen ohne Recovery (artifacts/jobs.mjs)\nVERDICT: WRITE", opts), true, "Evidenz in Folgezeile zählt");
+  // Fantasie-Pfad bleibt ungültig.
+  assert.equal(rubber("1. Bug in core/geheim.mjs:12"), false, "nicht existierende Datei:Zeile = kein Beleg");
   // Severity echt (UI-065-Befund 3)
   assert.equal(findingSeverity("WRITE"), "discovered");
   assert.equal(findingSeverity("PLAN"), "warning");
   assert.equal(findingSeverity("RESEARCH"), "warning");
   assert.equal(findingSeverity(null), "critical");
   assert.equal(findingSeverity("UNBEKANNT"), "critical");
+});
+
+test("Regel 5: WRITE gegen strukturelle Blocker wird zu PLAN (kein formal grün)", async () => {
+  const { enforceStructuralCoherence } = await mod("core/verdict.mjs");
+  // Keine Blocker: WRITE bleibt.
+  assert.equal(enforceStructuralCoherence([], "WRITE"), "WRITE");
+  // Harte Blocker (fehlende Whitelist-Dateien, Diff ausserhalb, Plan↔Diff):
+  // ein formales Challenge-Gate macht keine kaputte Basis grün -> PLAN.
+  assert.equal(enforceStructuralCoherence(["Diese Dateien der Whitelist existieren nicht unter root: x.js"], "WRITE"), "PLAN");
+  assert.equal(enforceStructuralCoherence(["Der Diff verändert Dateien ausserhalb des Zugriffsrahmens: geheim.js"], "WRITE"), "PLAN");
+  assert.equal(enforceStructuralCoherence(["Der Plan nennt app.js, aber die eingereichte Aenderung betrifft lib/y.js"], "WRITE"), "PLAN");
+  // Nicht-WRITE wird nie angetastet.
+  assert.equal(enforceStructuralCoherence(["irgendein Blocker"], "PLAN"), "PLAN");
+  assert.equal(enforceStructuralCoherence(["irgendein Blocker"], "RESEARCH"), "RESEARCH");
+  assert.equal(enforceStructuralCoherence(["irgendein Blocker"], "ASK"), "ASK");
+  assert.equal(enforceStructuralCoherence(["irgendein Blocker"], null), null);
 });
 
 test("onTool-Dateipfad-Extraktion: nur pfadartige Argumente werden als Datei gemeldet", async () => {

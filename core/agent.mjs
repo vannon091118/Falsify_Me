@@ -32,7 +32,7 @@ function streamFlush() {
  * @param {string} o.apiBase
  * @param {number} [o.maxTokens=20000]
  * @param {string} [o.reasoningEffort='high'] – 'auto'|'off' lässt den Parameter weg
- * @param {number} [o.maxToolRounds=10]
+ * @param {number} [o.maxToolRounds=14]
  * @param {number} [o.temperature=0.3]
  * @param {number} [o.timeoutMs=600000]
  * @param {string} o.root
@@ -41,7 +41,7 @@ function streamFlush() {
  *   Callback je echtem Tool-Aufruf (Phase 2 UI-Events; Default: keine Wirkung)
  * @returns {Promise<{content:string, usage:object, toolRounds:number}>}
  */
-export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBase, maxTokens = 20000, reasoningEffort = "high", maxToolRounds = 10, temperature = 0.3, timeoutMs = 600000, root, whitelist = [], onTool } = {}) {
+export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBase, maxTokens = 20000, reasoningEffort = "high", maxToolRounds = 14, temperature = 0.3, timeoutMs = 600000, root, whitelist = [], onTool } = {}) {
   const { TOOLS, execTool } = makeTools(root, whitelist);
   const messages = [
     { role: "system", content: systemPrompt },
@@ -94,10 +94,14 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
     const c = (round.content || "").trim();
     const looksLikeToolJson = /^\s*\{[\s\S]*"(tool|name|path|arguments|function)"\s*:/.test(c);
     // NIM/OpenAI-kompatible Provider betten Tool-Wuensche teils als ONLY-Content
-    // ein (<tool_call>…</tool_call>), ohne strukturierte tool_calls (E2E 2026-09-01).
-    // Ein reiner Stub ist KEINE finale Antwort — wie eine leere Antwort behandeln.
+    // ein (<tool_call>…</tool_call>), ohne strukturierte tool_calls.
+    // (1) Reiner Stub ODER (2) Stub+Resttext OHNE VERDICT (E2E 2026-09-01:
+    // Antwort brach mit „Let me read core/prompt.mjs an" + Stub ab und wurde
+    // als final abgestempelt) ist KEINE finale Antwort — wie leer behandeln.
+    const hadStub = /<tool_call>/i.test(c);
+    const hasVerdict = /VERDICT\s*:\s*\S+/i.test(c);
     const stubOnlyContent = c !== "" && c.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "").trim() === "";
-    if (!calls.length && (stubOnlyContent || !c || looksLikeToolJson) && emptyRetries < 3) {
+    if (!calls.length && (stubOnlyContent || (hadStub && !hasVerdict) || !c || looksLikeToolJson) && emptyRetries < 3) {
       emptyRetries++;
       process.stderr.write(`⚠️ Leere Antwort (finish=${round.finish || "?"}) – Versuch ${emptyRetries}/3 …\n`);
       if (emptyRetries >= 2) {
@@ -115,10 +119,12 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
       const finalMsg = { role: "user", content: "Du hast dein Tool-Runden-Limit erreicht. Gib JETZT deine abschließende Falsifikations-Kritik mit BEFUND und VERDICT (PLAN | RESEARCH | WRITE) – reiner Text, keine Tool-Aufrufe." };
       round = await fetchRound({ ...body, tools: undefined, messages: [...messages, finalMsg] });
       let content = finalizeContent(round);
-      if (!content) {
-        // Einmalig nachbohren: manche Provider ignorieren tools:undefined und
-        // wiederholen den XML-Stub; der zweite Versuch erzwingt Text (E2E 2026-09-01).
-        round = await fetchRound({ ...body, tools: undefined, messages: [...messages, finalMsg, { role: "user", content: "Antworte JETZT nur mit Text. Dein letzter Tool-Wunsch kann nicht mehr ausgeführt werden." }] });
+      // Verdict-Pflicht (E2E 2026-09-01): NIM lieferte beim Schluss-Call einen
+      // Stub-Resttext OHNE BEFUND/VERDICT („Let me read core/prompt.mjs an“),
+      // der als finale Antwort durchging -> UNBEKANNT. Nachbohren, bis ein
+      // VERDICT da ist (bounded: 2 Versuche, dann ehrlich UNBEKANNT-möglich).
+      for (let attempt = 1; (!content || !/VERDICT\s*:\s*\S+/i.test(content)) && attempt <= 2; attempt++) {
+        round = await fetchRound({ ...body, tools: undefined, messages: [...messages, finalMsg, { role: "user", content: "Deine Antwort enthält kein VERDICT. Liefere JETZT die abschließende Falsifikations-Kritik mit BEFUND und VERDICT (PLAN | RESEARCH | WRITE) – reiner Text, genau eine VERDICT-Zeile am Ende." }] });
         content = finalizeContent(round);
       }
       return { content, usage: round.usage || {}, toolRounds };

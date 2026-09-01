@@ -1072,3 +1072,286 @@ DEPENDS_ON: UI-081..UI-088
 VERIFY: git status clean; Legacy-Grep ohne Treffer
 RESULT: PASS - Repo/GitHub bereinigt; AGENTS.md aktualisiert.
 
+
+## BLOCK 11 — Etage 2: Datenmodell (Vision „User-Wunsch vs. Agent-Verständnis, Wellen, Härtung, Rückfrage")
+
+Scope-Entscheidung des Nutzers 2026-09-01 („Direkt Vision starten"): Mit dem
+Datenmodell beginnen — Intake-Felder (getrennte Wahrheiten User-Wunsch /
+Agent-Verständnis), Wave-Dimension, gehärtet-Zustandsmaschine, viertes
+Verdict ASK (Aufgaben-Mehrdeutigkeit). Die 8 E2E-Befunde aus Iteration 5
+(VERDICT PLAN, job …mx76dg) fließen in diesen Block ein. Der E2E-Loop bis
+WRITE ist damit bewusst aufgeschoben.
+
+ID: UI-090
+TASK: Job-Intake-Schema (Etage 2): jobs.agent_intent (Agent-eigenes
+Verständnis) + jobs.affected (betroffene Daten) + CLI-Flags
+--agent-intent/--affected; buildUserContent zeigt beides als EIGENE Sektion
+(„Agent-Verständnis"), die Divergenz zum HEADER ist ein eigenständiger
+Prüfpunkt des Thinkers (Fehlerklasse „Wunsch missverstanden").
+STATUS: DONE
+DEPENDS_ON: UI-089
+VERIFY: node --test tests/datamodel.test.mjs (createJob-Persistenz +
+buildUserContent-Sektion)
+RESULT: PASS - Felder persistiert, Sektion nur bei agentIntent, Tests gruen.
+
+ID: UI-091
+TASK: Wave-Dimension: jobs.wave (Default 'scan') + findings.wave als
+Verankerung der kuenftigen Wellen-Choreografie (scan|plan|evil|replan).
+Heute durchgereicht (createJob → addFinding); die ROLLEN-Semantik je Welle
+folgt in UI-093.
+STATUS: DONE
+DEPENDS_ON: UI-090
+VERIFY: node --test tests/datamodel.test.mjs
+RESULT: PASS - wave landet in findings; Default 'scan'.
+
+ID: UI-092
+TASK: Härtungs-Zustandsmaschine + viertes Verdict ASK: scopes.status
+active|hardened|done, open_conflicts-Zaehler (PLAN/RESEARCH +1, WRITE=0),
+hardened_at; ASK = Aufgaben-Mehrdeutigkeit (Phase + Konflikte bleiben,
+keine Freigabe, Exit 5); exitCodeOf() als einzige Exit-Quelle; TUI-Label
+ASK; updateScopeAfterReview-hardened-Logik; listScopes: hardened/done sind
+abgeschlossen.
+STATUS: DONE
+DEPENDS_ON: UI-090
+VERIFY: node --test tests/datamodel.test.mjs tests/feasibility.test.mjs
++ ui/tui/verdict.test.mjs
+RESULT: PASS - 51 Core + 97 UI gruen; hardened erst nach WRITE mit 0
+offenen Konflikten („gehaertet, wenn keine belastbaren Widersprüche mehr
+bestehen" ist damit im Datenmodell ausdrueckbar).
+
+ID: UI-093
+TASK: Evil-Twin-Choreografie (Vision Welle 3): zweite, kontextgetrennte
+Konversation mit Gegnerrolle (nur Widerlegen der Plan-Annäherung), Evidenz-
+Handoff ueber findings.wave (scan-Ergebnis → plan, plan → evil, evil-
+Widerspruch → replan). DEPENDS_ON UI-090..092. Ersetzt das syntaktische
+Challenge-Gate (E2E-Befund 2) durch echte Gegenprüfung.
+STATUS: TODO
+DEPENDS_ON: UI-090, UI-091, UI-092
+VERIFY: offen — Welle evil muss Findings mit wave='evil' erzeugen; WRITE
+erst nach replan ohne belastbaren Widerspruch.
+
+ID: UI-094
+TASK: Dynamische Whitelist-Nachforderung (Vision): Protokoll, mit dem der
+Thinker fehlende Dateien als finding meldet und die Whitelist der naechsten
+Einreichung automatisch erweitert werden kann (E2E-Befund 1: heute Loesung
+per Konvention — Einreicher nimmt befundrelevante Module auf).
+STATUS: TODO
+DEPENDS_ON: UI-093
+VERIFY: offen — Nachforderung muss pruefbar auditiert werden (kein
+unbeschraenkter Zugriff).
+
+ID: UI-095
+TASK: Drei-Werte-Gate-Finalisierung (Vision): Ausgabe „belastbar / weitere
+Pruefung / User-Rueckfrage" — ASK-Enum ist heute verankert (UI-092); die
+Trennung RESEARCH (Daten fehlen) vs. ASK (Aufgabe unklar) wird endgueltig
+im Prompt/CLI geschaerft.
+STATUS: TODO
+DEPENDS_ON: UI-093, UI-094
+VERIFY: offen.
+
+ID: UI-096
+TASK: E2E-Iteration-5-Befunde (job …mx76dg, VERDICT PLAN) aufloesen:
+3 (feasibility-Wording ohne Verdict-Steuerworte), 4 (Worker-Start-Recovery
+reapStaleJobs), 5 (Scope-Affinitaet atomar in Claim-Transaktion — SELECT
+liefert scope_id), 6 (WORKER_STALE_MS 15 s), 7 (list_dir-Doku ehrlich) —
+DONE; 1 (Selbstpruef-Whitelist) Doku-Hinweis statt Auto-Feature; 2
+(syntaktisches Challenge-Gate) an UI-093 delegiert; 8 (Rate-Limit-Tabelle)
+WIDERLEGT (eigene Tabelle, kein Job-/Scope-Zustand — AGENTS.md-Ausnahme).
+STATUS: DONE
+DEPENDS_ON: UI-089
+VERIFY: node --test tests/security.test.mjs tests/queue.test.mjs
+tests/datamodel.test.mjs; Worker-Smoke claim→abort→claim
+RESULT: PASS - 51 Core + 97 UI gruen; Zombie-Recovery live nachgewiesen
+(Orphan-Job aus Sitzungsabbruch wurde per jobDone geschlossen).
+
+ID: UI-097
+TASK: Self-Review-Scope-Regel („Self-Review darf keinen blinden Bereich
+erzeugen", Nutzer-Vorgabe 2026-09-01): core/selfreview.mjs erkennt ein
+eigenes Checkout unter --root über die Marker artifacts/db.mjs +
+core/tools.mjs + cli/run.mjs und ergänzt die Prüf-Kernkomponenten
+(SELF_REVIEW_CORE: Queue-Wahrheit, Prüf-Pipeline, Worker, Vertrags-Doku)
+automatisch in die Whitelist — Union, nur existierende Dateien, Meldung
+„Selbstprüfung erkannt: N Kern-Komponenten". Fremdprojekte bleiben
+unverändert. Anwendung an BEIDEN Stellen (submit + Job-Lauf, idempotent).
+Löst E2E-Befund 1 aus Iteration 5 (bisher nur Doku-Hinweis).
+STATUS: DONE
+DEPENDS_ON: UI-096
+VERIFY: node --test tests/selfreview.test.mjs (Marker-Erkennung, Union/
+Existenzfilter, Fremdprojekt unverändert, Live-Submit-Smoke mit isolierter
+FALSIFY_HOME: --files nur WIRING.md -> Job-Whitelist enthält den Kern)
+RESULT: PASS - 4 Tests gruen; Live-Submit ergaenzte 20 Kern-Komponenten;
+Installations-Tools (uninstall, bootstrap/*) bewusst NICHT im Kern
+(kein Prüfmechanismus; via --files ergänzbar).
+
+ID: UI-098
+TASK: Challenge-Evidenz semantisch (Regel 2 „Evidence ist semantisch, nicht
+syntaktisch", Nutzer-Vorgabe 2026-09-01): Ein vorhandenes
+„## Falsifikationsversuche"-Feld ist KEIN Nachweis — jeder Versuch braucht
+eine konkrete, überprüfbare Referenz (evidenceOf). Akzeptiert: Whitelist-
+Datei wörtlich, zitierter Identifier (`claimNextJob`), Datei:Zeile oder
+relative Pfadform — letztere nur, wenn die Datei unter root tatsächlich
+existiert (Fantasie-Pfade zählen nicht). enforceWriteChallenge erhält
+whitelist/root des Jobs; run.mjs-Warnung nennt die fehlende Evidenz;
+Prompt DE/EN kodiert die Evidenz-Pflicht.
+STATUS: DONE
+DEPENDS_ON: UI-097
+VERIFY: node --test tests/queue.test.mjs (Anti-Self-Check-Block: 12
+Assertions inkl. „geprüft, keine Fehler"=kein Beleg, Symbol/Pfad/Whitelist
+als Beleg, nicht existierende Datei:Zeile=kein Beleg)
+RESULT: PASS - 6 Tests gruen; „1. Geprüft: keine Fehler" -> WRITE als
+UNKNOWN; echte E2E-Befunde (Datei:Zeile-Referenzen) bleiben gültig. Die
+ZWEITE Unabhängigkeit (Evil Twin als eigene Konversation, UI-093) bleibt
+der nächste Schritt — das Gate ist jetzt der semantische Vorbehalt.
+
+ID: UI-099
+TASK: Zustandsmodell-Invariante (Regel 3 „Der Workflow darf keine zweite
+Wahrheit erzeugen", Nutzer-Vorgabe 2026-09-01): artifacts/invariants.mjs
+(checkQueueConsistency, read-only) prüft abgeleitete Zustände gegen ihre
+Quelldaten: hardened⇒open_conflicts=0 + letztes Finding WRITE; last_gap=
+Befund bei offenem Loop, null bei write; keine Orphan-RUNNING-Jobs (Fenster
+ohne lebenden Worker); jobs.verdict==letztes Finding-Verdict; Findings ohne
+Scope. In falsify doctor integriert (Punkt 5). Der Single-Writer-Anspruch
+wird STATISCH als Regressionstest erzwungen (tests/invariants.test.mjs:
+Writer jobDone/addFinding/updateScopeAfterReview nur aus Heimatmodulen +
+run.mjs + worker.mjs). Fix nebenbei: UNBEKANNT/leere Verdicts bewegen die
+Scope-Phase nicht mehr (verdictToPhase default null).
+STATUS: DONE
+DEPENDS_ON: UI-098
+VERIFY: node --test tests/invariants.test.mjs (4 Tests: statischer
+Writer-Beweis, konsistenter Zustand, 4 manipulierte Verletzungen erkannt,
+Phase-Stabilität bei UNBEKANNT) + falsify doctor gegen echte Home
+RESULT: PASS - Statischer Scan bestätigt: KEIN zweiter Schreibpfad im Repo;
+Doctor fand live einen Orphan (testbedingter RUNNING-Job, Fenster 2) und
+meldet nach Bereinigung „Zustandsmodell: konsistent".
+
+ID: UI-100
+TASK: list_dir entspricht dem Scope-Vertrag (Regel 4 „Namen nicht
+freigegebener Daten dürfen nicht sichtbar sein", Nutzer-Vorgabe
+2026-09-01): core/tools.mjs list_dir filtert Einträge — sichtbar sind NUR
+Whitelist-Dateien selbst und Unterordner, die Vorfahr (mind.) einer
+whitelisted Datei sind (minimaler Baum). Dateinamen wie secret.db oder
+fremde Ordner leaken nicht mehr (vorher: readdir ALLE Einträge, sobald der
+Ordner einen freigegebenen Nachkommen hatte). Tool-Description + Header-
+Kommentar präzisiert. Löst damit die Doku-Anpassung von UI-096-Befund 7 ab
+(Doku war an den falschen Vertrag angepasst worden).
+STATUS: DONE
+DEPENDS_ON: UI-099
+VERIFY: node --test tests/security.test.mjs (neuer Test „keine Namen-Leaks":
+whitelisted Datei + Vorfahr sichtbar, forbidden.js/secret.db/fremd/
+unsichtbar; Unterordner gefiltert; sperrende Ordner bleiben blockt)
+RESULT: PASS - 7 Tests gruen; dabei path.relative-Root-Fall (\"\") in der
+Normierung behoben.
+
+ID: UI-101
+TASK: Self-Review-Lücken schließen (Rig-Review 2026-09-01): (a) der
+DIREKT-Run (falsify run / node cli/run.mjs ohne --submit/--job-id) rief
+ensureSelfReviewWhitelist nie auf — die Initialisierung von FILE_WHITELIST
+läuft jetzt durch die Self-Review-Ergänzung (alle Einstiege: Direkt-Run,
+--job-id auf dem JOB-Root, --submit). (b) SELF_REVIEW_CORE enthält jetzt
+auch core/selfreview.mjs (das Modul, das die Regel definiert) und
+artifacts/invariants.mjs (die 'eine Wahrheit'-Prüfung) — der Scope ist
+selbst-referenziell vollständig (Selbst-Audit möglich).
+STATUS: DONE
+DEPENDS_ON: UI-097
+VERIFY: node --test tests/selfreview.test.mjs tests/invariants.test.mjs;
+Live: node cli/run.mjs (Direkt-Run ohne Submit) ergänzt Kern automatisch
+RESULT: PASS - Kernliste jetzt 22 Einträge inkl. selfreview+invariants;
+alle drei Eintrittswege decken die Ergänzung ab.
+
+ID: UI-102
+TASK: Challenge-Evidenz verifiziert statt nur erkannt (Regel 2 Nachschärfung,
+Rig-Review 2026-09-01, empirischer Durchgriff): (1) WIDERLEGUNGS-ZWANG —
+ein Versuch muss eine Widerlegung formulieren; Bestätigungen („ist korrekt",
+„keine Fehler gefunden") sind auch mit Whitelist-Pfad KEIN Nachweis
+(REFUTATION-Vokabular + Negations-Senke für „keine Fehler/Lücken/…");
+(2) SYMBOL-VERIFIKATION — Backtick-Identifier zählen nur, wenn sie real im
+Code vorkommen (Scan der whitelisted Dateien, root nötig; Fantasie-Symbole
+wie `nonsenseSymbol7` failen); (3) ZEILEN-VERIFIKATION — Datei:Zeile failt,
+wenn die Zeile nicht existiert (core/verdict.mjs:99999), und ein
+Whitelist-Token im selben Bündel „erbt" die Zeile nicht; (4) MEHRZEILIGE
+BÜNDEL — Evidenz in der Folgezeile zählt (vorher strukturell blockt echte
+Versuche); (5) ohne root ist nur die Whitelist-Referenz überprüfbar.
+STATUS: DONE
+DEPENDS_ON: UI-098
+VERIFY: node --test tests/queue.test.mjs (Anti-Self-Check-Block mit den 4
+empirischen Rubber-Stamp-Proben als negative Assertions)
+RESULT: PASS - 6 Tests gruen; alle vier empirischen Eingaben des Prüfers
+fallen durchs Gate; echter Mehrzeilen-Versuch besteht.
+
+ID: UI-103
+TASK: Strukturelle Kohärenz als Freigabe-Gate (Regel 5 — „PLAN bleibt bei
+strukturellen Widersprüchen korrekt"): checkFeasibility erkennt
+deterministisch VOR dem Modell: (1) Diff berührt Dateien außerhalb der
+Whitelist (diff --git/+++-Parser gegen whitelistSet; die Einreichung
+„ändert, was sie nicht ändern darf"); (2) Plan↔Diff-Divergenz (Plan
+nennt konkrete Whitelist-Dateien, die eingereichte Änderung betrifft
+keine davon). enforceStructuralCoherence(blocks, verdict) in
+core/verdict.mjs stuft ein WRITE mit solchen Blocker-Befunden auf PLAN
+runter — ein formales Challenge-Gate (Regel-2-Bestand) macht eine
+strukturell widersprüchliche Basis NIE grün. Feasibility bleibt
+lesend + ohne Verdict-Hoheit: Blocker fließen weiterhin als Kontext
+in den Thinker, zusätzlich gibt es das deterministische Downgrade.
+STATUS: DONE
+DEPENDS_ON: UI-098 (Challenge-Gate), UI-100 (feasibility-Wording)
+VERIFY: node --test tests/queue.test.mjs tests/feasibility.test.mjs
+(diff-außerhalb-Whitelist → block; Plan↔Diff-Divergenz → block;
+WRITE+Blocker → PLAN)
+RESULT: PASS - 17 Tests gruen; neuer Gate-Test „Regel 5: WRITE gegen
+strukturelle Blocker wird zu PLAN" in queue.test.mjs; run.mjs warnt
+ehrlich („als PLAN behandelt") bevor es downgradet.
+
+ID: UI-104
+TASK: Fünf-Regeln-Audit (Rig-Review 2026-09-01, Verifikation der
+Nutzer-Vorgaben 1-5 gegen den Batch-Stand): (1) Self-Review-Scope um
+Lücken geschlossen — SELF_REVIEW_CORE enthält jetzt zusätzlich
+core/keys.mjs (läuft in JEDEM Review-Prozess, Key-Handling ist der
+kritischste Blind-Bereich-Kandidat), cli/scope.mjs (schreibt Scope-
+Zustand — gleiche Klasse wie cli/jobs.mjs, das schon im Kern war) und
+cli/doctor.mjs (führt die Regel-3-Invariante aus — Verifikations-Oberfläche
+darf nicht unsichtbar sein); Kernliste jetzt 26 Einträge. (2) Regeln 2/4/5
+empirisch gegen tests/queue.test.mjs, tests/security.test.mjs,
+tests/feasibility.test.mjs bestätigt (semantische Evidenz, Namen-Vertrag,
+strukturelles Downgrade). (3) Regel 3 verschärft: der statische
+Writer-Scan deckt jetzt ALLE 15 Zustands-Writer ab (vorher nur
+jobDone/addFinding/updateScopeAfterReview) — neuer Schreibpfad über
+createJob/claimNextJob/registerWorker/… bricht den Test ebenso; erlaubte
+Aufrufer: Heimatmodule + run/worker/jobs-CLI/scope-CLI, invariants.mjs
+bewusst nicht mehr in der Erlaubnisliste (read-only-Vertrag).
+STATUS: DONE
+DEPENDS_ON: UI-097, UI-102, UI-103
+VERIFY: node --test tests/invariants.test.mjs tests/selfreview.test.mjs
+tests/queue.test.mjs tests/security.test.mjs tests/feasibility.test.mjs
+tests/datamodel.test.mjs tests/onboard.test.mjs tests/bootstrap.test.mjs
+tests/phase2.test.mjs (Kernsuite) + falsify doctor
+RESULT: PASS - 64 Core-Tests gruen (10 Dateien); Self-Review-Submit ergänzt
+26 Kern-Komponenten; Writer-Scan findet weiterhin keinen zweiten
+Schreibpfad; doctor: Zustandsmodell konsistent.
+
+ID: UI-104
+TASK: Unabhängige Evidenz durch Evil-Twin-Gegenprüfung (Regel 6 — der
+Architektur-Kern: „FalsifyMe prüft nicht, ob ein Agent die Form erfüllt,
+sondern ob dessen Behauptungen durch unabhängige Evidenz belastbar sind").
+JEDER WRITE-Kandidat (nach Regel-2-Evidenz- und Regel-5-Struktur-Gate)
+durchläuft eine ZWEITE, kontextgetrennte Konversation: core/twin.mjs
+runTwinCheck bekommt NUR header/plan/BEFUND/Claims (extractClaims aus dem
+Falsifikationsversuche-Abschnitt) — nie das Erst-Reasoning, keine
+Findings-Historie, kein SUBPROMPT. Twin-System-Prompts
+SYSTEM_EVILTWIN_DE/EN (core/prompt.mjs) verbieten Bestätigung ohne eigenes
+Lesen. Output-Vertrag BESTAETIGT | WIDERSPRUCH | UNKLAR (parseTwinVerdict,
+strenge Lesart; fremdes Vokabular/Fehlen = UNKLAR). Fail-closed: nur
+BESTAETIGT lässt WRITE stehen; WIDERSPRUCH/UNKLAR/API-/Netz-Fehler ⇒ PLAN
+mit ehrlicher Warnung — kein WRITE ohne unabhängige Bestätigung. Twin
+schreibt eigenes Finding (wave='evil-twin'), das als LETZTES Finding das
+final geltende Urteil trägt (Invariante 4 bleibt gültig); zweiter
+Rate-Limit-Verbrauch (enforceRateLimit noWait=false); TUI-State VERIFYING.
+Nur WRITE-Kandidaten kosten den zweiten Call (PLAN/RESEARCH/ASK nie).
+STATUS: DONE
+DEPENDS_ON: UI-098 (Challenge-Evidenz), UI-103 (Strukturelle Kohärenz)
+VERIFY: node --test tests/twin.test.mjs (9 Tests: extractClaims DE/EN,
+strenge Verdict-Lesart, Kontext-Trennung, Fail-closed, WIDERSPRUCH-Befund,
+evil-twin-Welle in findings.wave); node --test ui/tui/state.test.mjs
+(VERIFYING-Übergänge)
+RESULT: PASS - 9/9 twin-Tests grün; Kontext-Trennung im Test bewiesen
+(Erst-Reasoning-Schnipsel rutscht nicht in den Twin-User-Content);
+Normalisierungs-Bug BESTÄTIGT→BESTATIGT beim ersten Testlauf gefunden
+und über explizite Map gefixt. Gesamtsuite grün, kein Commit ohne Auftrag.

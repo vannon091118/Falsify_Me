@@ -28,13 +28,15 @@ test("leerer Plan blockt immer (feasible=false, kein Modell-Call nötig)", () =>
   } finally { t.cleanup(); }
 });
 
-test("fehlende Whitelist-Datei -> RESEARCH-Block (Datei existiert nicht unter root)", () => {
+test("fehlende Whitelist-Datei -> Block (Datei existiert nicht unter root, OHNE Verdict-Steuerwort)", () => {
   const t = withFiles({ "app.js": "" });
   try {
     const r = checkFeasibility({ header: "Auth fixen", planText: "Auth in app.js prüfen", root: t.root, whitelist: ["app.js", "fehlt.js"] });
     assert.equal(r.feasible, false);
     assert.ok(r.blocks.join(" ").includes("existieren nicht"), "Plural-Meldung: Whitelist-Dateien existieren nicht");
-    assert.ok(r.blocks.join(" ").includes("RESEARCH"));
+    // E2E-Befund 3 (2026-09-01): feasibility redet KEINE Verdict-Sprache -
+    // Verdict-Steuerwörter (RESEARCH/PLAN/WRITE) gehören nicht in block-Text.
+    assert.ok(!/\b(?:RESEARCH|PLAN|WRITE)\b/.test(r.blocks.join(" ")), "kein Verdict-Steuerwort im Block");
   } finally { t.cleanup(); }
 });
 
@@ -44,6 +46,45 @@ test("Whitelist ..-Traversal blockt (Pfadsicherheit, kein Escape)", () => {
     const r = checkFeasibility({ header: "X", planText: "app.js ändern", root: t.root, whitelist: ["../geheim.txt"] });
     assert.equal(r.feasible, false);
     assert.ok(r.blocks.join(" ").includes("verlässt"));
+  } finally { t.cleanup(); }
+});
+
+test("Diff ausserhalb des Zugriffsrahmens blockt (Regel 5: Struktur-Kohärenz)", () => {
+  const t = withFiles({ "app.js": "", "lib/extra.js": "", "geheim.js": "" });
+  try {
+    const r = checkFeasibility({
+      header: "Auth fixen", planText: "Auth in app.js prüfen", root: t.root,
+      whitelist: ["app.js", "lib/extra.js"],
+      diffText: "--- a/app.js\n+++ b/app.js\n@@ -1 +1 @@\n-x\n+y\n--- a/geheim.js\n+++ b/geheim.js\n+z\n",
+    });
+    assert.equal(r.feasible, false);
+    assert.ok(r.blocks.some((b) => b.includes("geheim.js")), "Diff-Datei ausserhalb des Rahmens blockt");
+    assert.ok(!/\b(?:RESEARCH|PLAN|WRITE)\b/.test(r.blocks.join(" ")), "kein Verdict-Steuerwort");
+  } finally { t.cleanup(); }
+});
+
+test("Plan↔Diff-Divergenz blockt (Plan nennt X, Aenderung betrifft Y)", () => {
+  const t = withFiles({ "app.js": "", "lib/extra.js": "", "lib/y.js": "" });
+  try {
+    const r = checkFeasibility({
+      header: "Auth fixen", planText: "Auth in app.js fixen", root: t.root,
+      whitelist: ["app.js", "lib/y.js"],
+      diffText: "--- a/lib/y.js\n+++ b/lib/y.js\n@@ -1 +1 @@\n-x\n+y\n",
+    });
+    assert.equal(r.feasible, false);
+    assert.ok(r.blocks.some((b) => /Plan nennt app\.js/.test(b) && /lib\/y\.js/.test(b)), "Divergenz Plan↔Diff blockt");
+  } finally { t.cleanup(); }
+});
+
+test("Plan↔Diff konsistent: Diff berührt genau die genannten Dateien -> kein Block", () => {
+  const t = withFiles({ "app.js": "" });
+  try {
+    const r = checkFeasibility({
+      header: "Auth fixen", planText: "Auth in app.js fixen", root: t.root,
+      whitelist: ["app.js"],
+      diffText: "--- a/app.js\n+++ b/app.js\n@@ -1 +1 @@\n-x\n+y\n",
+    });
+    assert.equal(r.feasible, true, "konsistente Einreichung bleibt frei");
   } finally { t.cleanup(); }
 });
 

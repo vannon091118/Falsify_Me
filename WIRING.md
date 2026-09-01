@@ -52,6 +52,7 @@ ui/                        ← Terminal-UI (Phase 1+2, live verdrahtet)
   tui/                     ← Bausteine (1 Modul = 1 Verantwortung, siehe §5)
 core/settings.mjs          ← Runtime-Provider/Model/Key + live /models-Abfrage
 core/feasibility.mjs       ← Umsetzbarkeits-Puffer (Intent→Execution, §14)
+core/twin.mjs              ← Unabhängige Gegenprüfung (Evil Twin, Regel 6, §15)
 cli/settings.mjs           ← settings show/set + models (siehe §6)
   tui/views/               ← React/Ink Views (NUR Darstellung, stateless)
 worker.mjs                 ← PRODUKT: TUI-Host (createTui + Parser-Feed, Phase 2)
@@ -187,6 +188,9 @@ oder:         start "FalsifyMe-TUI" cmd /k node ui\tui-demo.mjs %*
 | `tui/parser.mjs` | Chunk→Zeilen→Events (`FM-EVT:`), ANSI-Strip |
 | `core/tools.mjs` | read-only Tool-Set (list_dir/read_file/glob), Whitelist-Zwang |
 | `core/prompt.mjs` | System-/User-Prompt-Bau, HEADER-/Artefakt-Einspielung (pure) |
+| `core/selfreview.mjs` | Self-Review-Scope-Regel: eigenes Checkout erkennen + Kern-Whitelist ergänzen (pure, read-only) |
+| `artifacts/invariants.mjs` | Zustandsmodell-Invariante: checkQueueConsistency (read-only, Regel 3) |
+| `core/twin.mjs` | Unabhängige Gegenprüfung (Evil Twin): runTwinCheck/parseTwinVerdict/extractClaims, Fail-closed (Regel 6) |
 | `tui/events.mjs` | Event-Contract + einziger State-Writer (`apply`/`tick`), Slot-Routing 1..3, Fokus, Spiegel |
 | `tui/state.mjs` | Zustände, erlaubte Übergänge, 3 Fenster-Slots, globalIdle, Labels/Farben |
 | `tui/particles.mjs` | fallende Code-Partikel (Feld-Sim, deterministisch) |
@@ -276,13 +280,27 @@ node --test tests/onboard.test.mjs   # Dialog: detectInstallation/collectSetting
                                      # updateRuntimeSettings/Key-Maskierung/Prompter
 
 # Queue-Invarianten (Batch-Refactor 2026-09-01): wait --ping/--abort,
-# Heartbeat-Staleness, GAP-Erfassung, WRITE-Challenge, Modus-Kopfzeile:
-node --test tests/queue.test.mjs tests/bootstrap.test.mjs tests/feasibility.test.mjs
+# Heartbeat-Staleness, GAP-Erfassung, WRITE-Challenge, Modus-Kopfzeile
+# + die sechs Nutzer-Regeln (Self-Review-Scope, semantische Evidenz,
+# Single-Writer, list_dir-Vertrag, strukturelle Kohärenz, Evil-Twin-
+# Gegenprüfung):
+node --test tests/queue.test.mjs tests/bootstrap.test.mjs tests/feasibility.test.mjs \
+       tests/invariants.test.mjs tests/selfreview.test.mjs tests/twin.test.mjs
 
 # Umsetzbarkeits-Puffer (siehe §14):
 node --test tests/feasibility.test.mjs  # 7 Tests: leerer Plan / fehlende Whitelist-
-                                        # Datei (RESEARCH) / Zugriffsrahmen-Warning /
+                                        # Datei / Zugriffsrahmen-Warning /
                                         # ..-Traversal / Intent-Drift / Header-Passung
+
+# Etage-2-Datenmodell (siehe §15):
+node --test tests/datamodel.test.mjs    # Migration, Intake-Felder, atomare
+                                        # Claim-Affinität, reapStaleJobs,
+                                        # Härtung/open_conflicts/ASK, exitCodeOf
+
+# Evil-Twin-Gegenprüfung (Regel 6, §15):
+node --test tests/twin.test.mjs         # extractClaims, parseTwinVerdict (strenge
+                                        # Lesart), Kontext-Trennung, Fail-closed,
+                                        # evil-twin-Welle in findings.wave
 ```
 
 ## 9. OFFENE UND AUFGESCHOBENE TASKS
@@ -416,32 +434,35 @@ startet danach das sichtbare Dock (Windows, TUI).
 - **Ehrlichkeit:** leerer Key / leere Antwort = „keine Änderung", kein Ratten; der
   Key erscheint NIE im Klartext (weder in Fragen noch in Ausgabe/JSON).
 
-## 14. UMSETZBARKEITS-PUFFER (Intent → Execution, UI-078)
+## 14. UMSETZBARKEITS-PUFFER (Intent → Execution, UI-078 revidiert)
 
 FalsifyMe ist der Puffer zwischen dem gesendeten User-Input (= Scope-Header,
 der Intent) und der Execution: Bevor irgendein Modell-Call läuft, prüft
 `core/feasibility.mjs` deterministisch und read-only, ob die Einreichung
-überhaupt umsetzbar ist. Bei `feasible=false` endet der Job SOFORT mit
-`VERDICT: PLAN` (Plan adressiert den Intent nicht) oder `RESEARCH` (Dateien/
-Whitelist fehlen) und Exit 1 — ohne API-Kosten, ohne ins Projekt zu schreiben.
-Bei `feasible=true` bleibt der Lauf unverändert (additiv, kein System-Eingriff).
+überhaupt umsetzbar ist. REVIDIERT (2026-09-01, Batch-Refactor): Der Check
+ERTEILT KEIN Verdict und SCHLIESST KEINEN Job — seine blocks/findings gehen
+als KONTEXT an den Thinker (cli/run.mjs sammelt feasibilityNotes in
+buildUserContent; der Modell-Call läuft in jedem Fall). Verdict-Hoheit liegt
+ausschließlich beim Thinker (Modellpfad). RESEARCH bleibt ein
+Falsifikations-Modul der Datenbeschaffung, nie ein Urteil dieses Pre-Checks.
 
 ### Prüfungen (1 Datei = 1 Verantwortung, deterministisch)
 
 | Prüfung | Verhalten |
 |---|---|
-| Plan leer | blockt (immer) |
-| Whitelist-Datei existiert nicht unter root | blockt → RESEARCH (FalsifyMe braucht echte Dateien) |
-| Whitelist `..`-Traversal / absoluter Pfad | blockt (Pfadsicherheit) |
+| Plan leer | blockt-Hinweis (immer) |
+| Whitelist-Datei existiert nicht unter root | blockt-Hinweis, ohne Verdict-Steuerwort („nicht gegenprüfbar" – E2E-Befund 3) |
+| Whitelist `..`-Traversal / absoluter Pfad | blockt-Hinweis (Pfadsicherheit) |
 | Plan nennt existierende Datei ausserhalb Whitelist | Warning „Zugriffsrahmen" (Agent darf sie nicht lesen) |
 | Plan nennt neue/nicht existierende Datei | Warning „Annahmen prüfen" |
 | Kein signifikanter Header-Begriff im Plan (Intent-Drift) | Warning „Plan gegen Auftrag schärfen" |
 
 ### Integration + Testfallen (empirisch, 2026-09-01)
 
-- Aufruf: `cli/run.mjs` → `main()` direkt nach `enforceRateLimit`, vor `runAgent`.
-  UI-Events (FINDINGS/verdict/done), Scope-Finding + `jobDone` werden wie bei
-  einem normalen Verdict gesetzt — das Dock zeigt den Abbruch ehrlich an.
+- Aufruf: `cli/run.mjs` → `main()` direkt nach `enforceRateLimit`, vor
+  `runAgent`. Beobachtbar: `uiEvt(finding, warning)` + Warnungen im Log;
+  KEIN Verdict-Event, KEIN Scope-Finding, KEIN jobDone aus feasibility
+  (nur cli/run.mjs und der Worker schließen Jobs – §0-Invariante).
 - **Testfalle:** `--job-id`-Lauf von Hand liest ohne `--plan-file` stdin und
   wartet auf EOF — immer `< /dev/null` dranhängen (der Worker startet run.mjs
   mit geschlossenem stdin). Schnelle Folgeläufe hängen im bestehenden
@@ -453,3 +474,85 @@ Bei `feasible=true` bleibt der Lauf unverändert (additiv, kein System-Eingriff)
   Meldung. `--skip-dock` unterdrückt den Start.
 - **Settings-Zentrale** bleibt `core/settings.mjs` (updateRuntimeSettings/
   getRuntimeSettings) — onboard dupliziert keine Logik.
+
+## 15. ETAGE 2 – DATENMODELL (Vision, UI-090..096)
+
+Scope-Entscheidung 2026-09-01: getrennte Wahrheiten (User-Wunsch vs.
+Agent-Verständnis), Wellen-Dimension, Härtung, viertes Verdict ASK.
+Schema-Version 3 (Migration in artifacts/db.mjs, ALTER-only):
+
+- `jobs.agent_intent` / `jobs.affected` – Intake-Felder (CLI:
+  `--agent-intent`/`--affected`); buildUserContent baut daraus die Sektion
+  „Agent-Verständnis" – die Divergenz zum HEADER ist ein eigener Prüfpunkt.
+- `jobs.wave` (Default 'scan') / `findings.wave` – Wellen-Verankerung
+  (scan|plan|evil|replan); Rollen-Semantik folgt in UI-093 (Evil-Twin).
+- `scopes.status` active|hardened|done; `open_conflicts` (PLAN/RESEARCH +1,
+  WRITE = 0); `hardened_at`. Regel: gehärtet = letzter Verdict WRITE mit 0
+  offenen Konflikten; erneuter PLAN ent-härtet (active, hardened_at null).
+- Verdict `ASK` (Aufgaben-Mehrdeutigkeit): Phase + Konflikte bleiben,
+  Status active, Exit 5, TUI-Label „TASK AMBIGUOUS". Exit-Codes zentral in
+  `core/verdict.mjs exitCodeOf()`: 0 WRITE · 1 PLAN/RESEARCH · 5 ASK ·
+  3 kein Verdict/Fehler.
+- E2E-Befunde Iteration 5 (job …mx76dg): Worker-Start-Recovery
+  (`jobs.reapStaleJobs`, RUNNING-Waisen → ERROR „Worker-Abbruch (Recovery)"),
+  Scope-Affinität ATOMAR in der Claim-Transaktion (setWorkerScope im Claim-
+  SELECT mit scope_id – ohne scope_id lief der Switch nie), `WORKER_STALE_MS`
+  15 s (3× Heartbeat), feasibility-Wording ohne Verdict-Steuerworte. Befund 2
+  (syntaktisches Challenge-Gate) → UI-093; Befund 7 (list_dir) → UI-100
+  (Regel 4: Namen unsichtbar); Befund 8 (Rate-Limit-Tabelle) widerlegt
+  (eigene Tabelle, kein Job-/Scope-Zustand).
+- Self-Review-Regel (UI-097, „kein blinder Bereich"): `core/selfreview.mjs`
+  erkennt ein eigenes Checkout unter `--root` über die Marker
+  artifacts/db.mjs + core/tools.mjs + cli/run.mjs und ergänzt die
+  Prüf-Kernkomponenten (SELF_REVIEW_CORE) automatisch in die Whitelist
+  (Union, nur existierende Dateien) – an beiden Stellen (submit + Job-Lauf).
+  Fremdprojekte nie erweitert.
+- Challenge-Evidenz semantisch (UI-098/UI-102, Regel 2): `hasChallengeEvidence`
+  in core/verdict.mjs verlangt je Versuch (MEHRZEILIGES Bündel) eine
+  WIDERLEGUNG mit verifizierter Evidenz: REFUTATION-Vokabular (Bestätigungen
+  wie „ist korrekt"/„keine Fehler gefunden" zählen nicht, auch nicht mit
+  Pfad), Whitelist-Datei, Symbol das real im Code vorkommt (Scan der
+  whitelisted Dateien), Datei:Zeile deren Zeile existiert, existierender
+  Pfad. Fantasie-Symbole/-Zeilen failen; Whitelist-Token „erbt" eine
+  Fantasie-Zeile nicht. Selbst-Review deckt ALLE Einstiege ab (Direkt-Run,
+  --job-id, --submit) und die Kernliste enthält selfreview+invariants
+  (UI-101).
+- Zustandsmodell-Invariante (UI-099, Regel 3): `artifacts/invariants.mjs`
+  (`checkQueueConsistency`, read-only) prüft abgeleitete Zustände gegen
+  ihre Quelldaten (hardened/Conflicts, last_gap/Befund, Orphan-RUNNING,
+  jobs- vs. findings-Verdict, Findings ohne Scope) — integriert in
+  `falsify doctor`. Der Single-Writer-Anspruch wird statisch als
+  Regressionstest erzwungen (tests/invariants.test.mjs; Writer nur aus
+  jobs.mjs/scopes.mjs + run.mjs/worker.mjs). `verdictToPhase` liefert für
+  ASK/UNBEKANNT null: nur echte Verdicts bewegen die Scope-Phase.
+- list_dir-Sichtbarkeit (UI-100, Regel 4): NUR Whitelist-Dateien + deren
+  Ordnervorfahren sind sichtbar (minimaler Baum); die Namen nicht
+  freigegebener Dateien/Ordner leaken nicht (read_file/glob waren schon
+  hart; list_dir zeigte vorher alle Einträge des freigegebenen Ordners).
+- Strukturelle Kohärenz (UI-103, Regel 5): `checkFeasibility` erkennt harte
+  strukturelle Widersprüche deterministisch VOR dem Modell: Diff berührt
+  Dateien außerhalb der Whitelist („ändert, was es nicht ändern darf") und
+  Plan↔Diff-Divergenz (Plan nennt konkrete Whitelist-Dateien, der Diff
+  betrifft keine davon). `enforceStructuralCoherence(blocks, verdict)` in
+  core/verdict.mjs stuft ein WRITE mit solchen Blocker-Befunden auf PLAN
+  runter – ein formales Gate macht eine kaputte Basis NIE grün.
+- Unabhängige Evidenz (UI-104, Regel 6 – der ARCHITEKTURKERN): FalsifyMe
+  prüft nicht, ob ein Agent die Form erfüllt, sondern ob seine Behauptungen
+  durch UNABHÄNGIGE Evidenz belastbar sind. `core/twin.mjs` (`runTwinCheck`)
+  startet für JEDEN WRITE-Kandidaten (nach Regel-2/5-Gates) eine ZWEITE,
+  kontextgetrennte Konversation (Evil Twin): nur header/plan/BEFUND/Claims,
+  nie Erst-Reasoning; eigener Twin-System-Prompt (SYSTEM_EVILTWIN_DE/EN,
+  core/prompt.mjs); Ausgang BESTAETIGT | WIDERSPRUCH | UNKLAR (parseTwinVerdict,
+  strenge Lesart). Fail-closed: WIDERSPRUCH/UNKLAR/Fehler ⇒ PLAN, kein WRITE
+  ohne unabhängige Bestätigung. Twin-Finding in findings.wave='evil-twin'
+  (Letztes Finding trägt das final geltende Urteil – Invariante 4 hält);
+  zweiter Rate-Limit-Verbrauch (enforceRateLimit); TUI-State VERIFYING
+  (ui/tui/state.mjs).
+
+Tests: `node --test tests/datamodel.test.mjs` (7 Tests: Migration,
+Intake-Persistenz, atomare Claim-Affinität, reapStaleJobs, Härtungs-
+Zustandsmaschine, ASK/exitCodeOf, buildUserContent-Intake) +
+`node --test tests/selfreview.test.mjs` (4 Tests: Marker-Erkennung, Union/
+Existenzfilter, Fremdprojekt, Live-Submit-Smoke) +
+`node --test tests/invariants.test.mjs` (4 Tests: statischer Writer-Beweis,
+konsistenter Zustand, verletzte Ableitungen, Phase-Stabilität UNBEKANNT).

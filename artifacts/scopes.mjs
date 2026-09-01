@@ -11,7 +11,10 @@ export function verdictToPhase(verdict) {
   const v = String(verdict || "").toUpperCase();
   if (v === "WRITE") return "write";
   if (v === "RESEARCH") return "research";
-  return "plan";
+  if (v === "PLAN") return "plan";
+  // ASK (Aufgaben unklar) UND unbekannte/leere Verdicts (z. B. UNBEKANNT):
+  // bewegen die Phase NICHT – nur echte Verdicts dürfen den Zustand ändern.
+  return null;
 }
 
 /** Legt einen Scope an. header = User-Input 1:1 (HEADER des Prompts). */
@@ -29,22 +32,50 @@ export function getScope(db, id) {
 }
 
 export function listScopes(db, { onlyActive = true } = {}) {
+  // 'hardened' und 'done' gelten als abgeschlossen; onlyActive zeigt nur
+  // laufende ('active') Scopes.
   const sql = onlyActive
     ? "SELECT * FROM scopes WHERE status = 'active' ORDER BY created_at DESC"
     : "SELECT * FROM scopes ORDER BY created_at DESC";
   return db.prepare(sql).all();
 }
 
-/** Nach einem Review: Phase + letzter Gesamtbefund + Sub-Prompt aktualisieren (FalsifyMe). */
+/**
+ * Nach einem Review: Phase + letzter Gesamtbefund + Sub-Prompt aktualisieren.
+ * Etage-2-Härtung (UI-081, 2026-09-01): Ein Scope gilt erst als "hardened",
+ * wenn ein WRITE-Verdict mit 0 offenen Widersprüchen kommt (Challenge bestanden).
+ * - PLAN/RESEARCH: open_conflicts +1, Status active (GAP offen)
+ * - WRITE:         open_conflicts = 0, Status hardened, hardened_at gesetzt
+ * - ASK:           Aufgabe mehrdeutig – kein Fortschritt, kein neuer Widerspruch;
+ *                  Phase + Konfliktzähler bleiben, Status active (nicht gehärtet)
+ * - sonst (UNBEKANNT): Zähler/Status unverändert
+ */
 export function updateScopeAfterReview(db, scopeId, verdict, befund, subPrompt) {
-  const phase = verdictToPhase(verdict);
-  // GAP-Erfassung (Divergenz-Loop): Der Gap ist offen, solange das
-  // Falsifikations-Ergebnis die Coder-Annahme nicht freigibt (PLAN/RESEARCH).
-  // Mit WRITE ist der Gap geschlossen (last_gap = null).
   const v = String(verdict || "").toUpperCase();
+  const cur = getScope(db, scopeId) || {};
+  const phase = v === "ASK" ? (cur.phase || "plan") : (verdictToPhase(v) || cur.phase || "plan");
+  // GAP-Erfassung (Divergenz-Loop): Der Gap ist offen, solange das
+  // Falsifikations-Ergebnis die Coder-Annahme nicht freigibt (PLAN/RESEARCH/ASK).
+  // Mit WRITE ist der Gap geschlossen (last_gap = null).
   const gap = v === "WRITE" ? null : (befund || null);
-  db.prepare("UPDATE scopes SET phase = ?, last_befund = ?, sub_prompt = ?, last_gap = ?, updated_at = ? WHERE id = ?")
-    .run(phase, befund ?? null, subPrompt ?? null, gap, nowIso(), scopeId);
+  let openConflicts = Number(cur.open_conflicts || 0);
+  let status = cur.status || "active";
+  let hardenedAt = cur.hardened_at || null;
+  if (v === "WRITE") {
+    openConflicts = 0;
+    status = "hardened";
+    hardenedAt = nowIso();
+  } else if (v === "PLAN" || v === "RESEARCH") {
+    openConflicts += 1;
+    status = "active";
+    hardenedAt = null;
+  } else if (v === "ASK") {
+    status = "active";
+    hardenedAt = null;
+  }
+  db.prepare(
+    "UPDATE scopes SET phase = ?, last_befund = ?, sub_prompt = ?, last_gap = ?, status = ?, open_conflicts = ?, hardened_at = ?, updated_at = ? WHERE id = ?"
+  ).run(phase, befund ?? null, subPrompt ?? null, gap, status, openConflicts, hardenedAt, nowIso(), scopeId);
 }
 
 export function markScopeDone(db, scopeId) {
@@ -58,10 +89,10 @@ export function nextRound(db, scopeId) {
   return Number(r.n);
 }
 
-export function addFinding(db, { scopeId, jobId, round, mode, befund, content, verdict }) {
+export function addFinding(db, { scopeId, jobId, round, wave = null, mode, befund, content, verdict }) {
   db.prepare(
-    "INSERT INTO findings(scope_id, job_id, round, mode, befund, content, verdict, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)"
-  ).run(scopeId, jobId, round, mode ?? null, befund ?? null, content ?? null, verdict ?? null, nowIso());
+    "INSERT INTO findings(scope_id, job_id, round, wave, mode, befund, content, verdict, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).run(scopeId, jobId, round, wave ?? null, mode ?? null, befund ?? null, content ?? null, verdict ?? null, nowIso());
 }
 
 export function getFindings(db, scopeId) {

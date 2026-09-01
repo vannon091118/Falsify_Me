@@ -22,7 +22,7 @@ const DEFAULTS = {
   apiKeyEnv: "NVIDIA_API_KEY,OPENAI_API_KEY,FALSIFY_API_KEY",
   maxTokens: 20000,
   reasoningEffort: "high",        // high | medium | low | auto | off
-  maxToolRounds: 10,
+  maxToolRounds: 14,
   maxRpm: 40,
   lang: "de",
   temperature: 0.3,

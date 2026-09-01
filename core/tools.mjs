@@ -6,10 +6,11 @@
 //   1. SYMLINK-SCHUTZ: Root UND Zielpfad werden mit realpathSync aufgelöst –
 //      ein Symlink aus dem Root nach außen wird BLOCKIERT (kein lexikalischer
 //      Bypass über path.resolve möglich).
-//   2. WHITELIST: read_file und glob beachten die Whitelist; list_dir listet
-//      NUR Verzeichnisse, die eine erlaubte Datei enthalten (Whitelist-Ordner),
-//      sonst nur "." – der Vertrag "Zugriff nur auf die genannte Dateiliste"
-//      gilt damit für alle drei Tools.
+//   2. WHITELIST: read_file und glob beachten die Whitelist; list_dir zeigt
+//      NUR freigegebene Pfade (Regel 4/UI-100): Whitelist-Dateien selbst +
+//      Unterordner, die Vorfahr einer erlaubten Datei sind. Namen NICHT
+//      freigegebener Daten (Dateien wie "secret.db", fremde Ordner) sind
+//      unsichtbar – nur der minimale Baum, der den Zugriff trägt.
 //   3. READ-ONLY: keine Schreib-APIs in diesem Modul.
 // Reine Funktion: makeTools(ROOT, whitelist).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -17,7 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const TOOLS = [
-  { type: "function", function: { name: "list_dir", description: "Listet Dateien und Unterordner eines Verzeichnisses relativ zum Arbeitsverzeichnis (nur Ordner mit erlaubten Dateien bzw. das Arbeitsverzeichnis selbst).", parameters: { type: "object", properties: { path: { type: "string", description: "Verzeichnispfad relativ zum Arbeitsverzeichnis (z. B. \".\" oder \"src\")" } }, required: ["path"] } } },
+  { type: "function", function: { name: "list_dir", description: "Listet Dateien und Unterordner relativ zum Arbeitsverzeichnis – NUR freigegebene Pfade: Whitelist-Dateien und Ordnervorfahren freigegebener Dateien; nicht freigegebene Namen sind unsichtbar (Regel 4).", parameters: { type: "object", properties: { path: { type: "string", description: "Verzeichnispfad relativ zum Arbeitsverzeichnis (z. B. \".\" oder \"src\")" } }, required: ["path"] } } },
   { type: "function", function: { name: "read_file", description: "Liest eine Datei relativ zum Arbeitsverzeichnis (UTF-8, max. 200 KB). Nur Dateien aus der Zugriffs-Whitelist.", parameters: { type: "object", properties: { path: { type: "string", description: "Dateipfad relativ zum Arbeitsverzeichnis" } }, required: ["path"] } } },
   { type: "function", function: { name: "glob", description: "Findet erlaubte Dateien per Glob-Muster (z. B. \"**/*.js\") relativ zum Arbeitsverzeichnis.", parameters: { type: "object", properties: { pattern: { type: "string", description: "Glob-Muster relativ zum Arbeitsverzeichnis" } }, required: ["pattern"] } } },
 ];
@@ -88,16 +89,29 @@ export function makeTools(ROOT, FILE_WHITELIST = []) {
         const relDir = path.relative(ROOT_REAL, real).replace(/\\/g, "/");
         // Whitelist-Vertrag: außerhalb des Roots nur listen, wenn dort erlaubte
         // Dateien liegen; das Root selbst ist immer listen allowed.
-        if (FILE_WHITELIST.length && relDir !== "" && relDir !== ".") {
-          const inScope = FILE_WHITELIST.some((w) => {
-            const wp = w.replace(/\\/g, "/");
-            return wp === relDir || wp.startsWith(relDir + "/");
-          });
+        const wl = FILE_WHITELIST.map((w) => w.replace(/\\/g, "/"));
+        // path.relative liefert fuer das Root "" (nicht ".") – beides = Root.
+        const isRoot = relDir === "" || relDir === ".";
+        const norm = isRoot ? "" : relDir + "/";
+        if (wl.length && !isRoot) {
+          const inScope = wl.some((w) => w === relDir || w.startsWith(relDir + "/"));
           if (!inScope) throw new Error(`Verzeichnis nicht in der Zugriffs-Whitelist: ${relDir}`);
         }
-        return fs.readdirSync(real, { withFileTypes: true })
-          .map((e) => (e.isDirectory() ? e.name + "/" : e.name))
-          .join("\n");
+        const entries = fs.readdirSync(real, { withFileTypes: true }).map((e) => ({ name: e.name, dir: e.isDirectory() }));
+        if (wl.length) {
+          // Regel 4 (UI-100): Namen NICHT freigegebener Daten sind unsichtbar.
+          // Sichtbar sind nur Whitelist-Dateien selbst und Unterordner, die
+          // Vorfahr (mind.) einer whitelisted Datei sind – der minimale Baum,
+          // der den freigegebenen Zugriff trägt. Dateinamen wie "secret.db"
+          // oder fremde Unterordner leaken nicht mehr.
+          const visible = entries.filter((e) => {
+            const rel = norm + e.name;
+            if (e.dir) return wl.some((w) => w === rel || w.startsWith(rel + "/"));
+            return wl.includes(rel);
+          });
+          return visible.map((e) => (e.dir ? e.name + "/" : e.name)).join("\n");
+        }
+        return entries.map((e) => (e.dir ? e.name + "/" : e.name)).join("\n");
       }
       case "read_file": {
         const { real } = resolveInRoot(args.path, { mustExist: true });
