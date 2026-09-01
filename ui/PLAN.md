@@ -636,3 +636,26 @@ Skill-eigener Fensterstart (1264) lieferte denselben kompletten Flow inkl.
 Abbruchpfad-Kontrolle; beide Male sauberes Ende statt Haenger. E2E B
 bestätigt zusaetzlich den MSYS-sicheren Fensterstart aus UI-063 im echten
 Flow (beim vorherigen Lauf hatte der Test das Fenster vorgeoeffnet).
+
+ID: UI-065
+TASK: ERSTER ECHTER FALSIFLOW-LIVE-LAUF mit vorhandenem NVIDIA-Key durchs
+Dock-Fenster (read-only, echtes Home ~/.Falsify) - Verdict abwarten.
+STATUS: DONE
+DEPENDS_ON: UI-064
+VERIFY: Skill-E2E mit echtem Key; Dock-Fenster live; falsify log lesbar
+RESULT: PASS (VERDICT PLAN, Exit 1 Loop) - 2026-09-01, Laufzeit ~2 min
+(03:47:53->03:49:49): Scope scope-1788234472719-8jrw0r (HEADER 1:1),
+Job job-1788234473210-cwoanv, Claim RUNNING, echtes Modell-Urteil = PLAN.
+Das Modell lieferte KONKRETE, fachlich fundierte Befunde (Kern):
+(1) core/agent.mjs:127-130 onTool - fileArg kann Nicht-Datei-Strings
+(Suchbegriff/JSON) melden -> echte Dateipfad-Extraktion noetig;
+(2) ui/worker.mjs Abort-Race: neuer Claim waerend abortFlow (2s killDelay)
+ueberschreibt childRef -> falscher Prozess koennte gekillt werden;
+(3) cli/run.mjs:237 finding-severity hardcoded "discovered", Contract
+erlaubt info/warning/critical (TUI-Farbdifferenzierung ungenutzt);
+(4) cli/run.mjs:227 files-Event nur beim Start, nie bei Laufzeit-Aenderung.
+SUBPROMPT (Iteration 2): Feldnamen-Normalisierung (slot vs window),
+onTool echte Dateipfad-Extraktion, Parser-Robustheit gegen Chunk-Splits,
+Phase-Progress-Vertrag vervollstaendigen oder entfernen, Abort-Race
+absichern. Loop ist damit eroeffnet (PLAN -> ueberarbeiten -> erneut
+einreichen); Dock-Fenster idlet weiter (FEN 1 BEREIT).
