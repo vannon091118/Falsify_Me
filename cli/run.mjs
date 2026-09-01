@@ -32,7 +32,7 @@ import { loadApiKey, keyEnvFile, keyNames } from "../core/keys.mjs";
 import { loadConfig } from "../core/config.mjs";
 import { enforceRateLimit } from "../core/ratelimit.mjs";
 import { SYSTEM_DE, SYSTEM_EN, buildUserContent } from "../core/prompt.mjs";
-import { parseVerdict, parseBefund, parseSubPrompt, enforceWriteChallenge, enforceStructuralCoherence, findingSeverity, parseScopeDivergence, enforceResearchContract, extractResearchAdditions } from "../core/verdict.mjs";
+import { parseVerdict, parseBefund, parseSubPrompt, enforceWriteChallenge, enforceStructuralCoherence, findingSeverity, parseScopeDivergence, enforceResearchContract, extractResearchAdditions, exitCodeOf, twinEvidenceOk } from "../core/verdict.mjs";
 import { runTwinCheck, extractClaims } from "../core/twin.mjs";
 import { runAgent } from "../core/agent.mjs";
 import { checkFeasibility } from "../core/feasibility.mjs";
@@ -111,6 +111,13 @@ Exit-Codes: 0=WRITE (Freigabe)  1=PLAN/RESEARCH (nicht freigegeben, Loop)
 }
 
 async function runMain() {
+
+// ── Crash-Guard (Rig-Review 2026-09-01, Befund 13c): ein interner Fehler
+// ausserhalb der try/catch-Pfade darf NICHT als Exit 1 (= PLAN-Loop) mit
+// Stack lesbar sein — er wird ehrlich als ERROR (Exit 3) geschlossen und
+// der aktive Job in der Queue beendet (kein Fake-Verdict, kein RUNNING-
+// Waisen bis zum naechsten Reap).
+let activeJobId = null;
 
 let planText = "";
 let planFile = null;
@@ -334,6 +341,7 @@ if (jobId) {
   });
   job = getJob(db, jobId);
 }
+activeJobId = jobId;
 
 // ── UI-Start-Events (Phase 2): Job bekannt -> Slot belegen (nur FALSIFY_UI=1) ──
 const phaseLabel = PHASE_LABEL[scope?.phase || job?.mode || "plan"] || "PLAN";
@@ -555,8 +563,15 @@ async function main() {
         uiEvt({ t: "activity", tool: info.tool, file: info.file, label: `${info.tool}(${info.file ?? ""})` });
       },
     });
-    if (twin.verdict === "BESTAETIGT") {
-      console.log(green(dim("Gegenprüfung BESTÄTIGT: die Widerlegung hält unabhängiger Nachprüfung stand.")));
+    if (twin.verdict === "BESTAETIGT" && twinEvidenceOk(twin, { root: ROOT, whitelist: FILE_WHITELIST })) {
+      console.log(green(dim("Gegenprüfung BESTÄTIGT: die Widerlegung hält unabhängiger Nachprüfung stand (eigenes Lesen nachgewiesen).")));
+    } else if (twin?.verdict === "BESTAETIGT") {
+      // Regel-6-Rig (2026-09-01, Befund 2/9): „BESTAETIGT ohne eigenes Lesen"
+      // ist deterministisch erzwungen — ein Twin, der ohne Tool-Runde und
+      // ohne verifizierbare Referenz bestaetigt, gibt KEINE Freigabe.
+      const reason = twin.befund || "kein nachweisbares eigenes Lesen";
+      console.warn(yellow(`\n⚠ BESTAETIGT ohne belegtes eigenes Lesen (0 Tool-Runden, keine verifizierbare Referenz: ${reason.slice(0, 80)}) – als UNKLAR behandelt, KEINE Freigabe.`));
+      verdict = "PLAN";
     } else {
       const reason = twin.befund || twin.error || "keine belastbare Bestätigung";
       console.warn(yellow(`\n⚠ WRITE ohne unabhängige Bestätigung (Gegenprüfung: ${twin.verdict}) – als PLAN behandelt. ${reason}`));
@@ -638,6 +653,9 @@ async function main() {
   if (verdict === "WRITE") {
     uiEvt({ t: "verdict", v: "WRITE" });
     uiEvt({ t: "done" });
+    // Exit-Code zentral: exitCodeOf ist die EINZIGE Quelle fuer Verdict-Exits
+    // (Rig-Review 2026-09-01, Befund 13b — run.mjs setzt sie nicht mehr manuell).
+    process.exitCode = exitCodeOf(verdict);
     console.log(green(bold(`\nVERDICT: WRITE → Freigabe: READ-ONLY → WRITE`)));
     if (scope) console.log(green(`Scope ${scope.id} ist freigegeben – der Agent darf jetzt schreiben (WRITE-Loop/REVIEW-Loop).`));
     if (scope) console.log(green("GAP: geschlossen – die Coder-Annahme hat die Falsifikations-Challenge überstanden."));
@@ -651,6 +669,7 @@ async function main() {
     // beantworten, dann wird neu eingereicht.
     uiEvt({ t: "verdict", v: "ASK" });
     uiEvt({ t: "done" });
+    process.exitCode = exitCodeOf(verdict); // ASK = 5 (zentral, Befund 13b)
     console.log(cyan(`\nVERDICT: ASK – die Aufgabe selbst ist mehrdeutig (keine Freigabe)`));
     if (scope && befund) console.log(cyan(`Rückfrage an den User nötig: ${befund}`));
     console.log(cyan("→ Phase unverändert; nach Klärung erneut einreichen."));
@@ -661,6 +680,7 @@ async function main() {
   if (verdict === "RESEARCH" || verdict === "PLAN") {
     uiEvt({ t: "verdict", v: verdict });
     uiEvt({ t: "done" });
+    process.exitCode = exitCodeOf(verdict); // PLAN/RESEARCH = 1 (zentral, Befund 13b)
     const hint = verdict === "RESEARCH"
       ? "→ FalsifyMe braucht weitere Daten (Falsifikations-Modul): read-only recherchieren, Befunde ergänzen, erneut einreichen."
       : "→ Iteration überarbeiten (Plan konkretisieren), erneut einreichen.";
@@ -675,7 +695,7 @@ async function main() {
   console.log(yellow("\n(kein VERDICT vom Modell erkannt – bitte Kritik oben lesen)"));
   console.log(yellow("→ KEINE Zusage von FalsifyMe: Exit 3 – Agent darf NICHT weiterarbeiten."));
   closeDb();
-  process.exitCode = 3;
+  process.exitCode = exitCodeOf(null); // kein Verdict = 3 (zentral, Befund 13b)
 }
 
   await main();
@@ -684,6 +704,20 @@ async function main() {
 process.on("exit", () => { try { closeDb(); } catch { /* egal */ } });
 
 // Nur bei direktem Aufruf ausführen (Import bleibt reiner Modul-Import).
+// Crash-Guard (Befund 13c): unhandled rejections duerfen NICHT als Exit 1
+// (= PLAN laut Vertrag) mit Stack enden — ehrlicher Exit 3 + Job-Close.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  runMain();
+  runMain().catch((e) => {
+    const msg = String(e?.message || e).split("\n")[0].slice(0, 160);
+    console.error(red(`\n✖ Interner Fehler (Exit 3, KEIN Verdict): ${msg}`));
+    console.error(dim("  Ein Crash ist NICHT „PLAN, überarbeiten“ – der Job wird ehrlich als ERROR geschlossen."));
+    try {
+      const db = openDb();
+      if (activeJobId) {
+        try { jobDone(db, activeJobId, null, `Interner Fehler (${msg})`); } catch { /* egal */ }
+      }
+      closeDb();
+    } catch { /* egal */ }
+    process.exitCode = 3;
+  });
 }

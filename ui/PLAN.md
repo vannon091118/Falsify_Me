@@ -1449,3 +1449,10 @@ STATUS: DONE
 DEPENDS_ON: UI-090 (Queue-Datenmodell), UI-104 (evil-twin-Welle fuer Call-Zaehlung)
 VERIFY: node --test tests/stats.test.mjs (Gesamtzahlen, UNBEKANNT aus dem Status, Ein-Satz-Anker, READ-ONLY-Beweis, leere DB); ui/tui.test.mjs (stats-Event im Snap, IdleView mit Anker); live: falsify stats + Dock-Idle-Screen zeigt den Anker.
 RESULT: artifacts/stats.mjs collectStats (jobsByStatus/Verdict, findingsByVerdict/Wave, scopesByStatus/Phase, errorsCaught=findings PLAN+RESEARCH, releases=WRITE, unbekannt aus Status "DONE UNBEKANNT", modelCalls=Jobs-mit-Verdict+evil-twin, sqlite.bytes+rowsPerTable) + progressionStatement; cli/stats.mjs `falsify stats [--json]`; TUI: stats-Event (events.mjs/state.mjs/tui.mjs snap.stats), IdleView-Progression-Panel (kompakt ab rows>=14), Worker emitStats bei Start + Idle-Uebergang. 89/89 Core + 113/113 UI gruen.
+
+ID: UI-111
+TASK: Rig-Review 2026-09-01 (Evil-Twin-Audit): (a) Twin-BESTAETIGT ohne eigenes Lesen deterministisch blocken (nur Prompt-Ebene reichte nicht), (b) exitCodeOf als EINZIGE Produktions-Quelle fuer Verdict-Exits (run.mjs + runPing), (c) falsify wait/bash endet DONE ASK mit Exit 5 statt 3, (d) runMain-Crash-Guard: interner Fehler = Exit 3 + Job-Close, nie als PLAN (Exit 1) lesbar.
+STATUS: DONE
+DEPENDS_ON: UI-104 (Twin-Gate), UI-082 (ASK-Verdict), UI-090 (Queue)
+VERIFY: node --test tests/twin.test.mjs (twinEvidenceOk) tests/queue.test.mjs (DONE ASK -> 5 via runPing + bash-wait-Spawn, kaputte DB -> Exit 3) tests/datamodel.test.mjs (exitCodeOf); Live: Twin ohne Tool-Runden gibt keine Freigabe.
+RESULT: core/verdict.mjs twinEvidenceOk (>=1 Tool-Runde ODER verifizierte Referenz; Fantasie-Zeile zaehlt nicht); cli/run.mjs nutzt exitCodeOf fuer alle Verdict-Exits + Crash-Guard mit activeJobId (Job -> ERROR "Interner Fehler"); cli/jobs.mjs runPing zentralisiert ueber exitCodeOf (DONE ASK -> 5); cli/falsify.sh wait-DONE-ASK-Arm -> Exit 5. 102/102 Core + 114/114 UI gruen.

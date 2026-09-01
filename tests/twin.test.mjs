@@ -180,3 +180,39 @@ test("Persistenz-Vertrag: evil-twin-Welle landet in findings.wave", async () => 
     await env.cleanup();
   }
 });
+
+test("twinEvidenceOk: BESTAETIGT ohne eigenes Lesen wird deterministisch geblockt", async () => {
+  const { twinEvidenceOk } = await mod("core/verdict.mjs");
+  const env = withTempHome();
+  try {
+    // 1. BESTAETIGT mit 0 Tool-Runden + keiner Referenz -> KEINE Freigabe
+    const noRead = { verdict: "BESTAETIGT", toolRounds: 0, befund: "Haelt stand.", content: "BEFUND: Haelt stand.\nVERDICT: BESTAETIGT" };
+    assert.equal(twinEvidenceOk(noRead, { root: env.tmp, whitelist: [] }), false,
+      "BESTAETIGT ohne eigenes Lesen ist keine unabhaengige Bestaetigung");
+    // 2. BESTAETIGT mit nachgewiesener Tool-Runde -> Freigabe belastbar
+    const withRead = { ...noRead, toolRounds: 3 };
+    assert.equal(twinEvidenceOk(withRead, { root: env.tmp, whitelist: [] }), true);
+    // 3. BESTAETIGT ohne Tool-Runde, ABER mit verifizierbarer Datei:Zeile -> ok
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-twin-ok-"));
+    try {
+      fs.mkdirSync(path.join(tmp, "core"), { recursive: true });
+      fs.writeFileSync(path.join(tmp, "core", "tools.mjs"), "export const x = 1;\n");
+      const withRef = { ...noRead, befund: "Geprueft: core/tools.mjs:1 ist wie behauptet.", content: "core/tools.mjs:1" };
+      assert.equal(twinEvidenceOk(withRef, { root: tmp, whitelist: [] }), true,
+        "verifizierbare Datei:Zeile kompensiert fehlende Tool-Runden");
+      // Fantasie-Referenz zaehlt NICHT (Zeile existiert nicht)
+      const fakeRef = { ...noRead, befund: "Geprueft: core/tools.mjs:99 ist wie behauptet." };
+      assert.equal(twinEvidenceOk(fakeRef, { root: tmp, whitelist: [] }), false,
+        "Fantasie-Zeile ist keine Evidenz");
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+    // 4. WIDERSPRUCH/UNKLAR sind nicht pruefpflichtig (verweigern ohnehin)
+    assert.equal(twinEvidenceOk({ verdict: "WIDERSPRUCH", toolRounds: 0, befund: "X" }), true);
+    assert.equal(twinEvidenceOk({ verdict: "UNKLAR", toolRounds: 0, befund: "X" }), true);
+    // 5. Fehler -> fail-closed
+    assert.equal(twinEvidenceOk({ verdict: "BESTAETIGT", toolRounds: 0, error: "API kaputt" }), false);
+  } finally {
+    await env.cleanup();
+  }
+});

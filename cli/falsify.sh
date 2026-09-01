@@ -135,6 +135,11 @@ case "$cmd" in
       "DONE PLAN"*|"DONE RESEARCH"*)
         echo "⚠️  VERDICT: ${line#DONE } – nicht freigegeben. Kritik lesen (falsify log $id), Loop fortsetzen." >&2
         exit 1 ;;
+      "DONE ASK"*)
+        # Aufgaben-Mehrdeutigkeit: Rueckfrage an den User, KEIN Loop-Fortschritt
+        # (Exit 5 laut Vertrag — Befund 13a: fiel vorher in den ERROR-Arm, Exit 3).
+        echo "⚠️  VERDICT: ASK – Aufgabe mehrdeutig, Rueckfrage an den User noetig (Exit 5, keine Freigabe)." >&2
+        exit 5 ;;
       "DONE UNBEKANNT"*)
         echo "⚠️  KEIN gültiges Verdict erkannt – keine Freigabe (Exit 3)." >&2
         exit 3 ;;

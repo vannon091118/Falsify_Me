@@ -139,6 +139,10 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   Claims via extractClaims, nie Erst-Reasoning), Twin-System-Prompt
   SYSTEM_EVILTWIN_DE/EN. Fail-closed: BESTAETIGT ist die EINZIGE WRITE-
   tragende Antwort (parseTwinVerdict, strenge Lesart, Default UNKLAR);
+  BESTAETIGT ist erst belastbar, wenn der Twin NACHWEISBAR selbst gelesen
+  hat — twinEvidenceOk (core/verdict.mjs): mind. 1 Tool-Runde ODER
+  verifizierte Datei:Zeile-/Pfad-Referenz; 0 Runden ohne Referenz ⇒
+  UNKLAR/keine Freigabe (Rig 2026-09-01, Prompt-Ebene reichte nicht);
   WIDERSPRUCH/UNKLAR/Fehler ⇒ PLAN mit ehrlicher Warnung. Twin-Finding
   bekommt wave='evil-twin' und trägt als LETZTES Finding das final geltende
   Urteil (Invariante 4 unverändert gültig). Zweiter enforceRateLimit-Call

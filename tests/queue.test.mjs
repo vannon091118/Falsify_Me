@@ -14,6 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pathToFileURL } from "node:url";
+import { spawn } from "node:child_process";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const savedHome = process.env.FALSIFY_HOME;
@@ -90,6 +91,62 @@ test("wait --ping: laufender Job -> Exit 4 (Coder wertet aus), DONE WRITE -> 0",
     runPing(id);
     assert.equal(process.exitCode, 3, "ERROR = Exit 3");
     process.exitCode = 0;
+
+    // DONE ASK -> Exit 5 (Aufgaben-Mehrdeutigkeit; Rig-Review 2026-09-01,
+    // Befund 13a/13b: fiel vorher in den ERROR-Arm -> Exit 3)
+    const db5 = openDb();
+    dbModule.jobDone(db5, id, "ASK", null);
+    closeDb();
+    runPing(id);
+    assert.equal(process.exitCode, 5, "DONE ASK = Exit 5 (User-Rueckfrage)");
+    process.exitCode = 0;
+  } finally {
+    home.cleanup();
+  }
+});
+
+test("falsify wait (bash-Loop): DONE ASK -> Exit 5 statt 3", async () => {
+  const home = withTempHome();
+  try {
+    const { openDb, closeDb } = requireDb();
+    const db = openDb();
+    const id = createJob(db, { status: "QUEUED" });
+    dbModule.jobDone(db, id, "ASK", null); // Status "DONE ASK"
+    closeDb();
+
+    const child = spawn("bash", [path.join(ROOT, "cli", "falsify.sh"), "wait", id], {
+      cwd: ROOT,
+      env: { ...process.env, FALSIFY_HOME: home.tmp },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let out = "";
+    child.stdout.on("data", (c) => { out += c; });
+    child.stderr.on("data", (c) => { out += c; });
+    const code = await new Promise((res) => child.on("close", res));
+    assert.equal(code, 5, `bash-wait DONE ASK -> Exit 5 (nicht 3):\n${out}`);
+    assert.match(out, /VERDICT: ASK/);
+  } finally {
+    home.cleanup();
+  }
+});
+
+test("run.mjs-Crash (kaputte DB) -> Exit 3, KEIN Exit 1 (PLAN-Luege)", async () => {
+  const home = withTempHome();
+  try {
+    // Kaputte DB: openDb wirft -> runMain lehnt ab -> Crash-Guard (Befund 13c).
+    fs.writeFileSync(path.join(home.tmp, "falsify.db"), "DIES IST KEINE SQLITE-DATENBANK");
+    const child = spawn(process.execPath, [path.join(ROOT, "cli", "run.mjs"), "Plan-Text"], {
+      cwd: ROOT,
+      env: { ...process.env, FALSIFY_HOME: home.tmp },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let out = "";
+    child.stdout.on("data", (c) => { out += c; });
+    child.stderr.on("data", (c) => { out += c; });
+    const code = await new Promise((res) => child.on("close", res));
+    assert.equal(code, 3, `Crash = Exit 3 (nicht 1, sonst wuerde er als PLAN lesbar):\n${out}`);
+    assert.match(out, /Interner Fehler/);
+    assert.match(out, /KEIN Verdict/);
   } finally {
     home.cleanup();
   }

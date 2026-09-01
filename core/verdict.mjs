@@ -207,6 +207,25 @@ export function hasChallengeEvidence(content, opts = {}) {
   });
 }
 
+/**
+ * Twin-Evidenz-Gate (Regel 6, Rig-Review 2026-09-01): „BESTAETIGT ohne
+ * eigenes Lesen ist VERBOTEN“ ist nur Prompt-Level — DETERMINISTISCH
+ * erzwungen wird es hier. Eine Freigabe ist erst belastbar, wenn der Twin
+ * nachweisbar selbst gelesen hat (mind. 1 Tool-Runde = read_file/list_dir/
+ * glob wirklich ausgefuehrt) ODER eine verifizierbare Referenz im
+ * Befund/Content traegt (Datei:Zeile, Whitelist-Datei, existierender Pfad —
+ * evidenceOf). BESTAETIGT ohne beides ist keine unabhaengige Bestaetigung
+ * -> false (fail-closed, run.mjs stuft auf PLAN). WIDERSPRUCH/UNKLAR sind
+ * nicht pruefpflichtig (sie verweigern die Freigabe ohnehin) -> true.
+ */
+export function twinEvidenceOk(twin, { root = null, whitelist = [] } = {}) {
+  if (!twin || twin.verdict !== "BESTAETIGT") return true;
+  if (twin.error) return false;
+  if (Number(twin.toolRounds) >= 1) return true;
+  const text = `${twin.befund || ""}\n${twin.content || ""}`;
+  return evidenceOf(text, { root, whitelist }) !== null;
+}
+
 /** Echte Finding-Severity je Verdict (info/warning/critical, UI-065-Befund 3). */
 export function findingSeverity(verdict) {
   const v = String(verdict || "").toUpperCase();
