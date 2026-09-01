@@ -692,3 +692,28 @@ RESULT: PASS - WIRING.md Event-Contract files Zelle + run.mjs-Zeile auf
 Ablauf-Schritt 3 (SCAN-N-Zeile), Event-Contract-Codeblock (list, max. 20)
 und veralteter Doku-Kopf (UI-030/034/035/038 + 053/054 sind abgenommen)
 aktualisiert.
+
+ID: UI-068
+TASK: ensure_dock_window (Skill) als automatisierter Regressionstest in die
+Phase-2-Suite: MSYS-sicherer Fensterstart (WIRING §4) deterministisch prüfen,
+ohne echte Fenster zu öffnen.
+STATUS: DONE
+DEPENDS_ON: UI-063 (Start-Process-Fix), UI-064 (Retry-Poll)
+VERIFY: npm run test:phase2 (7/7); Gesamtsuite 119/119
+RESULT: PASS - 2026-09-01. Der Skill ist source-sicher (CLI-Modus nur bei
+BASH_SOURCE[0]==$0) -> tests/phase2.test.mjs sourct die echte
+skills/agent-skill-falsify.sh in frischer bash und schattet node/
+powershell.exe/sleep als bash-Funktionen (kein PATH-/Exec-Bit-Fallstrick).
+3 Tests:
+(1) --check RUNNING -> "laufen bereits (Worker: 4242)", KEIN
+Start-Process-Aufruf (kein Doppelstart);
+(2) STOPPED -> RUNNING (langsamer Boot): Start-Process-Befehl wird exakt wie
+im Skill konstruiert gefangen (echtes cygpath -w!) - Assertions: Start-Process
+-WindowStyle Normal, -FilePath 'cmd.exe', -ArgumentList '/k','"<Win-Pfad>
+start-dock.cmd"', Windows-Pfad mit Backslashes+Laufwerksbuchstabe, KEIN
+Forward-Slash-Pfad, KEIN "cmd /c start"-Muster, Poll findet Worker
+("Falsify-Worker gestartet", UI-064-Boot-Race);
+(3) fehlende start-dock.cmd -> Error auf stderr, Exit 1, kein Start.
+Fake-node verbraucht eine Antwortsequenz (erste Zeile pro --check-Aufruf,
+letzte bleibt) und loggt die echten --check-Aufrufe (V2_DIR-Aufloesung wird
+mitgeprueft: worker.mjs --check).

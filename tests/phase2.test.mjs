@@ -151,3 +151,108 @@ test("Worker --check bleibt Text (Headless-Kompatibilitaet)", () => {
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout.trim(), "STOPPED");
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ensure_dock_window (Skill) – MSYS-sicherer Fensterstart als Regression
+// -----------------------------------------------------------------------------
+// WIRING §4: Der Fensterstart aus Bash darf NIE ueber "cmd.exe /c start ..."
+// laufen (Git-Bash zerlegt Argumente, Fehler 0x80070002, kaputte Pfade) -
+// sondern via cygpath -w + PowerShell Start-Process. Der Skill ist source-
+// sicher (CLI-Modus nur bei BASH_SOURCE[0] == "$0"), also sourcen wir ihn in
+// einer frischen bash und schatten `node`/`powershell.exe`/`sleep` als
+// bash-Funktionen: Die Start-Process-Kommandokonstruktion wird dabei exakt so
+// ausgefuehrt wie im echten Skill-Lauf (echtes cygpath), ohne ein echtes
+// Fenster zu oeffnen. Regression fuer UI-058/UI-063/UI-064.
+// -----------------------------------------------------------------------------
+const SKILL = path.join(ROOT, "skills", "agent-skill-falsify.sh");
+
+// Fuehrt ensure_dock_window in einer frischen bash aus.
+// planLines: Sequenz der fake-node-Antworten (eine Zeile pro --check-Aufruf,
+//   letzte Zeile bleibt fuer weitere Aufrufe stehen).
+// v2Override: ersetzt V2_DIR NACH dem Source (fuer den Fehlerpfad).
+// Rueckgabe: { status, stdout, cap, nodeLog } – cap/nodeLog aus der Sandbox
+//   (`` und undefined, wenn die fakes nie aufgerufen wurden).
+function runEnsureDockWindow({ planLines, v2Override = "" } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-dock-"));
+  cleanup.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const planFile = path.join(dir, "plan.txt");
+  const capFile = path.join(dir, "cap.txt");
+  const logFile = path.join(dir, "node.log");
+  fs.writeFileSync(planFile, planLines.join("\n") + "\n", "utf8");
+  const script = `
+node() {
+  local f="$FAKE_PLAN_FILE" line rest
+  printf '%s' "$*" >> "$FAKE_NODE_LOG"
+  if [ -f "$f" ]; then
+    line=$(head -1 "$f" 2>/dev/null)
+    rest=$(tail -n +2 "$f" 2>/dev/null)
+    printf '%s\\n' "$rest" > "$f"
+    if [ -n "$line" ]; then printf '%s\\n' "$line"; return 0; fi
+  fi
+  printf 'RUNNING 9999 (Fenster 1)\\n'
+}
+powershell.exe() { printf '%s\\n' "$*" > "$FAKE_CAP_FILE"; }
+sleep() { :; }
+source "$FAKE_SKILL"
+[ -n "$FAKE_V2_OVERRIDE" ] && V2_DIR="$FAKE_V2_OVERRIDE"
+ensure_dock_window
+echo "ENSURE_EXIT=$?"
+`;
+  const r = spawnSync("bash", ["-c", script], {
+    env: {
+      ...process.env,
+      FAKE_PLAN_FILE: planFile, FAKE_CAP_FILE: capFile, FAKE_NODE_LOG: logFile,
+      FAKE_SKILL: SKILL, FAKE_V2_OVERRIDE: v2Override,
+    },
+    encoding: "utf8",
+  });
+  return {
+    status: r.status,
+    stdout: r.stdout,
+    stderr: r.stderr,
+    cap: fs.existsSync(capFile) ? fs.readFileSync(capFile, "utf8") : undefined,
+    nodeLog: fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8") : undefined,
+  };
+}
+
+test("Skill ensure_dock_window: laufendes Fenster -> kein Doppelstart (--check RUNNING)", () => {
+  const r = runEnsureDockWindow({ planLines: ["RUNNING 4242 (Fenster 1)"] });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /laufen bereits \(Worker: 4242\s*\)/);
+  assert.match(r.stdout, /ENSURE_EXIT=0/);
+  // Powershell darf NICHT aufgerufen worden sein (kein zweites Fenster).
+  assert.equal(r.cap, undefined, "kein Start-Process bei laufendem Fenster");
+  assert.match(r.nodeLog, /--check/, "--check gegen den echten Worker-Pfad");
+  assert.match(r.nodeLog, /worker\.mjs/);
+});
+
+test("Skill ensure_dock_window: MSYS-sicherer Start via Start-Process + cygpath -w", () => {
+  const r = runEnsureDockWindow({ planLines: ["STOPPED", "RUNNING 7777 (Fenster 1)"] });
+  assert.equal(r.status, 0, r.stderr);
+  // Poll fand den (langsam) startenden Worker – keine False-Negative (UI-064).
+  assert.match(r.stdout, /Falsify-Worker gestartet - Fenster bleiben offen/);
+  assert.match(r.stdout, /ENSURE_EXIT=0/);
+  // Echte Start-Process-Kommandokonstruktion (WIRING §4), NICHT cmd /c start.
+  assert.ok(r.cap, "powershell.exe wurde aufgerufen");
+  assert.match(r.cap, /Start-Process -WindowStyle Normal/);
+  assert.match(r.cap, /-FilePath 'cmd\.exe'/);
+  assert.match(r.cap, /-ArgumentList '\/k','/);
+  // cygpath -w hat den Windows-Pfad (Backslashes, Laufwerksbuchstabe) erzeugt.
+  assert.match(r.cap, /"[A-Za-z]:\\[^"]*start-dock\.cmd"/, "Windows-Pfad in ArgumentList");
+  // MSYS-Mangling-Regressionen: kein Forward-Slash-Pfad, kein altes Muster.
+  assert.ok(!/\/ui\/start-dock\.cmd/.test(r.cap), "kein MSYS-konvertierter Pfad");
+  assert.ok(!/\/c start/.test(r.cap), "kein cmd /c start Muster");
+  // Der echte Repo-Worker-Pfad wurde fuer --check verwendet (V2_DIR-Aufloesung).
+  assert.match(r.nodeLog, /worker\.mjs --check/);
+});
+
+test("Skill ensure_dock_window: fehlende start-dock.cmd -> klarer Fehler (Exit 1)", () => {
+  const fakeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-dock-nocmd-"));
+  cleanup.push(() => fs.rmSync(fakeRoot, { recursive: true, force: true }));
+  const r = runEnsureDockWindow({ planLines: ["STOPPED"], v2Override: fakeRoot });
+  assert.equal(r.status, 0); // bash -c selbst; der Fehler steht im Output
+  // log_error geht auf stderr (bewusst, so bleibt stdout fuer Maschinenwerte).
+  assert.match(r.stdout + r.stderr, /start-dock\.cmd fehlt/);
+  assert.match(r.stdout, /ENSURE_EXIT=1/);
+  assert.equal(r.cap, undefined, "kein Start ohne start-dock.cmd");
+});
