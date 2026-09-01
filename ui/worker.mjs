@@ -42,7 +42,14 @@ const bell = () => process.stdout.write("\x07");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const DEBUG_LOG = path.join(falsifyHome(), "logs", "worker.debug.log");
-const dlog = (msg) => { try { fs.appendFileSync(DEBUG_LOG, `${new Date().toISOString()} ${msg}\n`); } catch { /* egal */ } };
+// logs/ sicherstellen: In einem frischen FALSIFY_HOME fehlt der Ordner und
+// appendFileSync wuerde sonst still scheitern (kein Debug-Log sichtbar).
+const dlog = (msg) => {
+  try {
+    fs.mkdirSync(path.dirname(DEBUG_LOG), { recursive: true });
+    fs.appendFileSync(DEBUG_LOG, `${new Date().toISOString()} ${msg}\n`);
+  } catch { /* egal */ }
+};
 
 dlog(`worker.mjs gestartet (pid=${process.pid}, fenster=${WINDOW_IDX})`);
 

@@ -60,10 +60,16 @@ ensure_dock_window() {
 
   log_warn "Kein Falsify-Fenster offen - öffne Fenster (IMMER sichtbar!)..."
   # FENSTER MÜSSEN IMMER SICHTBAR SEIN: niemals headless starten.
-  if [[ -f "$V2_DIR/ui/start-dock.cmd" ]]; then
-    cmd.exe /c "start \"\" \"$V2_DIR/ui/start-dock.cmd" &
-  elif [[ -f "$V2_DIR/ui/START.cmd" ]]; then
-    cmd.exe /c "start \"\" \"$V2_DIR/ui/START.cmd" &
+  # Start MSYS-sicher (WIRING §4): cygpath -w + PowerShell Start-Process statt
+  # "cmd.exe /c start ..." - Git-Bash zerlegt dort Argumente mit Leerzeichen
+  # und konvertiert Pfade falsch (Fehler 0x80070002 / kaputte %~dp0-Ketten),
+  # was das Fenster öffnet, aber mit falscher Umgebung (z.B. kaputtem
+  # FALSIFY_HOME) - genau die Falle, an der der E2E-Test 2026-09-01 hing.
+  local DOCK_CMD="$V2_DIR/ui/start-dock.cmd"
+  if [[ -f "$DOCK_CMD" ]]; then
+    local dock_win
+    dock_win="$(cygpath -w "$DOCK_CMD" 2>/dev/null || printf '%s' "$DOCK_CMD")"
+    powershell.exe -NoProfile -Command "Start-Process -WindowStyle Normal -FilePath 'cmd.exe' -ArgumentList '/k','\"$dock_win\"'" &
   else
     log_error "start-dock.cmd fehlt – Falsify-Fenster müssen IMMER sichtbar sein (ui/start-dock.cmd [1|2|3]). Kein headless Start erlaubt."
     return 1
@@ -97,13 +103,15 @@ ensure_scope() {
     log_error "Beim Scope-Start ist --user-input Pflicht (User-Input 1:1 -> HEADER). Bei Loop-Fortsetzung --scope angeben."
     return 2
   fi
-  log_step "PLAN = Init: Scope anlegen - User-Input wird 1:1 zum HEADER..."
+  # Logs auf stderr: diese Funktion wird per Command-Substitution aufgerufen
+  # (scope=$(ensure_scope ...)); stdout muss EXAKT die Scope-ID liefern.
+  log_step "PLAN = Init: Scope anlegen - User-Input wird 1:1 zum HEADER..." >&2
   local out
-  out=$(node "$V2_DIR/cli/main.mjs" scope new "$user_input" 2>&1) || { log_error "$out"; return 2; }
+  out=$(node "$V2_DIR/cli/main.mjs" scope new "$user_input" 2>&1) || { log_error "$out" >&2; return 2; }
   local id
   id=$(echo "$out" | sed -n 's/^SCOPE_ID=//p' | head -1)
-  [ -n "$id" ] || { log_error "Scope konnte nicht angelegt werden: $out"; return 2; }
-  log_ok "Scope angelegt: $id (HEADER = User-Input 1:1)"
+  [ -n "$id" ] || { log_error "Scope konnte nicht angelegt werden: $out" >&2; return 2; }
+  log_ok "Scope angelegt: $id (HEADER = User-Input 1:1)" >&2
   echo "$id"
   return 0
 }

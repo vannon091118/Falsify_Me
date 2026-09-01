@@ -585,3 +585,32 @@ Zu-klein-Guard rendert); Demo-Fenster zeigen nach dem Revert wieder die
 normale Idle-Ansicht statt Dauer-ZU-KLEIN. Grenze dokumentiert: Live-Resize
 nur in Windows Terminal/PowerShell-Konsolen (klassische cmd-Konsole:
 node#13197).
+
+ID: UI-063
+TASK: Skill-E2E-Re-Verifikation auf Stand nach UI-060 + dabei gefundene
+Haertungen: (1) agent-skill-falsify.sh ensure_scope - log_step/log_ok
+schrieben auf stdout; Command-Substitution scope=$(ensure_scope ...) fing
+mehrere Zeilen -> kaputte Scope-ID beim Submit („Scope nicht gefunden:
+🔄 PLAN = Init..."). Fix: Logs >&2, stdout = exakt die ID.
+(2) agent-skill-falsify.sh Fenster-Start MSYS-sicher (WIRING-§4-Loesung):
+cygpath -w + PowerShell Start-Process statt cmd.exe /c start - der alte Weg
+oeffnete das Fenster mit kaputtem FALSIFY_HOME (Worker registrierte sich
+nie -> Skills 30s-Poll lief leer -> „konnte nicht gestartet werden").
+(3) worker.mjs dlog: logs/-Ordner fehlte in frischem FALSIFY_HOME ->
+appendFileSync scheiterte still (kein Debug-Log); mkdirSync recursive.
+STATUS: DONE
+DEPENDS_ON: UI-060
+VERIFY: realer Skill-E2E mit Wegwerf-Home + echtem Dock-Fenster; Guard-
+Positiv-/Negativ-Kontrollen
+RESULT: PASS — 2026-09-01 (7,5 s): --check-Guard erkannte den echten
+Worker (RUNNING 7252; die verwaisten 10732/2816/2976-Zeilen der echten
+Home-DB wurden ignoriert), Scope 1:1 angelegt, Submit OK, „Job ... ist im
+Dock sichtbar (Fenster-Claim: Status ERROR API-Key fehlt) - warte auf
+Verdict ...", Verdict UNBEKANNT, Exit 3 (keine Freigabe ohne Key) wie
+gefordert. Negativ-Kontrollen: nach taskkill //T (Selftest-Cleanup-
+Muster) STOPPED trotz stehengebliebener Meta-Zeile; Fake-Zeile auf
+lebende fremde node-PID -> STOPPED (Commandline-Guard greift; ohne Guard
+waere ein false RUNNING 6012 gemeldet worden). Test-Harness-Lektion
+dokumentiert: `source` von Windows-Pfad-Kontextdateien fraesst Backslashes
+(FALSIFY_HOME wurde zu „C:Users..." -> Worker registrierte sich unter
+kaputtem Pfad) - Wegwerf-Home-Werte kuenftig direkt setzen, nicht sourcen.
