@@ -9,7 +9,12 @@ const h = React.createElement;
 
 export default function Header({ snap, cols }) {
   const inner = cols - 2;
-  const left = ` FALSIFYME${snap.windowIdx ? ` · FEN ${snap.windowIdx}` : ""}${snap.jobId ? ` · JOB ${snap.jobId}` : ""}${snap.scopeId ? ` · SCOPE ${snap.scopeId}` : ""}`;
+  // Fortschrittsindikator IMMER sichtbar (auch wenn der Thinking-Block
+  // ausgeblendet ist): aktive Phase + Prozent + Modus-Selbsterklaerung (t).
+  const phase = snap.activePhase?.phase ?? snap.phases?.find?.((p) => p.status === "active")?.phase ?? "–";
+  const pct = Math.round((snap.activePhase?.progress ?? 0) * 100);
+  const modeLabel = snap.mode === "thinking" ? "t:Text" : "t:Status";
+  const left = ` FALSIFYME${snap.windowIdx ? ` · FEN ${snap.windowIdx}` : ""}${snap.jobId ? ` · JOB ${snap.jobId}` : ""}${snap.scopeId ? ` · SCOPE ${snap.scopeId}` : ""} · ${phase} ${pct}% · ${modeLabel}`;
   const right = `● ${snap.stateLabel}`;
   // Status rechtsbuendig, links wird gekuerzt - nie ueberlaufen.
   const leftText = truncate(left, Math.max(1, inner - strWidth(right) - 2), "…");

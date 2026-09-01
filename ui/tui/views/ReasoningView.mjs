@@ -49,7 +49,7 @@ export default function ReasoningView({ snap, cols, rows }) {
   const inner = cols - 2;
   const lines = [];
 
-  lines.push(h(Text, { key: "h", bold: true }, "FALSIFICATION"));
+  lines.push(h(Text, { key: "h", bold: true, color: "cyan" }, "STATUS · FORTSCHRITT · Taste t = Thinking-Text"));
   for (const p of snap.phases) {
     lines.push(
       h(Text, { key: p.phase, color: statusColor(p.status) },

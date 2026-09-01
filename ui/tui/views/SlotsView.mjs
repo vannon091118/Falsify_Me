@@ -29,7 +29,10 @@ export default function SlotsView({ snap, cols, rows }) {
     const pH = base + (i < extra ? 1 : 0);
     const p = panels[i];
     const stateColor = p.stateColor ?? "white";
-    const head = ` ${p.fen} · ${p.jobId ? `JOB ${p.jobId}` : "–"} · ${p.stateLabel}`;
+    // Fenster-Selbsterklärung: Fenster + Job + Zustand (farbig) + Phase/Fortschritt.
+    const phase = p.phases?.find?.((x) => x.status === "active")?.phase ?? p.activePhase?.phase ?? "–";
+    const pct = Math.round((p.activePhase?.progress ?? 0) * 100);
+    const head = ` ${p.fen} · ${p.jobId ? `JOB ${p.jobId}` : "–"} · ${p.stateLabel} · ${phase} ${pct}%`;
     els.push(h(Text, { key: `h${i}`, color: "gray" }, "╭" + truncate(head + fill("─", Math.max(0, inner - strWidth(head))), inner, "…") + "╮"));
 
     // Phasen inline
