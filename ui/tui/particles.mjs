@@ -69,8 +69,10 @@ export const setLabels = (field, labels) => {
 };
 
 // Render: Array[rows] von Array[cols]-Zellen; jede Zelle = { ch, dim } | null.
-// Count-Drops (aber keine Drops sind 2 Buchstaben?) - ein Drop pro Zelle gewinnt
-// (naechster Frame), Mehrfachbelegungen durch spate Drops ueberschrieben.
+// ERSTER Drop gewinnt: belegte Zellen (Glyph ODER Text eines frueheren Drops)
+// werden NICHT ueberschrieben. Ohne diese Regel wuerden sich Labels an
+// Kreuzungspunkten zu Wort-Mashups vermischen (Screenshot-Befund:
+// "subprompt" + "MODEL(" -> "subpromptMODEL("). Spaetere Drops weichen aus.
 export const render = (field) => {
   const rows = field.rows;
   const cols = field.cols;
@@ -79,15 +81,15 @@ export const render = (field) => {
   for (const drop of field.drops) {
     const row = Math.floor(drop.y);
     if (row < 0 || row >= rows) continue;
-    if (row >= 0) {
-      const glyphCol = Math.floor(drop.x);
-      if (glyphCol >= 0 && glyphCol < cols) {
-        cells[row][glyphCol] = { ch: drop.glyph, dim: !drop.labelled };
-      }
-      const start = glyphCol + 2;
-      for (let i = 0; i < drop.text.length && start + i < cols; i++) {
-        const ch = drop.text[i];
-        cells[row][start + i] = { ch, dim: !drop.labelled };
+    const glyphCol = Math.floor(drop.x);
+    if (glyphCol >= 0 && glyphCol < cols && cells[row][glyphCol] === null) {
+      cells[row][glyphCol] = { ch: drop.glyph, dim: !drop.labelled };
+    }
+    const start = glyphCol + 2;
+    for (let i = 0; i < drop.text.length && start + i < cols; i++) {
+      const col = start + i;
+      if (cells[row][col] === null) {
+        cells[row][col] = { ch: drop.text[i], dim: !drop.labelled };
       }
     }
   }

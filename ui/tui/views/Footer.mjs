@@ -35,7 +35,11 @@ export default function Footer({ snap, cols }) {
 
   const m = snap.metrics;
   const rssMb = Math.round((m.rssPeak || process.memoryUsage?.().rss || 0) / 1048576);
-  const line2 = ` OUTPUT ${m.spark} ${fmtK(m.linesPerSec)}/s · RENDER ${m.frames} frames max ${m.maxFrameMs}ms · RAM ${rssMb}MB`;
+  // maxFrameMs ist performance.now-basiert -> Float mit Float-Rauschen
+  // (Screenshot-Befund: "max 368.41479999996955ms") – auf 1 Nachkommastelle
+  // runden, damit die Anzeige ehrlich bleibt ohne Zahlenmuell.
+  const maxMs = Number.isFinite(m.maxFrameMs) ? `${m.maxFrameMs.toFixed(1)}` : "?";
+  const line2 = ` OUTPUT ${m.spark} ${fmtK(m.linesPerSec)}/s · RENDER ${m.frames} frames max ${maxMs}ms · RAM ${rssMb}MB`;
 
   return h(Box, { flexDirection: "column", width: cols },
     h(Text, null, "╭" + fill("─", inner) + "╮"),

@@ -55,6 +55,24 @@ test("render: liefert rows x cols Zellen; Inhalte nach Steps", () => {
   assert.ok(nonEmpty > 0, "irgendwo muss ein Partikel sichtbar sein");
 });
 
+test("render: ueberlappende Labels mischen sich NICHT zu Wort-Mashups", () => {
+  // Zwei Drops auf derselben Zeile mit ueberlappender Text-Spanne: der ERSTE
+  // gewinnt, der zweite weicht aus -> keine zusammengewuerfelten Woerter wie
+  // "subpromptMODEL(" (Dock-Screenshot-Befund 2026-09-01).
+  const field = {
+    cols: 30,
+    rows: 2,
+    drops: [
+      { x: 1, y: 0, text: "subprompt", glyph: "░", labelled: false },
+      { x: 7, y: 0, text: "MODEL(", glyph: "▓", labelled: false },
+    ],
+  };
+  const row = render(field)[0].map((c) => (c ? c.ch : " ")).join("");
+  assert.ok(row.includes("subprompt"), "erstes Label bleibt durchgehend lesbar");
+  assert.ok(!row.includes("MODEL("), "spaeteres Label wird nicht ueber das erste gemischt");
+  assert.ok(!/subpr\w*MODEL/.test(row), "kein Wort-Mashup (subpromptMODEL(...)-Klasse)");
+});
+
 test("setLabels: echte Aktivitaets-Labels landen nach Steps im Feld", () => {
   const f = createField({ cols: 50, rows: 10, seed: 7 });
   setLabels(f, ["read_file(app.js)", "glob('src')"]);
