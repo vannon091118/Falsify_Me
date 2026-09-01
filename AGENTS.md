@@ -18,6 +18,9 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   heißt NICHT Key-konfiguriert: `falsify doctor` meldet dann `Kein API-Key`.
   Auf diesem PC waren die Keys historisch nie gesetzt (Backup enthielt nur
   leere Werte). Key fehlt → jeder echte Job Exit 3, kein Fake-Verdict.
+- `.env` enthält NUR Keys: `FALSIFY_API_BASE`/`FALSIFY_MODEL` stehen dort als
+  Kommentar-Vorlage und werden nie gelesen — Ziel/Modell kommen aus
+  Prozess-Env oder `FALSIFY_HOME/config.json` (schreibt `falsify settings set`).
 - Der Worktree `C:\Users\Vannon\Desktop\Falsify_ME` ist die (einzige)
   Wahrheit; alle anderen PC-Referenzen (.Falsify*, ~/.agents/skills/falsifyme*,
   Desktop-Icons, ~/.falsifyme-instructions.ps1) wurden entfernt und nur aus
@@ -44,12 +47,26 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   Fenster altern über den Heartbeat aus.
 - `core/feasibility.mjs` hat **keine Verdict-Hoheit**: Es ist der
   deterministische read-only Umsetzbarkeits-Check VOR dem Modell-Call
-  (Whitelist unter Root, kein Pfad-Ausbruch, Plan adressiert Intent). Bei
-  `feasible:false` endet der Job mit PLAN/RESEARCH ohne Modell-Call; RESEARCH
-  bedeutet: FalsifyMe fordert Research-Daten an und der Thinker scannt sie
-  **unabhängig vor dem Coder** — die Divergenz der beiden Urteile ist der GAP,
-  den der Loop schließt. `addFinding`/`jobDone` werden von feasibility nie
-  aufgerufen (nur `cli/run.mjs` schließt Jobs).
+  (Whitelist unter Root, kein Pfad-Ausbruch, Plan adressiert Intent). Seine
+  `blocks`/`findings` gehen als KONTEXT an den Thinker (`run.mjs`: Warnungen +
+  Validierungs-Hinweise im User-Content) — **kein Verdict, kein Job-Ende**;
+  RESEARCH bedeutet: FalsifyMe fordert Research-Daten an und der Thinker
+  scannt sie **unabhängig vor dem Coder** — die Divergenz der beiden Urteile
+  ist der GAP, den der Loop schließt. `addFinding`/`jobDone` werden von
+  feasibility nie aufgerufen (nur `cli/run.mjs` schließt Jobs).
+- `scopes.last_gap` ist NUR der FalsifyMe-Befund bei PLAN/RESEARCH (null bei
+  WRITE) — keine gespeicherte Divergenz zweier Urteile: das Coder-Urteil wird
+  nirgends erfasst, „Divergenz Coder-Urteil vs. Falsifikation" ist Label.
+- WRITE-Challenge-Gate (`core/verdict.mjs`) seit E2E 2026-09-01: WRITE
+  braucht den Abschnitt `## Falsifikationsversuche` MIT mind. einem
+  substanziellen nummerierten/Bullet-Versuch (>10 Zeichen, nicht
+  „Keine gefunden") — ein bloßes `BEFUND: …` reicht nicht mehr (Rubber-Stamp).
+- Abort-Interleaving ist strukturell unmöglich: während `createAbort` läuft,
+  parkt die Worker-Main-Loop am `await close` — der `aborting`-Guard im
+  Loop ist faktisch tot; Doppel-Aborts fängt der `started`-Guard ab.
+- node:sqlite bindet `undefined` nicht: `getJob(db, undefined)` meldet
+  irreführend „Provided value cannot be bound to SQLite parameter 1."
+  (Exit 3) — ids VOR jedem DB-Zugriff guarden (`fail`, Exit 2).
 
 ## Bootstrap & Onboarding (verhaltensrelevante Details)
 
@@ -77,6 +94,13 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
 - `cli/falsify.sh` hat `onboard`, `uninstall` und `abort` als Befehle;
   `help.mjs` und der CLI-Kopf in falsify.sh müssen bei neuen Befehlen
   mitziehen.
+- ZWEI Bootstrap-Einstiege müssen synchron bleiben: `cli/bootstrap.mjs`
+  main() und `cli/main.mjs bootstrap` teilen `applyModeDecision`; der
+  main.mjs-Einstieg hat den Modus-Entscheid historisch still übersprungen
+  (2026-09-01 gefixt).
+- `bootstrap --dry-run` OHNE `--skip-dock` startet trotzdem das echte
+  Dock-Fenster (startDock kennt kein dryRun); `--skip-dock`-Ausgabe meldet
+  fälschlich „gestartet und bestaetigt" (dock.ok vor dock.skipped geprüft).
 
 ## Windows/Git-Bash-Quirks
 
@@ -88,6 +112,15 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
 - Sichtbares Fenster aus Agent-Shells: nur PowerShell
   `Start-Process -WindowStyle Normal` (wt.exe/cmd /c start unzuverlässig),
   vgl. WIRING §4 — empirisch bestätigt durch selftest + bootstrap.
+- Einstiegserkennung in CLI-Skripten NUR via
+  `process.argv[1] === fileURLToPath(import.meta.url)`: der frühere
+  String-Vergleich (`file://` + Pfad, ein Slash zu kurz) feuerte auf Windows
+  nie — `node cli/bootstrap.mjs` war still ein No-Op (Exit 0, keine Ausgabe).
+- `$!` eines Git-Bash-Hintergrundprozesses ist NICHT die Win32-PID von node:
+  `taskkill //PID $!` verfehlt — PID aus `worker.mjs --check` (`RUNNING <pid>`)
+  parsen (macht uninstall.mjs).
+- MSYS-Prozesssubstitution ist für natives node unsichtbar: `--plan-file
+  <(echo …)` → `ENOENT 'C:\proc\…'` — echte Temp-Datei verwenden.
 - Der Dock-Start zeigt einen echten „Falsify lädt"-Boot (F A L S I F Y _ M E)
   mit Selftest-Fortschritt; die echten Selftest-Schritte landen zusätzlich in
   `FALSIFY_HOME/logs/selftest.log` (kein Mock, kein Demo-Screen).
@@ -102,6 +135,9 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   der Benchmark-Tab leer. Ohne Subagents (Freebuff) sind Baselines/
   quantitative Deltas nicht möglich — Assertions-Grading + User-Review tragen
   die Bewertung (Claude.ai-Modus des skill-creators).
+- Nutzer-Präferenz: Skill-Creator-Artefakte (Evals/Workspace) werden
+  MITcommittet („Evals/Workspace mitcommitten bleibt korrekt") — sie sind
+  Repo-Bestandteil, kein wegwerfbares Scratch.
 - Der Self-Install-Skill liegt im Repo (`skills/falsifyme-selfinstall.md` +
   `skills/falsifyme-selfinstall-evals/`, Workspace als
   `falsifyme-selfinstall-workspace/iteration-N/`); `install.mjs` kopiert ihn
@@ -142,6 +178,10 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   tests/security.test.mjs tests/phase2.test.mjs tests/queue.test.mjs` (Stand
   2026-09-01, Batch-Commit; `tests/queue.test.mjs` deckt Ping/Abort/
   Heartbeat-Stale/feasibility-ohne-Verdict ab).
+- Deterministischer Abort-/Kill-E2E ohne echten Key: Dummy-Key in isolierter
+  `FALSIFY_HOME/.env` + lokaler HTTP-Server (SSE ohne `[DONE]`, hält run.mjs
+  offen) → CLI-Abort killt den hängenden Job beweisbar (`ERROR Abgebrochen
+  (CLI)`). Worker-PID zum Killen aus `--check` nehmen, nicht aus `$!`.
 - Onboarding-Tests brauchen isoliertes `FALSIFY_HOME` (mkdtemp) — Werte nie
   in config.json/JSON asserten: Keys leben nur in `.env`; `********`-Maskierung
   ist CLI-Ausgabe (`cli/settings.mjs`), nicht Core-API.

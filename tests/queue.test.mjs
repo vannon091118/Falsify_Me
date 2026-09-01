@@ -165,7 +165,11 @@ test("Anti-Self-Check-Bias: WRITE ohne Challenge-Nachweis -> UNKNOWN (keine Frei
   // Echter Challenge-Nachweis (Struktur aus SYSTEM_DE) -> WRITE bleibt.
   const withChallenge = "## Falsifikationsversuche\n1. Race im Claim\nBEFUND: Claim nicht atomar\nVERDICT: WRITE";
   assert.equal(enforceWriteChallenge(withChallenge, "WRITE"), "WRITE", "Challenge-Beleg erlaubt WRITE");
-  assert.equal(enforceWriteChallenge("BEFUND: nix\nVERDICT: WRITE", "WRITE"), "WRITE", "BEFUND zaehlt als Beleg");
+  // E2E-Befund 2026-09-01: BEFUND allein ist kein Challenge-Beleg (Rubber-Stamp).
+  assert.equal(enforceWriteChallenge("BEFUND: nix\nVERDICT: WRITE", "WRITE"), null, "BEFUND ohne Abschnitt = kein Beleg");
+  // „Keine gefunden“ und Versuche ohne Substanz (<10 Zeichen) zaehlen nicht.
+  assert.equal(hasChallengeEvidence("## Falsifikationsversuche\nKeine gefunden\nVERDICT: WRITE"), false, "Keine gefunden = kein Beleg");
+  assert.equal(hasChallengeEvidence("## Falsifikationsversuche\n1. ok\nVERDICT: WRITE"), false, "Versuch ohne Substanz = kein Beleg");
   // Severity echt (UI-065-Befund 3)
   assert.equal(findingSeverity("WRITE"), "discovered");
   assert.equal(findingSeverity("PLAN"), "warning");

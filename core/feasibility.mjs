@@ -65,9 +65,14 @@ export function checkFeasibility({ header, planText, root, whitelist = [], hasDi
   }
 
   // ── (3) Plan erwaehnte Datei-Pfade gegen Whitelist + Realitaet ────────────
-  // Signalwörter: relative Pfade mit bekannter Datei-Endung oder `path/…`
+  // Signalwörter: relative Pfade mit bekannter Datei-Endung oder `path/…`.
+  // Höchstens EIN Pfad-Separator: Bündel wie „WIRING/README/PLAN/AGENTS.md"
+  // (Doku-Referenzen) sind KEINE Dateipfade (E2E-Falsch-Positiv, 2026-09-01).
   const EXT = /\.(?:js|mjs|cjs|ts|tsx|jsx|py|json|md|sh|ps1|css|html|sql|ya?ml|toml|txt|c|cpp|h|go|rs|java)$/i;
-  const mentioned = [...new Set(String(planText).split(/[\s"'`()[\],;]+/).filter((tok) => EXT.test(tok)))];
+  const mentioned = [...new Set(String(planText).split(/[\s"'`()[\],;]+/).filter((tok) => {
+    if (!EXT.test(tok)) return false;
+    return tok.split("/").length - 1 <= 1; // max. ein Verzeichnis-Segment
+  }))];
   const whitelistSet = new Set(whitelist);
   const unknownMentioned = mentioned.filter((tok) => {
     if (whitelistSet.has(tok)) return false;

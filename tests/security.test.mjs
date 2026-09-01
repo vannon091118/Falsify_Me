@@ -71,13 +71,22 @@ test("rate-limit reservations are serialized across real processes", async () =>
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-rl-"));
   cleanup.push(() => fs.rmSync(home, { recursive: true, force: true }));
   const script = path.join(home, "child.mjs");
-  fs.writeFileSync(script, `import { enforceRateLimit } from ${JSON.stringify(rateModule)}; enforceRateLimit(600);\n`);
+  // Intervall 1000 ms (maxRpm 60): der zweite Kindprozess startet GARANTIERT
+  // in die noch aktive Reservation des ersten und muss echte Warte-Schleifen
+  // durchlaufen — der alte Livelock-Pfad (Reservation im Warte-Fall
+  // weiterschreiben) wird so deterministisch betreten statt timing-abhaengig.
+  fs.writeFileSync(script, `import { enforceRateLimit } from ${JSON.stringify(rateModule)}; enforceRateLimit(60);\n`);
   const env = { ...process.env, FALSIFY_HOME: home };
   const first = spawnSync(process.execPath, [script], { env, encoding: "utf8" });
+  const t0 = Date.now();
   const second = spawnSync(process.execPath, [script], { env, encoding: "utf8" });
+  const elapsed = Date.now() - t0;
   assert.equal(first.status, 0, first.stderr);
   assert.equal(second.status, 0, second.stderr);
   assert.match(second.stderr, /Rate-Limit|^$/);
+  // Livelock-Guard: Warte-Schleifen muessen terminieren; 5 s sind fuer
+  // ~1 s Wartezeit + Prozess-Start zweimal grosszuegig (alter Bug: endlos).
+  assert.ok(elapsed < 5000, `zweiter Kindprozess dauerte ${elapsed} ms — Livelock?`);
 });
 
 test("config rejects invalid values and accepts valid overrides", async () => {

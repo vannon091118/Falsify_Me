@@ -185,6 +185,8 @@ oder:         start "FalsifyMe-TUI" cmd /k node ui\tui-demo.mjs %*
 | Modul | Eine Verantwortung |
 |---|---|
 | `tui/parser.mjs` | Chunk→Zeilen→Events (`FM-EVT:`), ANSI-Strip |
+| `core/tools.mjs` | read-only Tool-Set (list_dir/read_file/glob), Whitelist-Zwang |
+| `core/prompt.mjs` | System-/User-Prompt-Bau, HEADER-/Artefakt-Einspielung (pure) |
 | `tui/events.mjs` | Event-Contract + einziger State-Writer (`apply`/`tick`), Slot-Routing 1..3, Fokus, Spiegel |
 | `tui/state.mjs` | Zustände, erlaubte Übergänge, 3 Fenster-Slots, globalIdle, Labels/Farben |
 | `tui/particles.mjs` | fallende Code-Partikel (Feld-Sim, deterministisch) |

@@ -20,13 +20,24 @@ export function parseVerdict(content) {
 
 /**
  * Challenge-Nachweis (Anti-Self-Check-Bias, Thinker): Der Review muss den
- * Falsifikationsversuch belegen (Struktur "## Falsifikationsversuche" oder
- * eine BEFUND-Zeile). Ohne diesen Beleg ist WRITE ein Rubber-Stamp und wird
- * als UNKNOWN behandelt (keine Freigabe).
+ * Falsifikationsversuch BELEGEN — nicht nur das Label nennen. Zaehlt nur der
+ * Abschnitt "## Falsifikationsversuche" mit mindestens einem substanziellen
+ * nummerierten/Bullet-Versuch (>10 Zeichen, nicht "Keine gefunden").
+ * „BEFUND: …" allein reicht seit E2E-2026-09-01 nicht mehr (Rubber-Stamp).
+ * Ohne Beleg ist WRITE ein Rubber-Stamp und wird als UNKNOWN behandelt.
  */
 export function hasChallengeEvidence(content) {
   const c = String(content || "");
-  return /##\s*Falsifikationsversuche/i.test(c) || /BEFUND:\s*\S+/i.test(c);
+  const m = c.match(/##\s*Falsifikationsversuche/i);
+  if (!m) return false;
+  const rest = c.slice(m.index + m[0].length);
+  const nextHeading = rest.search(/\n#{1,6}\s+\S/);
+  const section = (nextHeading === -1 ? rest : rest.slice(0, nextHeading)).trim();
+  const attempts = section.split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => /^(?:\d+\.|[-*])\s+\S/.test(l))
+    .map((l) => l.replace(/^(?:\d+\.|[-*])\s+/, "").trim());
+  return attempts.some((a) => a.length >= 10 && !/^keine gefunden$/i.test(a));
 }
 
 /** Echte Finding-Severity je Verdict (info/warning/critical, UI-065-Befund 3). */

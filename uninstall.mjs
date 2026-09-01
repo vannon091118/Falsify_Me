@@ -34,8 +34,8 @@ const dryRun = args.has("--dry-run");
 const keepEnv = args.has("--keep-env");
 const argv = process.argv.slice(2);
 let projectRoot = null;
-const pri = argv.indexOf("--project-root");
-if (pri !== -1 && argv[pri + 1]) projectRoot = argv[pri + 1];
+const projectRootIdx = argv.indexOf("--project-root");
+if (projectRootIdx !== -1 && argv[projectRootIdx + 1]) projectRoot = argv[projectRootIdx + 1];
 
 const coreDir = path.join(home, ".Falsify_Core");
 // FALSIFY_HOME Default = ~/.Falsify_Private (private Wissensdaten, getrennt
@@ -52,19 +52,23 @@ const MERGE_END = "<!-- FALSIFYME-BOOTSTRAP-END -->";
 
 let removed = 0;
 let skipped = 0;
-const report = (verb, p) => { console.log(`${dryRun ? "[DRY-RUN] würde " : ""}${verb}: ${p}`); dryRun ? skipped++ : removed++; };
+// Aktion ausgeben und fuer die Schlussbilanz zaehlen (Dry-Run: nur zaehlen).
+const logAction = (verb, p) => {
+  console.log(`${dryRun ? "[DRY-RUN] würde " : ""}${verb}: ${p}`);
+  if (dryRun) skipped++; else removed++;
+};
 
 async function removeDir(p) {
   if (!existsSync(p)) return;
-  if (dryRun) { report("entfernen (Verzeichnis)", p); return; }
+  if (dryRun) { logAction("entfernen (Verzeichnis)", p); return; }
   await fs.rm(p, { recursive: true, force: true });
-  report("entfernt  (Verzeichnis)", p);
+  logAction("entfernt  (Verzeichnis)", p);
 }
 async function removeFile(p) {
   if (!existsSync(p)) return;
-  if (dryRun) { report("entfernen (Datei)", p); return; }
+  if (dryRun) { logAction("entfernen (Datei)", p); return; }
   await fs.rm(p, { force: true });
-  report("entfernt  (Datei)", p);
+  logAction("entfernt  (Datei)", p);
 }
 
 async function stopWorkers() {
@@ -74,12 +78,12 @@ async function stopWorkers() {
   const pids = [...(r.stdout || "").matchAll(/RUNNING (\d+)/g)].map((m) => m[1]);
   if (pids.length === 0) { console.log("Keine laufenden Worker gefunden (--check)."); return; }
   console.log(`Stoppe Worker-Fenster: PID ${pids.join(", ")} ...`);
-  if (dryRun) { report("stoppen (Worker)", pids.join(", ")); return; }
+  if (dryRun) { logAction("stoppen (Worker)", pids.join(", ")); return; }
   for (const pid of pids) {
     try {
       if (process.platform === "win32") execFileSync("taskkill", ["/PID", pid, "/F"], { stdio: "pipe" });
       else process.kill(Number(pid), "SIGKILL");
-      report("gestoppt (Worker)", `PID ${pid}`);
+      logAction("gestoppt (Worker)", `PID ${pid}`);
     } catch { /* Prozess schon weg */ }
   }
 }
@@ -101,9 +105,9 @@ async function cleanProjectInstruction(dir) {
     const source = await fs.readFile(p, "utf8");
     const { text, changed } = stripMarkedSection(source);
     if (!changed) continue;
-    if (dryRun) { report("Marker-Block entfernen", p); continue; }
+    if (dryRun) { logAction("Marker-Block entfernen", p); continue; }
     await fs.writeFile(p, text, "utf8");
-    report("Marker-Block entfernt", p);
+    logAction("Marker-Block entfernt", p);
   }
 }
 
@@ -117,9 +121,9 @@ async function removeProfileMarkers() {
     const lines = (await fs.readFile(file, "utf8")).split("\n");
     const next = lines.filter((l) => !l.includes(marker));
     if (next.length === lines.length) continue;
-    if (dryRun) { report("Marker-Zeile entfernen", `${file} (${marker})`); continue; }
+    if (dryRun) { logAction("Marker-Zeile entfernen", `${file} (${marker})`); continue; }
     await fs.writeFile(file, next.join("\n"), "utf8");
-    report("Marker-Zeile entfernt", file);
+    logAction("Marker-Zeile entfernt", file);
   }
 }
 
@@ -129,9 +133,9 @@ async function backupEnvKeys() {
   const env = await fs.readFile(envFile, "utf8");
   const hasValues = env.split(/\r?\n/).some((l) => /^[A-Z_][A-Z0-9_]*=/.test(l) && l.slice(l.indexOf("=") + 1).trim().length > 0);
   if (!hasValues) return;
-  if (dryRun) { report("sichern (Enthaltene API-Keys)", envBackup); return; }
+  if (dryRun) { logAction("sichern (Enthaltene API-Keys)", envBackup); return; }
   await fs.copyFile(envFile, envBackup);
-  report("gesichert", envBackup);
+  logAction("gesichert", envBackup);
 }
 
 async function removeNpmShims() {
@@ -153,18 +157,20 @@ async function main() {
   for (const f of instructionFiles) await removeFile(f);
   await removeProfileMarkers();
   await removeDir(coreDir);
-  await removeDir(privateDir);
   await removeNpmShims();
   if (keepEnv) {
     console.log(`--keep-env: ${homeDir} (FALSIFY_HOME: Keys/DB/Logs) wird BEHALTEN.`);
   } else {
+    // Reihenfolge zaehlt: erst Key-Backup, DANN FALSIFY_HOME entfernen.
+    // (Fix, 2026-09-01: privateDir wurde zuvor bedingungslos entfernt -
+    // weder --keep-env noch das .env-Key-Backup haben je greifen koennen.)
     await backupEnvKeys();
-    await removeDir(homeDir);
+    await removeDir(privateDir);
   }
   console.log("");
   console.log(dryRun
     ? `Dry-Run abgeschlossen: ${skipped} Aktionen würden ausgeführt (--keep-env / --project-root verfügbar).`
-    : `Deinstallation abgeschlossen: ${removed - 1} Element(e) entfernt${removed ? "" : " (nichts zu tun)"}. FalsifyMe ist vollständig rückabgewickelt.`);
+    : `Deinstallation abgeschlossen: ${removed} Element(e) entfernt${removed ? "" : " (nichts zu tun)"}. FalsifyMe ist vollständig rückabgewickelt.`);
   if (existsSync(envBackup)) console.log(`Hinweis: API-Keys liegen gesichert unter ${envBackup} (nur dort, nicht gelöscht).`);
 }
 

@@ -20,13 +20,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import fs from "node:fs";
 import path from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { openDb, closeDb, falsifyHome } from "../artifacts/db.mjs";
 import {
   claimNextJob, getJob, jobDone,
   registerWorker, unregisterWorker, heartbeatWorker,
-  workerScope, setWorkerScope, workerPid, isWorkerAlive, listWorkers, listJobs,
+  setWorkerScope, workerPid, isWorkerAlive, listWorkers, listJobs,
   isAbortRequested, clearJobAbort,
 } from "../artifacts/jobs.mjs";
 // ── Phase 2: Terminal-UI im Worker-Fenster ───────────────────────────────────
@@ -43,7 +43,7 @@ const title = (t) => process.stdout.write(`\x1b]0;${t}\x07`);
 const bell = () => process.stdout.write("\x07");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-let hbTimer = null; // kontinuierlicher Herzschlag (Status-API-Grundlage)
+let heartbeatTimer = null; // kontinuierlicher Herzschlag (Status-API-Grundlage)
 
 const DEBUG_LOG = path.join(falsifyHome(), "logs", "worker.debug.log");
 // logs/ sicherstellen: In einem frischen FALSIFY_HOME fehlt der Ordner und
@@ -174,18 +174,16 @@ async function runRealSelftest({ ui, windowIdx, db }) {
 // Registrierung kontinuierlich (setInterval) - hart gekillte Fenster altern
 // dadurch aus (Root-Cause-Fix; der fruehere PowerShell-CIM-Abgleich ist
 // entfernt, kein Querschnitts-Check mehr).
-function reportWorkers(filter) {
+function aliveWorkers(filter = () => true) {
   const db = openDb();
-  const workers = listWorkers(db, MAX_WINDOWS);
-  const alive = workers.filter((w) => w.alive);
-  const hits = alive.filter(filter ?? (() => true));
+  const alive = listWorkers(db, MAX_WINDOWS).filter((w) => w.alive).filter(filter);
   closeDb();
-  return { workers: alive, hits };
+  return alive;
 }
 
 // ── --check: welche Worker-Fenster laufen? (für Launcher & Agents) ───────────
 if (process.argv.includes("--check")) {
-  const { hits: alive } = reportWorkers();
+  const alive = aliveWorkers();
   if (!alive.length) console.log("STOPPED");
   for (const w of alive) console.log(`RUNNING ${w.pid} (Fenster ${w.idx})`);
   process.exit(0);
@@ -193,7 +191,7 @@ if (process.argv.includes("--check")) {
 
 // ── --state: beschäftigt oder leer? ──────────────────────────────────────────
 if (process.argv.includes("--state")) {
-  const { hits: busy } = reportWorkers((w) => w.runningJob);
+  const busy = aliveWorkers((w) => w.runningJob);
   if (!busy.length) console.log("IDLE");
   for (const w of busy) console.log(`BUSY ${w.idx} ${w.runningJob}${w.runningScope ? ` (scope ${w.runningScope})` : ""}`);
   process.exit(0);
@@ -207,7 +205,7 @@ if (!(WINDOW_IDX >= 1 && WINDOW_IDX <= MAX_WINDOWS)) {
 const db = openDb();
 
 function cleanup() {
-  if (hbTimer) clearInterval(hbTimer);
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
   unregisterWorker(db, WINDOW_IDX);
   dlog(`EXIT fenster=${WINDOW_IDX}`);
   try { closeDb(); } catch { /* egal */ }
@@ -238,7 +236,7 @@ async function main() {
   // Grundlage der Status-API: --check/--state zaehlen nur frische Heartbeats.
   // Der Intervall laeuft fuer die Lebensdauer des Prozesses; beim Exit wird
   // unregisterWorker aufgerufen (siehe cleanup).
-  hbTimer = setInterval(() => {
+  heartbeatTimer = setInterval(() => {
     try { heartbeatWorker(db, WINDOW_IDX); } catch { /* egal */ }
   }, 5000);
 
@@ -305,11 +303,11 @@ async function main() {
     // Job geclaimt werden (childRef waere sonst ueberschrieben). Erst nach
     // abgeschlossenem Abort wird weitergemacht.
     if (aborting) { await sleep(500); continue; }
-    heartbeatWorker(db, WINDOW_IDX);
-    const preferred = workerScope(db, WINDOW_IDX);
     let job;
     try {
-      job = claimNextJob(db, WINDOW_IDX, preferred);
+      // Affinity (bevorzugter Scope) liest claimNextJob ATOMAR in der Claim-
+      // Transaktion (E2E-Befund 2026-09-01: Vorab-Lesen war racy).
+      job = claimNextJob(db, WINDOW_IDX);
     } catch (e) {
       dlog(`claim-Fehler: ${e.message}`);
       await sleep(2000);
@@ -379,34 +377,23 @@ async function main() {
     }
 
     say(`\n──────────────────────────────────────────────`);
+    // Job-Abschluss im Dock vermelden (Zeile + Titel + Klingelzeichen).
+    const announce = (state, line) => {
+      say(line);
+      title(`Falsify-Dock ${WINDOW_IDX} · ${state}`);
+      bell();
+    };
     const d = getJob(db, job.id);
     if (d?.status?.startsWith("DONE")) {
       const v = d.verdict || d.status.replace("DONE ", "");
-      if (v === "WRITE") {
-        say("▶ JOB FERTIG: WRITE — Freigabe: READ-ONLY → WRITE.");
-        title(`Falsify-Dock ${WINDOW_IDX} · FERTIG: WRITE`);
-        bell();
-      } else if (v === "RESEARCH") {
-        say("▶ JOB FERTIG: RESEARCH — FalsifyMe braucht weitere Daten (Loop).");
-        title(`Falsify-Dock ${WINDOW_IDX} · FERTIG: RESEARCH`);
-        bell();
-      } else if (v === "PLAN") {
-        say("▶ JOB FERTIG: PLAN — Iteration überarbeiten (Loop).");
-        title(`Falsify-Dock ${WINDOW_IDX} · FERTIG: PLAN`);
-        bell();
-      } else {
-        say(`▶ JOB FERTIG: ${v} — nicht freigegeben.`);
-        title(`Falsify-Dock ${WINDOW_IDX} · FERTIG: ${v}`);
-        bell();
-      }
+      if (v === "WRITE") announce("FERTIG: WRITE", "▶ JOB FERTIG: WRITE — Freigabe: READ-ONLY → WRITE.");
+      else if (v === "RESEARCH") announce("FERTIG: RESEARCH", "▶ JOB FERTIG: RESEARCH — FalsifyMe braucht weitere Daten (Loop).");
+      else if (v === "PLAN") announce("FERTIG: PLAN", "▶ JOB FERTIG: PLAN — Iteration überarbeiten (Loop).");
+      else announce(`FERTIG: ${v}`, `▶ JOB FERTIG: ${v} — nicht freigegeben.`);
     } else if (d?.status?.startsWith("ERROR")) {
-      say(`▶ JOB FERTIG mit Fehler: ${d.status}`);
-      title(`Falsify-Dock ${WINDOW_IDX} · FEHLER`);
-      bell();
+      announce("FEHLER", `▶ JOB FERTIG mit Fehler: ${d.status}`);
     } else {
-      say(`▶ JOB FERTIG mit Code ${code} (Fehler – siehe oben)`);
-      title(`Falsify-Dock ${WINDOW_IDX} · FEHLER`);
-      bell();
+      announce("FEHLER", `▶ JOB FERTIG mit Code ${code} (Fehler – siehe oben)`);
     }
     say(`──────────────────────────────────────────────\n`);
 

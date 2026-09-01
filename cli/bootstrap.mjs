@@ -17,6 +17,7 @@
 //   Default `optional` + explizite Warnung. PFLICHT entsteht NIE still.
 // ─────────────────────────────────────────────────────────────────────────────
 import os from "node:os";
+import { fileURLToPath } from "node:url";
 import { runBootstrap } from "./bootstrap/main.mjs";
 import { packageRoot } from "./bootstrap/install.mjs";
 
@@ -54,6 +55,21 @@ export function bootstrapFlags(argv = []) {
     mode,
     reichweite,
   };
+}
+
+/**
+ * Wendet die Pflicht-Modusentscheidung auf geparste Flags an (UI-075,
+ * nie still): Flags gewinnen; sonst interaktiv (TTY); sonst Default
+ * optional + Warnung. Dry-Run: kein Dialog, Modus nur protokolliert.
+ * Gemeinsamer Pfad fuer BEIDE CLI-Einstiege (bootstrap.mjs + main.mjs),
+ * damit kein Einstieg den Entscheid umgehen kann.
+ */
+export async function applyModeDecision(flags) {
+  if (flags.dryRun) {
+    return { ...flags, mode: flags.mode || "optional", reichweite: flags.reichweite || "projekt" };
+  }
+  const decision = await resolveModeDecision({ mode: flags.mode, reichweite: flags.reichweite });
+  return { ...flags, mode: decision.mode, reichweite: decision.reichweite };
 }
 
 /**
@@ -99,26 +115,13 @@ async function main() {
     console.error(`FEHLER: ${e.message}`);
     process.exit(2);
   }
-  if (flags.dryRun) {
-    // Trockenlauf: kein Dialog, kein Schreiben – Modus nur protokollieren.
-    flags.mode = flags.mode || "optional";
-    flags.reichweite = flags.reichweite || "projekt";
-  } else {
-    const decision = await resolveModeDecision({ mode: flags.mode, reichweite: flags.reichweite });
-    flags.mode = decision.mode;
-    flags.reichweite = decision.reichweite;
-  }
+  flags = await applyModeDecision(flags);
 
   try {
     const result = await runBootstrap({
       root: packageRoot,
-      projectRoot: flags.projectRoot,
       homeDir: os.homedir(),
-      dryRun: flags.dryRun,
-      skipDock: flags.skipDock,
-      noDesktop: flags.noDesktop,
-      mode: flags.mode,
-      reichweite: flags.reichweite,
+      ...flags,
     });
 
     if (!result.ok) {
@@ -155,6 +158,10 @@ async function main() {
   }
 }
 
-if (process.argv[1] === import.meta.url || import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
+// Einstiegserkennung wie in allen Entries (run.mjs/main.mjs): fileURLToPath-
+// Vergleich statt String-HTTP-URL-Bastel. Fix, 2026-09-01: die vorherige
+// Bedingung ("file://" + Pfad ohne fuehrenden Slash) traf auf Windows nie zu
+// - `falsify bootstrap` (falsify.sh -> dieses Skript) war still ein No-Op.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   main();
 }

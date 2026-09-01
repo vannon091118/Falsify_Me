@@ -16,6 +16,7 @@ import { fail } from "./util.mjs";
 // Exit: 0 = DONE WRITE · 1 = DONE PLAN/RESEARCH · 3 = ERROR/kein Verdict ·
 //       4 = läuft noch (QUEUED/RUNNING – Coder wertet aus)
 export function runPing(id) {
+  if (!id) fail("Nutzung: falsify ping <job-id>"); // leerer id wuerde sonst als SQLite-Bind-Fehler verdeckt
   const db = openDb();
   const job = getJob(db, id);
   if (!job) fail(`Unbekannter Job: ${id}`);
@@ -34,6 +35,7 @@ export function runPing(id) {
 // Kindprozesses und killt den Job echt. Kein Fake-Verdict: Der Job endet als
 // ERROR "Abgebrochen (CLI)" – keine Freigabe.
 export function runAbort(id) {
+  if (!id) fail("Nutzung: falsify abort <job-id>"); // leerer id wuerde sonst als SQLite-Bind-Fehler verdeckt
   const db = openDb();
   const job = getJob(db, id);
   if (!job) fail(`Unbekannter Job: ${id}`);
@@ -49,6 +51,7 @@ export function runAbort(id) {
 
 // ── status <job-id> ──────────────────────────────────────────────────────────
 export function runStatus(id) {
+  if (!id) fail("Nutzung: falsify status <job-id>"); // leerer id wuerde sonst als SQLite-Bind-Fehler verdeckt
   const db = openDb();
   const job = getJob(db, id);
   if (!job) fail(`Unbekannter Job: ${id}`);

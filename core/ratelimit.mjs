@@ -36,11 +36,18 @@ export function enforceRateLimit(maxRpm, noWait = false) {
     try {
       const row = db.prepare("SELECT next_free FROM rate_limit WHERE slot = 'api'").get();
       const now = Date.now();
-      const start = row ? Math.max(row.next_free, now) : now;
-      if (row && row.next_free > now) waitMs = row.next_free - now;
-      db.prepare(
-        "INSERT INTO rate_limit(slot, next_free) VALUES('api', ?) ON CONFLICT(slot) DO UPDATE SET next_free = excluded.next_free"
-      ).run(start + minIntervalMs);
+      if (row && row.next_free > now) {
+        // Slot belegt: NUR warten. Die Reservation wird dabei NICHT
+        // weitergeschrieben — ein Schreiben im Warte-Fall liesse den
+        // Wartenden bei der naechsten Runde seine EIGENE Zukunft lesen und
+        // sie weiter ausdehnen (Livelock, WAL-Wachstum; Lauf-2026-09-01).
+        waitMs = row.next_free - now;
+      } else {
+        // Slot frei: genau EINMAL reservieren (naechster freier Slot).
+        db.prepare(
+          "INSERT INTO rate_limit(slot, next_free) VALUES('api', ?) ON CONFLICT(slot) DO UPDATE SET next_free = excluded.next_free"
+        ).run(now + minIntervalMs);
+      }
       db.exec("COMMIT");
     } catch (e) {
       try { db.exec("ROLLBACK"); } catch { /* egal */ }

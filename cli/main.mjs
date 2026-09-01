@@ -33,20 +33,15 @@ async function main() {
     }
     case "bootstrap": {
       const { runBootstrap } = await import("./bootstrap/main.mjs");
-      const { bootstrapFlags } = await import("./bootstrap.mjs");
+      const { bootstrapFlags, applyModeDecision } = await import("./bootstrap.mjs");
       const { packageRoot } = await import("./bootstrap/install.mjs");
       const os = await import("node:os");
-      const bArgs = args.slice(1);
-      const bFlags = bootstrapFlags(bArgs);
+      // Modus-Entscheid (UI-075) ist auch ueber diesen Einstieg Pflicht -
+      // gleiche Semantik wie cli/bootstrap.mjs (geteilter Pfad, nie still).
       const r = await runBootstrap({
         root: packageRoot,
         homeDir: os.homedir(),
-        dryRun: bFlags.dryRun,
-        skipDock: bFlags.skipDock,
-        noDesktop: bFlags.noDesktop,
-        projectRoot: bFlags.projectRoot,
-        mode: bFlags.mode,
-        reichweite: bFlags.reichweite,
+        ...(await applyModeDecision(bootstrapFlags(args.slice(1)))),
       });
       if (!r.ok) process.exit(1);
       console.log();

@@ -71,10 +71,11 @@ Intent) und der Execution: Bevor das Modell läuft, prüft ein deterministischer
 read-only-Check, ob die Einreichung überhaupt umsetzbar ist — Whitelist-
 Dateien müssen unter dem Root existieren, Pfade dürfen nicht aus dem
 Arbeitsverzeichnis ausbrechen, und der Plan muss den Kopf des Auftrags
-adressieren (kein Literalismus-Drift). Schlägt der Check fehl, endet der Job
-sofort mit `VERDICT: PLAN` oder `RESEARCH` ohne Modell-Call (`core/feasibility.mjs`);
-ist er grün, läuft alles unverändert weiter. Dadurch blockt FalsifyMe
-fehlerhafte Absichten, ohne das System zu stören.
+adressieren (kein Literalismus-Drift). Die Hinweise gehen als KONTEXT an den
+Falsifikations-Agent (Thinker), der die Coder-Annahmen selbst gegen die
+echten Dateien prüft (`core/feasibility.mjs`) – der Check erteilt selbst
+**kein** Verdict und schließt keinen Job (Verdict-Hoheit bleibt beim Thinker).
+Dadurch blockt FalsifyMe fehlerhafte Absichten, ohne das System zu stören.
 
 ### Verdicts (so entscheide ich)
 

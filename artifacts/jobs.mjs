@@ -65,15 +65,18 @@ export function isAbortRequested(db, id) {
  * Claimt den nächsten QUEUED-Job für Fenster <windowIdx>. Bevorzugt Jobs des
  * zuletzt bearbeiteten (noch aktiven) Scopes (Scope-Affinität), sonst den
  * ältesten QUEUED-Job. Transaktional – kein zweiter Worker bekommt denselben Job.
+ * Die Affinität wird INNERHALB der Claim-Transaktion gelesen (E2E-Befund
+ * 2026-09-01: ein Vorab-Lesen ausserhalb wäre gegen setWorkerScope racy).
  */
-export function claimNextJob(db, windowIdx, preferredScopeId) {
+export function claimNextJob(db, windowIdx, preferredScopeId = null) {
   db.exec("BEGIN IMMEDIATE");
   try {
+    const preferred = preferredScopeId || workerScope(db, windowIdx);
     let row = null;
-    if (preferredScopeId) {
+    if (preferred) {
       row = db.prepare(
         "SELECT id FROM jobs WHERE status = 'QUEUED' AND scope_id = ? ORDER BY created_at ASC LIMIT 1"
-      ).get(preferredScopeId);
+      ).get(preferred);
     }
     if (!row) {
       row = db.prepare(

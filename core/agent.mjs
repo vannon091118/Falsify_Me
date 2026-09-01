@@ -32,7 +32,7 @@ function streamFlush() {
  * @param {string} o.apiBase
  * @param {number} [o.maxTokens=20000]
  * @param {string} [o.reasoningEffort='high'] – 'auto'|'off' lässt den Parameter weg
- * @param {number} [o.maxToolRounds=6]
+ * @param {number} [o.maxToolRounds=10]
  * @param {number} [o.temperature=0.3]
  * @param {number} [o.timeoutMs=600000]
  * @param {string} o.root
@@ -41,7 +41,7 @@ function streamFlush() {
  *   Callback je echtem Tool-Aufruf (Phase 2 UI-Events; Default: keine Wirkung)
  * @returns {Promise<{content:string, usage:object, toolRounds:number}>}
  */
-export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBase, maxTokens = 20000, reasoningEffort = "high", maxToolRounds = 6, temperature = 0.3, timeoutMs = 600000, root, whitelist = [], onTool } = {}) {
+export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBase, maxTokens = 20000, reasoningEffort = "high", maxToolRounds = 10, temperature = 0.3, timeoutMs = 600000, root, whitelist = [], onTool } = {}) {
   const { TOOLS, execTool } = makeTools(root, whitelist);
   const messages = [
     { role: "system", content: systemPrompt },
@@ -49,6 +49,14 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
   ];
   let toolRounds = 0;
   let emptyRetries = 0;
+
+  // Provider wie NVIDIA NIM betten Tool-Aufrufe teils als XML ins Content-Stream
+  // ein (<tool_call>…</tool_call>) und legen die Analyse in reasoning_content ab.
+  // Solche Stubs gehoeren NICHT in Befund/Finding; als Fallback zaehlt Reasoning.
+  const finalizeContent = (round) => {
+    const stripped = String(round?.content || "").replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "").trim();
+    return stripped || String(round?.reasoning || "").trim();
+  };
 
   const fetchRound = (body) => fetchRoundWith(body, { apiKey, apiBase, timeoutMs });
 
@@ -85,13 +93,17 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
 
     const c = (round.content || "").trim();
     const looksLikeToolJson = /^\s*\{[\s\S]*"(tool|name|path|arguments|function)"\s*:/.test(c);
-    if (!calls.length && (!c || looksLikeToolJson) && emptyRetries < 3) {
+    // NIM/OpenAI-kompatible Provider betten Tool-Wuensche teils als ONLY-Content
+    // ein (<tool_call>…</tool_call>), ohne strukturierte tool_calls (E2E 2026-09-01).
+    // Ein reiner Stub ist KEINE finale Antwort — wie eine leere Antwort behandeln.
+    const stubOnlyContent = c !== "" && c.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "").trim() === "";
+    if (!calls.length && (stubOnlyContent || !c || looksLikeToolJson) && emptyRetries < 3) {
       emptyRetries++;
       process.stderr.write(`⚠️ Leere Antwort (finish=${round.finish || "?"}) – Versuch ${emptyRetries}/3 …\n`);
       if (emptyRetries >= 2) {
         messages.push({ role: "user", content: "Antworte JETZT direkt mit deiner Falsifikations-Kritik – nur Text, sofort, ohne weiteres Nachdenken und ohne Tools. Ende mit: BEFUND: … und VERDICT: PLAN, RESEARCH oder WRITE." });
         round = await fetchRound({ ...body, tools: undefined, reasoning_effort: undefined });
-        const c2 = (round.content || "").trim();
+        const c2 = finalizeContent(round);
         if (c2 && !/^\s*\{[\s\S]*"(tool|name|path|arguments|function)"\s*:/.test(c2)) {
           return { content: c2, usage: round.usage || {}, toolRounds };
         }
@@ -100,12 +112,16 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
     }
 
     if (calls.length && toolRounds >= maxToolRounds) {
-      round = await fetchRound({
-        ...body,
-        tools: undefined,
-        messages: [...messages, { role: "user", content: "Gib jetzt deine abschließende Falsifikations-Kritik mit BEFUND und VERDICT (PLAN | RESEARCH | WRITE) – ohne weitere Tool-Aufrufe." }],
-      });
-      return { content: (round.content || "").trim(), usage: round.usage || {}, toolRounds };
+      const finalMsg = { role: "user", content: "Du hast dein Tool-Runden-Limit erreicht. Gib JETZT deine abschließende Falsifikations-Kritik mit BEFUND und VERDICT (PLAN | RESEARCH | WRITE) – reiner Text, keine Tool-Aufrufe." };
+      round = await fetchRound({ ...body, tools: undefined, messages: [...messages, finalMsg] });
+      let content = finalizeContent(round);
+      if (!content) {
+        // Einmalig nachbohren: manche Provider ignorieren tools:undefined und
+        // wiederholen den XML-Stub; der zweite Versuch erzwingt Text (E2E 2026-09-01).
+        round = await fetchRound({ ...body, tools: undefined, messages: [...messages, finalMsg, { role: "user", content: "Antworte JETZT nur mit Text. Dein letzter Tool-Wunsch kann nicht mehr ausgeführt werden." }] });
+        content = finalizeContent(round);
+      }
+      return { content, usage: round.usage || {}, toolRounds };
     }
 
     if (calls.length) {
@@ -136,7 +152,7 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
       continue;
     }
 
-    return { content: (round.content || "").trim(), usage: round.usage || {}, toolRounds };
+    return { content: finalizeContent(round), usage: round.usage || {}, toolRounds };
   }
 }
 
@@ -204,6 +220,7 @@ async function readStream(res) {
   let usage = {};
   let finish = null;
   const toolCalls = [];
+  let reasoningBuf = "";
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -214,7 +231,7 @@ async function readStream(res) {
       const line = raw.trim();
       if (!line.startsWith("data:")) continue;
       const payload = line.slice(5).trim();
-      if (payload === "[DONE]") { streamFlush(); return { content: content.trim(), usage, toolCalls, finish }; }
+      if (payload === "[DONE]") { streamFlush(); return { content: content.trim(), reasoning: reasoningBuf.trim(), usage, toolCalls, finish }; }
       let chunk;
       try { chunk = JSON.parse(payload); } catch { continue; }
       if (chunk.usage) usage = chunk.usage;
@@ -224,7 +241,7 @@ async function readStream(res) {
       const delta = choice.delta || {};
       const reasoning = delta.reasoning_content || "";
       const text = delta.content || "";
-      if (reasoning) streamWrite(reasoning);
+      if (reasoning) { reasoningBuf += reasoning; streamWrite(reasoning); }
       if (text) {
         streamWrite(text);
         content += text;
@@ -240,5 +257,5 @@ async function readStream(res) {
     }
   }
   streamFlush();
-  return { content: content.trim(), usage, toolCalls, finish };
+  return { content: content.trim(), reasoning: reasoningBuf.trim(), usage, toolCalls, finish };
 }
