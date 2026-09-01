@@ -1423,3 +1423,10 @@ STATUS: DONE
 DEPENDS_ON: UI-105 (Prompt-Daten), UI-098 (Regel 2)
 VERIFY: node --test tests/queue.test.mjs (enforceResearchContract-Faelle) + ui/tui/keys+state+particles; Smoke: Dock-Taste t wechselt OutputView <-> ReasoningView.
 RESULT: system-de/en.md: VERMUTUNGS-PFLICHT (jede Behauptung mit gelesener Datei:Zeile) + RESEARCH-VERTRAG (RESEARCH nur mit konkret benanntem fehlenden Datum im BEFUND); core/verdict.mjs enforceResearchContract (fail-closed -> PLAN), run.mjs-Downgrade mit Warnung; ui/tui.mjs snap.output + OutputView.mjs (neu), App-Routing thinking->OutputView / reasoning->ReasoningView. 86/86 Core + 43/43 UI gruen.
+
+ID: UI-109
+TASK: Evil-Twin-Visual (Regel 6): Waehrend der Gegenpruefung (VERIFYING) wechselt das Bild in einen Rot/Schwarz-Kontrast-Bildschirm und zeigt den ROH-Text des Gegenpruefers; der Twin-Prompt traegt den Ton (Schadenfreude gegenueber Agents, will recht haben) OHNE die Output-Glaubwuerdigkeit zu brechen (nur echte, selbst gelesene Datei:Zeile-Evidenz traegt BESTAETIGT/WIDERSPRUCH).
+STATUS: DONE
+DEPENDS_ON: UI-104 (Evil-Twin-Gate), UI-108 (OutputView/Roh-Text-Ring)
+VERIFY: node --test --test-force-exit --test-concurrency=1 "ui/tui/*.test.mjs" ui/tui.test.mjs (plain: VERIFYING setzt twinActive + Roh-Text im Ring; TTY-Views: EvilTwinView rendert fehlerfrei); Smoke: Dock live waehrend WRITE-Gegenpruefung -> Bild wechselt auf Rot/Schwarz.
+RESULT: state.mjs VERIFYING-Farbe rot; tui.mjs snap.twinActive (global + pro Slot); EvilTwinView.mjs (neu, Rot/Schwarz-Kontrast, invertierter Kopf, Roh-Text aus dem Output-Ring, Ergebnis-Legende); App-Routing VERIFYING -> EvilTwinView (unabhaengig vom t-Toggle); SlotsView markiert VERIFYING-Panels rot mit "⚔ EVIL TWIN"-Tag; Twin-Prompts DE/EN tragen den Ton seit UI-104 (verifiziert). 86/86 Core + 112/112 UI gruen.

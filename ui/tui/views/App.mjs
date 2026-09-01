@@ -13,6 +13,7 @@ import Header from "./Header.mjs";
 import BootView from "./BootView.mjs";
 import ReasoningView from "./ReasoningView.mjs";
 import OutputView from "./OutputView.mjs";
+import EvilTwinView from "./EvilTwinView.mjs";
 import VerdictView from "./VerdictView.mjs";
 import IdleView from "./IdleView.mjs";
 import SlotsView from "./SlotsView.mjs";
@@ -56,6 +57,11 @@ export default function App({ getSnapshot, subscribe, emit }) {
     main = h(VerdictView, { snap, cols, rows: mainH });
   } else if (snap.boot && snap.boot.mode !== "live") {
     main = h(BootView, { snap, cols, rows: mainH });
+  } else if (snap.twinActive) {
+    // Evil-Twin-Gegenpruefung (Regel 6, UI-109): das Bild WECHSELT in den
+    // Rot/Schwarz-Kontrast-Bildschirm und zeigt den Roh-Text des Gegenpruefers
+    // (unabhaengig vom t-Toggle - die Phase selbst ist das Signal).
+    main = h(EvilTwinView, { snap, cols, rows: mainH });
   } else if (snap.mode === "thinking") {
     // t-Toggle (2026-09-01): „thinking“ = LLM-Rohtext SICHTBAR (statt
     // Partikel-Animation, die nichts erklaert); „reasoning“ = strukturierter

@@ -162,11 +162,16 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
       scopeId: state.scopeId,
       windowIdx: state.activeSlotIdx,
       activeSlotIdx: state.activeSlotIdx,
+      // Evil-Twin-Phase (Regel 6, UI-109): der Fokus-Slot ist in der
+      // unabhaengigen Gegenpruefung -> App schaltet auf den Rot/Schwarz-
+      // Kontrast-Bildschirm mit dem Roh-Text des Gegenpruefers um.
+      twinActive: state.state === "VERIFYING",
       jobsStarted: state.jobsStarted,
       globalIdle: idleNow,
       slots: state.slots.map((s) => ({
         idx: s.idx,
         state: s.state,
+        twinActive: s.state === "VERIFYING",
         stateLabel: slotLabel(s),
         stateColor: STATE_COLOR[s.state],
         jobId: s.jobId,
@@ -178,6 +183,7 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
         idx: s.idx,
         fen: `FEN ${s.idx}`,
         state: s.state,
+        twinActive: s.state === "VERIFYING",
         stateLabel: slotLabel(s),
         stateColor: STATE_COLOR[s.state],
         jobId: s.jobId,

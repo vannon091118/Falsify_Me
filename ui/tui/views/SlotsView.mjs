@@ -28,12 +28,16 @@ export default function SlotsView({ snap, cols, rows }) {
   for (let i = 0; i < n; i++) {
     const pH = base + (i < extra ? 1 : 0);
     const p = panels[i];
-    const stateColor = p.stateColor ?? "white";
+    // Evil-Twin-Gegenpruefung (Regel 6, UI-109): das Fenster wechselt in den
+    // Rot-Kontrast und traegt den TWIN-Tag - die Phase erklaert sich selbst.
+    const twin = p.twinActive === true || p.state === "VERIFYING";
+    const stateColor = twin ? "red" : (p.stateColor ?? "white");
     // Fenster-Selbsterklärung: Fenster + Job + Zustand (farbig) + Phase/Fortschritt.
     const phase = p.phases?.find?.((x) => x.status === "active")?.phase ?? p.activePhase?.phase ?? "–";
     const pct = Math.round((p.activePhase?.progress ?? 0) * 100);
-    const head = ` ${p.fen} · ${p.jobId ? `JOB ${p.jobId}` : "–"} · ${p.stateLabel} · ${phase} ${pct}%`;
-    els.push(h(Text, { key: `h${i}`, color: "gray" }, "╭" + truncate(head + fill("─", Math.max(0, inner - strWidth(head))), inner, "…") + "╮"));
+    const head = ` ${twin ? "⚔ EVIL TWIN · " : ""}${p.fen} · ${p.jobId ? `JOB ${p.jobId}` : "–"} · ${p.stateLabel} · ${phase} ${pct}%`;
+    els.push(h(Text, { key: `h${i}`, color: twin ? "red" : "gray", bold: twin },
+      "╭" + truncate(head + fill("─", Math.max(0, inner - strWidth(head))), inner, "…") + "╮"));
 
     // Phasen inline
     const phases = (p.phases ?? []).map(phasePart).join("  ");

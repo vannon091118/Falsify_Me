@@ -40,7 +40,7 @@ export const STATE_COLOR = Object.freeze({
   THINKING: "blue",
   TOOL_ACTIVITY: "cyan",
   FINDINGS: "magenta",
-  VERIFYING: "cyan",
+  VERIFYING: "red",   // Evil-Twin-Gegenpruefung (Regel 6): Rot/Schwarz-Kontrast-Bildschirm
   VERDICT: "magenta",
   SUCCESS: "green",
   ERROR: "red",

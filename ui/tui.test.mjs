@@ -48,6 +48,27 @@ test("plain: noteLine befuellt Ring begrenzt + Metrics", async () => {
   assert.ok(snap.metrics.spark.length > 0);
 });
 
+test("plain: VERIFYING (Evil Twin) setzt twinActive und zeigt Roh-Text", async () => {
+  const ui = await createTui();
+  ui.applyEvent({ t: "boot" });
+  ui.applyEvent({ t: "job", id: "job-1", scope: "scope-1" });
+  ui.applyEvent({ t: "state", s: "THINKING" });
+  ui.applyEvent({ t: "state", s: "FINDINGS" });
+  assert.equal(ui.getSnap().twinActive, false, "vor der Gegenpruefung kein Twin-Bild");
+  // Roh-Text des Gegenpruefers streamt in den Output-Ring (worker noteLine)
+  for (let i = 0; i < 5; i++) ui.noteLine(`twin-rohtext ${i}: datei.js:${i}`);
+  ui.applyEvent({ t: "state", s: "VERIFYING" });
+  assert.equal(ui.state.slots[0].state, "VERIFYING");
+  const snap = ui.getSnap();
+  assert.equal(snap.twinActive, true, "Gegenpruefung laeuft -> Rot/Schwarz-Bildschirm");
+  assert.equal(snap.stateColor, "red", "VERIFYING-Farbe = rot (Evil-Twin-Kontrast)");
+  assert.ok(snap.output.some((l) => String(l).includes("twin-rohtext")), "Twin-Roh-Text im Ring");
+  assert.ok(snap.slots[0].twinActive, "Slots-Spiegel traegt twinActive");
+  // Nach der Gegenpruefung: Bild wechselt zurueck
+  ui.applyEvent({ t: "state", s: "FINDINGS" });
+  assert.equal(ui.getSnap().twinActive, false, "nach der Gegenpruefung normales Bild");
+});
+
 test("plain: Aktivitaets-Labels landen im Partikel-Pool", async () => {
   const ui = await createTui();
   ui.applyEvent({ t: "activity", tool: "glob", file: "**/*.js", label: "glob('**/*.js')" });
@@ -157,6 +178,11 @@ test("TTY-Views: App rendert Boot/Live/Reasoning/Verdict via Ink (fake stdout)",
     });
 
   let inst = mount(snap); // Boot-Ansicht
+  inst.unmount();
+
+  // Evil-Twin-Ansicht (Regel 6, UI-109): Rot/Schwarz-Kontrast-Bildschirm mit
+  // dem Roh-Text des Gegenpruefers (VERIFYING) - rendert fehlerfrei.
+  inst = mount({ ...snap, globalIdle: false, state: "VERIFYING", stateLabel: "VERIFYING", stateColor: "red", twinActive: true, boot: { mode: "live", chars: 9, block: 3, t: 1 }, output: ["Ich pruefe: datei.js:12", "BESTAETIGT? Warten ..."] });
   inst.unmount();
 
   snap = snap && { ...snap, boot: { mode: "live", chars: 9, block: 3, t: 1 } };
