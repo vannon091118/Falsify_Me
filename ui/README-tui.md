@@ -219,7 +219,7 @@ Live-Fenster 10 s anschauen, **ohne Text zu lesen**:
 - [TECHNISCH PASS] Verdicts werden in einer eindeutigen Box mit Symbol/Farbe/Puls dargestellt.
 - [TECHNISCH PASS] Footer zeigt `Q`/`STRG-C` als Abort-/Schließen-Hinweis.
 - [TECHNISCH PASS] COMPLETE/ERROR/TIMEOUT/GESTOPPT sind als Endzustände getrennt sichtbar.
-- [MANUELL OFFEN] Die tatsächliche 10-Sekunden-Betrachtung muss in einem sichtbaren User-Terminal erfolgen; ein automatischer Test darf diese visuelle Bestätigung nicht behaupten.
+- [STATUS 2026-09-01] User-Feedback umgesetzt (UI-061): Welle mit Farbverlauf, prominente Rahmen-Box um WARTE AUF EINGABE, Block „LETZTE AKTIVITÄT“ aus echten Slot-Abschlüssen; T wirkt nur bei aktivem Job (Hinweis in der Idle-Ansicht). Die 10-Sekunden-Endabnahme bleibt eine User-Sichtprüfung. Resize-Grenze (UI-035/062): In klassischen cmd-Konsolen feuert das resize-Event nicht zuverlässig (node#13197) — Windows Terminal / PowerShell-Konsole nutzen; `process.stdout.getWindowSize()` liefert dort die Puffer- statt Fenstergröße und darf nicht übernommen werden (verursachte dauerhaftes „TERMINAL ZU KLEIN“).
 
 Wenn der manuelle Check eine Schwäche zeigt: Layout vereinfachen — nicht mehr
 Elemente hinzufügen.

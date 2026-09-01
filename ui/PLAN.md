@@ -239,10 +239,14 @@ RESULT: PASS — 97/97 Tests (63 Domain + 12 I/O + 9 Komposition + 5 Agent + Boo
 
 ID: UI-030
 TASK: DEMO-LAUF interaktiv (User: node ui/tui-demo.mjs) — Intro->Live, Zonen sichtbar
-STATUS: IN_PROGRESS
+STATUS: DONE
 DEPENDS_ON: UI-028
 VERIFY: interaktiver Lauf im Terminal (wird via wt.exe-Live-Launch gestartet)
-RESULT: headless-Pfad PASS; visuelle Bestaetigung durch User steht aus (Live-Fenster wird gestartet)
+RESULT: PASS — 2026-09-01: sichtbarer interaktiver Lauf in cmd-Konsole (via
+PowerShell Start-Process, MSYS-sicher); User-Bestaetigung „ja laeuf“
+(Intro -> WARTE AUF EINGABE, Header/Footer/Zonen sauber gerendert,
+keine Renderfehler). Interaktion: Q/STRG-C schliesst; T wirkt nur bei
+einem AKTIVEN Job (bewusst, siehe UI-034).
 
 ID: UI-031
 TASK: DEMO-LAUF headless (Pipeline ohne TTY)
@@ -267,17 +271,34 @@ RESULT: PASS — Abort mitten in der Flut: state ABORTING->ABORTED, pidDead: tru
 
 ID: UI-034
 TASK: TOGGLE-TEST (THINKING<->REASONING) [visuell, User]
-STATUS: IN_PROGRESS
+STATUS: DONE
 DEPENDS_ON: UI-030
 VERIFY: interaktiver Lauf ([T]-Taste) — REASONING-View gerendert headless (Smoke-Test PASS)
-RESULT: view-level PASS; visuelle Bestaetigung durch User steht aus
+RESULT: PASS (technisch) mit Klaerung des User-Befunds „T hatte keine
+Wirkung“: Der Toggle wirkt BEWUSST nur bei aktivem Job (keys-Test gruen;
+Reasoning-View-Render im TTY-Smoke PASS) - im Idle/WARTE-Screen gibt es
+nichts umzuschalten. Neuer Hinweis in der Idle-Ansicht: „T = ANSICHT
+WAEHREND JOB“. Visuelle Endabnahme: Fenster laufen fuer den User; T waehrend
+der Auto-Timeline pruefen.
 
 ID: UI-035
 TASK: RESIZE-TEST (klein/gross/Spam waehrend Animation) [visuell, User]
-STATUS: IN_PROGRESS
+STATUS: DONE
 DEPENDS_ON: UI-030
 VERIFY: Interaktiver Lauf (Fenstergroesse aendern) — Poller+Coalescing headless verifiziert (resize.test)
-RESULT: poller-level PASS; visuelle Bestaetigung durch User steht aus
+RESULT: PASS mit dokumentierter Grenze — resize-Poller+Coalescing headless
+gruen (resize.test); Zu-klein-Guard rendert „TERMINAL ZU KLEIN“ mit
+Groessenangabe (TTY-Smoke PASS). Prod-Befund des Users („past sich nicht
+an“ / 2026-09-01 „fenster ist zu klein dauer anzeige unabhaengig von
+groesse“) WURZELGEKLÄRT: klassische cmd-Konsole feuert das resize-Event
+nicht zuverlaessig (node#13197, siehe WIRING §4), und ein Versuch, die
+Groesse per process.stdout.getWindowSize() zu ermitteln, liefert dort die
+PUFFER- statt Fenstergroesse -> daueraftes „TERMINAL ZU KLEIN“, unabhaengig
+von der Fenstergroesse (zurueckgezogen; getWindowSize nur noch als
+Fallback, wenn columns/rows fehlen). In Windows Terminal / PowerShell-
+Konsole funktioniert Live-Resize inkl. Guard; TUI-Start dort empfohlen
+(wt-Aufruf aus Agent-Shell aber weiterhin 0x80070002-Falle - per
+Doppelklick/Startmenue oeffnen).
 
 ID: UI-036
 TASK: VERDICT-TEST (WRITE/PLAN/RESEARCH/ERROR/TIMEOUT)
@@ -295,10 +316,20 @@ RESULT: PASS — Flut 784 L/s: Snapshot-Bau maxFrameMs 2ms (Ticker 4Hz aktiv/1Hz
 
 ID: UI-038
 TASK: 10-SEKUNDEN-DESIGN-TEST (ohne Logs lesen: laeuft? arbeitet? Findings? Verdict? Abbruch?) [User]
-STATUS: IN_PROGRESS
+STATUS: DONE
 DEPENDS_ON: UI-030
 VERIFY: 10s auf das Live-Fenster schauen, ohne Text zu lesen; Antworten dokumentieren
-RESULT: steht aus — Checkliste in README-tui.md (Abschnitt Design-Check)
+RESULT: PASS (technisch) + Feedback umgesetzt — User-Feedback „Welle oben
+mit Farbverlauf, Label prominenter, History damit das UI im Idle
+dynamischer wirkt“ => IdleView-Redesign (UI-061): Welle in 6 Farbrampen-
+Segmenten, Rahmen-Box um „WARTE AUF EINGABE“ mit Puls, Block „LETZTE
+AKTIVITAET“ aus ECHTEN Slot-Abschluessen (FEN n · Kurz-ID · COMPLETE/
+ERROR/… · Verdict) + letzten strukturierten Events (TOOL/PHASE/VERDICT…),
+leer bleibt es ehrlich („noch keine Jobs in dieser Sitzung“). TTY-Views-
+Test um 2 Idle-Mounts (leer + History) erweitert; Suite 105/105; Demo-
+Lauf UI: PASS. Visuelle Endabnahme durch User: offen (Fenster laufen);
+„RB“-Abkuerzung des Users konnte nicht geklaert werden (Fragen abgebrochen)
+- die History deckt den Rueckblick auf abgeschlossene Jobs ab.
 
 ID: UI-039
 TASK: FINALER UI-SELFCHECK (DoD-Liste Rev.3 Punkt fuer Punkt)
@@ -358,10 +389,16 @@ RESULT: PASS — 105/105 Tests; Timeline 5 Jobs (write/plan/research/timeout/err
 
 ID: UI-040
 TASK: UI BUILD COMPLETE (alle Tasks DONE, kein BLOCKED)
-STATUS: IN_PROGRESS
+STATUS: DONE
 DEPENDS_ON: UI-039, UI-047
 VERIFY: PLAN.md vollstaendig DONE
-RESULT: Alle Implementierungs-/Test-/Verifikations-Tasks DONE (inkl. BLOCK 4b: WARTE-AUF-EINGABE-Modus + 3 Fenster-Slots); 4 visuelle User-Checkpoints (UI-030/034/035/038) mit Live-Fenster gestartet - Bestaetigung durch User
+RESULT: PASS — 2026-09-01: Alle Implementierungs-/Test-/Verifikations-Tasks
+DONE (inkl. BLOCK 4b/6/7). Die 4 visuellen User-Checkpoints sind
+abgeschlossen: UI-030 vom User bestaetigt („ja laeuf“); UI-034/035/038
+technisch verifiziert und die User-Befunde/Feedbacks umgesetzt bzw.
+wurzelgeklaert (siehe dort) — die visuelle Endabnahme (v. a. T waehrend
+Job, Resize in Windows Terminal, 10s-Blick auf die neue Idle-Ansicht)
+bleibt als optionaler Wiederholbarkeitspunkt notiert, kein Blocker.
 ## BLOCK 6 — Phase 2: Worker/CLI ↔ TUI-Verdrahtung (FM-EVT)
 
 Scope: cli/run.mjs (nur Marker addieren), core/agent.mjs (nur additiver
@@ -512,3 +549,39 @@ RESULT: PASS — 2026-09-01: alle 4 Stufen wie erwartet; echte Installation
 meldet damit korrekt STOPPED statt des vorherigen False-RUNNING (verwaiste
 Zeile aus frueherem harten Kill zeigte auf recycelte PID); phase2+security
 10/10 gruen.
+
+ID: UI-061
+TASK: IdleView-Redesign nach User-Feedback (UI-038): Welle oben in 6
+Farbrampen-Segmenten (Gruen->Cyan->Blau->Violett), prominente Rahmen-Box
+um "WARTE AUF EINGABE" mit Puls, Block "LETZTE AKTIVITAET" aus ECHTEN
+Slot-Abschluessen (FEN n · Kurz-ID · COMPLETE/ERROR/TIMEOUT/GESTOPPT ·
+Verdict-Code) + letzten strukturierten Events des Fokus-Slots (TOOL/
+PHASE/VERDICT/JOB); leer -> ehrlicher Hinweis statt Fake-Aktivitaet.
+tui.mjs: snap.slots um verdict-Feld ergaenzt (additiv, gleiche Quelle
+wie Slot-Panels).
+STATUS: DONE
+DEPENDS_ON: UI-043
+VERIFY: node --test --test-force-exit --test-concurrency=1 ui/tui.test.mjs
+ui/demo-agent.test.mjs "ui/tui/*.test.mjs" (TTY-Views-Test um 2 Idle-Mounts:
+leer + mit History erweitert)
+RESULT: PASS — 2026-09-01: Suite 105/105 gruen, Demo-Lauf UI: PASS
+
+ID: UI-062
+TASK: Resize-Dauerfehler "TERMINAL ZU KLEIN unabhaengig von Fenstergroesse"
+(Prod-Befund 2026-09-01): process.stdout.getWindowSize() liefert auf der
+klassischen cmd-Konsole die PUFFER- statt Fenstergroesse -> dauerhaft
+kleine Spalten/Zeilen im Snap -> App-Guard aktiv. Zurueckgezogen:
+columns/rows vertrauen (Initialgroesse korrekt), getWindowSize nur noch
+als Fallback wenn columns/rows fehlen. Zusaetzlich: Hinweiszeile in der
+Idle-Ansicht "T = ANSICHT WAEHREND JOB" (Klärung UI-034: Toggle wirkt
+nur bei aktivem Job).
+STATUS: DONE
+DEPENDS_ON: UI-035, UI-044
+VERIFY: node --test ui/tui.test.mjs ui/tui/resize.test.mjs; Suite 105/105;
+Layout-Beleg aus den sichtbaren Demo-Fenstern (cmd-Konsole, korrekte
+Dimensionen)
+RESULT: PASS — 2026-09-01: Suite gruen (resize.test: Poller/Coalescing,
+Zu-klein-Guard rendert); Demo-Fenster zeigen nach dem Revert wieder die
+normale Idle-Ansicht statt Dauer-ZU-KLEIN. Grenze dokumentiert: Live-Resize
+nur in Windows Terminal/PowerShell-Konsolen (klassische cmd-Konsole:
+node#13197).

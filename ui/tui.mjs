@@ -48,10 +48,25 @@ const fakeStdin = (options) => {
   return stub;
 };
 
-const DEFAULT_DIMS = () => ({
-  cols: process.stdout.columns || 80,
-  rows: process.stdout.rows || 24,
-});
+const DEFAULT_DIMS = () => {
+  let cols = process.stdout.columns || 80;
+  let rows = process.stdout.rows || 24;
+  // Achtung Windows: getWindowSize() liefert hier die PUFFER-Groesse der
+  // klassischen Konsole statt der Fenstergroesse und darf NICHT uebernommen
+  // werden (fuehrte zu daueraftem "TERMINAL ZU KLEIN", unabhaengig von der
+  // tatsaechlichen Fenstergroesse). process.stdout.columns/rows folgen dem
+  // resize-Event (feuert zuverlaessig in Windows Terminal/PowerShell-Konsolen;
+  // klassische cmd-Konsolen: bekanntes node#13197 - dort ist Live-Resize
+  // eingeschraenkt, die Initialgroesse stimmt aber immer).
+  if (!cols || !rows) {
+    try {
+      const [r, c] = process.stdout.getWindowSize();
+      if (!cols && c) cols = c;
+      if (!rows && r) rows = r;
+    } catch { /* kein TTY */ }
+  }
+  return { cols, rows };
+};
 
 const slotLabel = (s) => (s.state === "IDLE" ? "BEREIT" : STATE_LABEL[s.state]);
 
@@ -156,6 +171,7 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
         stateColor: STATE_COLOR[s.state],
         jobId: s.jobId,
         scopeId: s.scopeId,
+        verdict: verdict.view(s, now),
       })),
       slotPanels: busy.map((s) => ({
         idx: s.idx,

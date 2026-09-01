@@ -172,6 +172,29 @@ test("TTY-Views: App rendert Boot/Live/Reasoning/Verdict via Ink (fake stdout)",
   inst = mount({ ...snap, state: "ERROR", stateLabel: "ERROR", stateColor: "red", overlay: { lines: [" ✕  ERROR  –  FALSIFICATION FAILED "], color: "red" } });
   inst.unmount(); // Error-Overlay-Ansicht
 
+  // Idle-Ansicht (WARTE AUF EINGABE): leerer History-Pfad
+  inst = mount({ ...snap, globalIdle: true, state: "IDLE", stateLabel: "WARTE AUF EINGABE" });
+  inst.unmount();
+
+  // Idle-Ansicht mit ECHTER Session-History (Slot mit Vorderdict + letzte Events)
+  const idleSnap = {
+    ...snap,
+    globalIdle: true,
+    state: "IDLE",
+    stateLabel: "WARTE AUF EINGABE",
+    slots: [
+      { idx: 1, state: "SUCCESS", jobId: "job-1234-ab", verdict: { code: "WRITE" } },
+      { idx: 2, state: "IDLE" },
+      { idx: 3, state: "IDLE" },
+    ],
+    lastEvents: [
+      { t: "activity", tool: "read_file", file: "app.js" },
+      { t: "verdict", v: "WRITE" },
+    ],
+  };
+  inst = mount(idleSnap);
+  inst.unmount();
+
   // Tiny-Size-Pfad
   inst = mount({ ...snap, dims: { cols: 20, rows: 8 } });
   inst.unmount();
