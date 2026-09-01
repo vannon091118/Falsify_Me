@@ -402,24 +402,37 @@ keine FM-EVT-Zeilen; --check -> STOPPED.
 ID: UI-053
 TASK: ui/start-dock.cmd – sichtbarer Worker-Start (Fenster 1..3) ueber
 dock-runner.ps1; Datei existierte im Repo nicht, obwohl README/Selbsttest/
-WIRING sie referenzierten.
-STATUS: IN_PROGRESS
+WIRING sie referenzierten. Zusaetzlich selbsttest.sh repariert: Start des
+sichtbaren Fensters via PowerShell Start-Process (umgeht MSYS-Argument-
+Mangling von "cmd.exe /c start …", das aus Agent-Shells blockierte bzw.
+kein Fenster oeffnete), Fail-Fast-Fenster-Verifikation (cmd.exe-Marker im
+Wegwerf-Boot) statt blinder 90s-Poll, Cleanup klllt jetzt den Fenster-Baum
+(taskkill //T — WINDOW_PID wurde vorher nie gesetzt: verwaiste Fenster).
+STATUS: DONE
 DEPENDS_ON: UI-052
 VERIFY: npm run selftest (startet das echte Fenster) + CRLF/ASCII-Check
-RESULT: TEILWEISE — Datei angelegt (CRLF/ASCII geprueft). Selftest-Lauf in
-der Agent-Shell wurde zweimal abgebrochen; sichtbares Fenster aus einer
-User-Konsole starten (bekannte wt.exe-/Agent-Shell-Falle, siehe WIRING §4).
-Nur durch den User/naechsten Agenten per npm run selftest abschliessbar.
+RESULT: PASS — 2026-09-01: npm run selftest BESTANDEN (Exit 0), alle
+7 Schritte gruen: Fenster oeffnete sich (Fenster-Cmd PID, Start-Process),
+Worker claimte bei t+1s (QUEUED->ERROR API-Key fehlt, kein Haenger),
+Read-only-Checksummen identisch. Zweiter sauberer Referenzlauf: identisch.
+Bekannte Falle aus WIRING §4 ist damit LOESUNG: Start-Process statt wt.exe/
+cmd-start; ein ALT-Lauf (vor dem Fix) loppte 90s QUEUED, weil das Boot-
+"call start-dock.cmd 1" nach kaputtem cd (gemischte Trennzeichen) die
+Datei nicht fand — Fix: call mit vollem Backslash-Pfad, cd entfaellt
+(start-dock.cmd wechselt selbst per %~dp0).
 
 ID: UI-054
 TASK: Verifikation Phase 2: tests/phase2.test.mjs (4 Tests) + npm run selftest
-STATUS: IN_PROGRESS
+STATUS: DONE
 DEPENDS_ON: UI-050..UI-053
 VERIFY: node --test tests/phase2.test.mjs; npm run selftest; UI-Suite 105/105
-RESULT: TEILWEISE PASS — phase2 4/4 (Marker-Gate, Parser->UI-State inkl.
-Slot 1 ERROR/global IDLE, Worker-Loop headless, --check) und UI-Suite
-105/105 gruen; der sichtbare Selftest-Fensterlauf (npm run selftest) steht
-mangels User-Konsole in der Agent-Shell noch aus (UI-053).
+RESULT: PASS — 2026-09-01: phase2 4/4 (Marker-Gate, Parser->UI-State inkl.
+Slot 1 ERROR/global IDLE, Worker-Loop headless, --check), UI-Suite 105/105
+gruen UND der sichtbare Selftest-Fensterlauf (UI-053-Fix) BESTANDEN
+(Exit 0): sichtbares Fenster, Worker-Claim bei t+1s, Fehlerpfad sauber
+(ERROR API-Key fehlt), Read-only-Checksummen identisch. Damit ist die
+ganze Kette CLI -> Queue -> sichtbares Fenster -> Worker -> run.mjs ->
+ERROR verifiziert; kein Checkpoint mehr offen.
 
 ID: UI-055
 TASK: Doku auf Wahrheit bringen (README/WIRING/ui-README-tui/PLAN Block 6):
@@ -480,3 +493,22 @@ DEPENDS_ON: UI-058
 VERIFY: bash -n; V2_DIR-Probe aus dem installierten Pfad
 RESULT: PASS — installierter Skill loest V2_DIR -> C:\Users\Vannon\.Falsify_Core
 auf; E2E (UI-058) lief mit genau dieser Aufloesung.
+
+ID: UI-060
+TASK: worker.mjs --check/--state - PID-Recycling-Guard: registrierte
+Fenster-Zeilen zaehlen nur, wenn ihre PID wirklich ein ui/worker.mjs-Prozess
+ist (Verifikation per PowerShell-Commandline). Ohne Guard melden hart
+gekillte Fenster (z.B. Selftest-Cleanup taskkill //T, Crash) ein false
+RUNNING/BUSY, sobald Windows die PID an einen fremden Prozess neu vergibt -
+der Skill wuerde das Dock dann nicht neu starten (Jobs bleiben QUEUED).
+PowerShell nicht verfuegbar: Fallback auf DB-Aliveness (alter Pfad).
+STATUS: DONE
+DEPENDS_ON: UI-054
+VERIFY: node --test tests/phase2.test.mjs; manueller 4-Stufen-Test mit
+Wegwerf-FALSIFY_HOME (leer->STOPPED; stale Zeile auf lebende fremde node-PID
+-> STOPPED; echter Worker Fenster 2 -> RUNNING, stale Fenster 1 unterdrueckt;
+nach Kill -> STOPPED)
+RESULT: PASS — 2026-09-01: alle 4 Stufen wie erwartet; echte Installation
+meldet damit korrekt STOPPED statt des vorherigen False-RUNNING (verwaiste
+Zeile aus frueherem harten Kill zeigte auf recycelte PID); phase2+security
+10/10 gruen.

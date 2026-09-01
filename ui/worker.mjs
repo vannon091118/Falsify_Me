@@ -19,7 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { openDb, closeDb, falsifyHome } from "../artifacts/db.mjs";
 import {
@@ -46,25 +46,57 @@ const dlog = (msg) => { try { fs.appendFileSync(DEBUG_LOG, `${new Date().toISOSt
 
 dlog(`worker.mjs gestartet (pid=${process.pid}, fenster=${WINDOW_IDX})`);
 
-// ── --check: welche Worker-Fenster laufen? (für Launcher & Agents) ───────────
-if (process.argv.includes("--check")) {
+// Alle registrierten Fenster-Zeilen sind nur dann echte Worker, wenn ihre PID
+// wirklich ein ui/worker.mjs-Prozess ist. PID-Recycling-Guard: Wird ein Fenster
+// hart gekillt (taskkill //T z.B. aus dem Selftest-Cleanup), bleibt die Zeile
+// stehen — und die PID kann an einen fremden Prozess neu vergeben werden.
+// Ohne diesen Guard wuerde --check/--state dann ein falsches RUNNING/BUSY
+// melden (und z.B. der Skill wuerde das Dock nicht neu starten).
+function realWorkerPids() {
+  try {
+    const ps = spawnSync(
+      "powershell.exe",
+      ["-NoProfile", "-Command", "(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' }) | ForEach-Object { return (\"$($_.ProcessId);$($_.CommandLine)\") }"],
+      { encoding: "utf8", timeout: 15000 },
+    );
+    if (ps.status !== 0 || !ps.stdout) return null;
+    return new Set(
+      ps.stdout
+        .split(/\r?\n/)
+        .filter((l) => l.includes("worker.mjs"))
+        .map((l) => l.split(";")[0].trim())
+        .filter(Boolean),
+    );
+  } catch {
+    return null;
+  }
+}
+
+function reportWorkers(filter) {
   const db = openDb();
   const workers = listWorkers(db, MAX_WINDOWS);
-  const alive = workers.filter((w) => w.alive);
+  const realPids = realWorkerPids(); // null => PowerShell nicht verfuegbar: DB-Aliveness als Fallback
+  const alive = workers.filter((w) =>
+    w.alive && (realPids ? realPids.has(String(w.pid)) : true)
+  );
+  const hits = alive.filter(filter ?? (() => true));
+  closeDb();
+  return { workers: alive, hits };
+}
+
+// ── --check: welche Worker-Fenster laufen? (für Launcher & Agents) ───────────
+if (process.argv.includes("--check")) {
+  const { hits: alive } = reportWorkers();
   if (!alive.length) console.log("STOPPED");
   for (const w of alive) console.log(`RUNNING ${w.pid} (Fenster ${w.idx})`);
-  closeDb();
   process.exit(0);
 }
 
 // ── --state: beschäftigt oder leer? ──────────────────────────────────────────
 if (process.argv.includes("--state")) {
-  const db = openDb();
-  const workers = listWorkers(db, MAX_WINDOWS);
-  const busy = workers.filter((w) => w.alive && w.runningJob);
+  const { hits: busy } = reportWorkers((w) => w.runningJob);
   if (!busy.length) console.log("IDLE");
   for (const w of busy) console.log(`BUSY ${w.idx} ${w.runningJob}${w.runningScope ? ` (scope ${w.runningScope})` : ""}`);
-  closeDb();
   process.exit(0);
 }
 

@@ -179,8 +179,10 @@ Dock-Fenster (`ui/start-dock.cmd` 1..3) hostet die TUI direkt: `createTui` +
 Marker erscheinen nur mit `FALSIFY_UI=1` (setzt der Worker) — die CLI-
 Ausgabe für Agents ändert sich nicht. Verifikation: `npm run test:phase2`
 (4 Tests mit echten Kindprozessen: Marker-Gate, Parser→UI-Zustand,
-Worker-Loop). Die sichtbare E2E-Abnahme läuft via `npm run selftest` aus
-einer User-Konsole (Fenster-Start funktioniert nicht aus Agent-Shells).
+Worker-Loop). Die sichtbare E2E-Abnahme läuft via `npm run selftest`: das
+Testfenster öffnet sich per PowerShell `Start-Process` (MSYS-sicher, auch
+aus Agent-Shells) und wurde am 2026-09-01 BESTANDEN (Exit 0, alle 7
+Schritte grün).
 
 ```text
 Doppelklick:  ui\START-TUI.cmd   (Intro -> WARTE AUF EINGABE; kein Auto-Job)

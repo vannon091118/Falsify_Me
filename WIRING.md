@@ -135,7 +135,7 @@ Kein Fake: fehlender `progress` ⇒ indeterminierter Sweep statt Prozent.
 | `onAbort` | Job-Kind (run.mjs) echt killen (`createAbort`, PID-Verifikation via `isDead`); danach `state: ABORTED`; ohne laufenden Job schliesst Q das Fenster (`ui.finish`) | DONE |
 | `ui/start-dock.cmd` | sichtbarer Worker-Start: startet `dock-runner.ps1` (Fenster 1..3), Worker rendert die TUI | DONE — neue Datei (fehlte vorher im Repo trotz Verweisen) |
 
-**Bekannte Falle Windows:** `wt.exe` aus einer Agent-/Headless-Session oeffnet KEIN sichtbares Fenster und Git-Bash zerlegt Argumente mit Leerzeichen + konvertiert `/k` zu Pfaden (Fehler 0x80070002 — "new-tab …" wird als Datei gesucht). Deshalb: **Fenster immer aus einer User-Konsole starten** — nie aus einer Agent-Shell:
+**Bekannte Falle Windows (GELOEST):** `wt.exe` aus einer Agent-/Headless-Session oeffnet KEIN sichtbares Fenster und Git-Bash zerlegt Argumente mit Leerzeichen + konvertiert `/k` zu Pfaden (Fehler 0x80070002 — "new-tab …" wird als Datei gesucht). Anmerkung: auch `cmd.exe /c start …` ist aus Git-Bash unzuverlaessig (MSYS-Mangling: blockiert oder oeffnet kein Fenster). **LOESUNG:** Fenster via PowerShell `Start-Process -WindowStyle Normal` oeffnen — keine Argumentwandlung, Fenster erscheint auf dem User-Desktop, auch aus Agent-Shells. `selbsttest.sh` startet sein sichtbares Testfenster exakt so (Bestanden, 2026-09-01). Empfehlung fuer den Betrieb:
 
 ```
 Doppelklick:  ui\START-TUI.cmd  |  ui\TEST-TUI.cmd   (oder Desktop-Icons)
@@ -231,8 +231,9 @@ solange der User die sichtbare Prüfung nicht bestätigt hat.
 
 Die Phase-2-Integration in Worker/CLI ist umgesetzt und via
 `npm run test:phase2` verifiziert (BLOCK 6 in `ui/PLAN.md`); die sichtbare
-Selbsttest-Abnahme (UI-053/UI-054) steht noch aus und muss aus einer
-User-Konsole laufen, nicht aus einer Agent-Shell. Neue Behauptungen über
+Selbsttest-Abnahme (UI-053/UI-054) ist abgeschlossen: `npm run selftest`
+BESTANDEN (Exit 0, 2026-09-01) — inkl. sichtbarem Fenster via
+Start-Process-Loesung (siehe §4). Neue Behauptungen über
 die Verdrahtung gehören in `ui/PLAN.md` Block 6 und dürfen nicht nur in
 Antworten/Commits leben.
 

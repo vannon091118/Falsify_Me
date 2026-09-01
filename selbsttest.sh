@@ -13,7 +13,7 @@ T="$(mktemp -d)" || fail "Kein Temp-Verzeichnis"
 TW="$(cygpath -w "$T" 2>/dev/null || printf '%s' "$T")"
 WR="$(cygpath -w "$REPO_ROOT" 2>/dev/null || printf '%s' "$REPO_ROOT")"
 export FALSIFY_HOME="$TW"
-cleanup() { [ -n "$WINDOW_PID" ] && taskkill //PID "$WINDOW_PID" //F >/dev/null 2>&1 || true; rm -rf "$T" 2>/dev/null || true; }
+cleanup() { [ -n "$WINDOW_PID" ] && taskkill //F //T //PID "$WINDOW_PID" >/dev/null 2>&1 || true; rm -rf "$T" 2>/dev/null || true; }
 trap cleanup EXIT
 
 echo "Wegwerf-Home: $TW (kein API-Key → Fehlerpfad, kein API-Verbrauch)"
@@ -61,16 +61,27 @@ db.prepare(\"UPDATE jobs SET status='QUEUED', window_idx=NULL, started_at=NULL W
 " || fail "Job konnte nicht zurückgesetzt werden"
 
 step "5/7" "Sichtbares Produktions-Worker-Fenster starten"
-if ! command -v cmd.exe >/dev/null 2>&1; then
-  fail "Sichtbarer Worker-Test benötigt Windows (cmd.exe nicht gefunden)"
+if ! command -v powershell.exe >/dev/null 2>&1; then
+  fail "Sichtbarer Worker-Test benötigt Windows (powershell.exe nicht gefunden)"
 fi
 BOOT="$T/start-visible.cmd"
-printf '@echo off\r\nset "FALSIFY_HOME=%s"\r\nset "FALSIFY_WINDOW=1"\r\ncd /d "%s\\ui"\r\ncall start-dock.cmd 1\r\n' "$TW" "$WR" > "$BOOT"
+printf '@echo off\r\nset "FALSIFY_HOME=%s"\r\nset "FALSIFY_WINDOW=1"\r\ncall "%s\\ui\\start-dock.cmd" 1\r\n' "$TW" "$WR" > "$BOOT"
 BOOT_W="$(cygpath -w "$BOOT" 2>/dev/null || printf '%s' "$BOOT")"
-# start.exe trennt das sichtbare Fenster vom Bash-Testprozess.
-cmd.exe /c start "Falsify-Dock 1" cmd.exe /k "$BOOT_W" >/dev/null 2>&1
-sleep 3
-echo "Sichtbares Worker-Fenster gestartet"
+# Start via PowerShell Start-Process: umgeht das MSYS-Argument-Mangling von
+# "cmd.exe /c start ..." (bekannte Agent-Shell-Falle, WIRING §4) und oeffnet
+# das Fenster normal sichtbar auf dem User-Desktop.
+powershell.exe -NoProfile -Command "Start-Process -WindowStyle Normal -FilePath 'cmd.exe' -ArgumentList '/k','\"$BOOT_W\"'"
+# Fail-Fast: warten, bis der cmd /k-Fensterprozess sich meldet (Marker im
+# Pfad des Wegwerf-Boots), statt blind 90s QUEUED zu pollen.
+WIN_PID=""
+for i in $(seq 1 15); do
+  sleep 1
+  WIN_PID="$(powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -match 'start-visible.cmd' -and \$_.Name -eq 'cmd.exe' } | Select-Object -First 1).ProcessId" 2>/dev/null | tr -d '\r\n')"
+  [ -n "$WIN_PID" ] && break
+done
+[ -n "$WIN_PID" ] || fail "Fenster-Prozess nicht erschienen (kein cmd.exe mit start-visible.cmd-Marker). Agent-Shell blockiert sichtbare Fenster - bitte aus einer echten Konsole: npm run selftest (WIRING §4)."
+WINDOW_PID="$WIN_PID"
+echo "Sichtbares Worker-Fenster gestartet (Fenster-Cmd PID $WINDOW_PID)"
 
 step "6/7" "Worker → run.mjs → Status/Fehlerpfad (kein Key)"
 ST=""
