@@ -208,6 +208,9 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
       activePhase: progress.activePhase(focused),
       activity: focused.activity,
       lastEvents: focused.events.toArray().slice(-10),
+      // Roh-Output des LLM/der Pipeline (Ring, begrenzt) — fuer den
+      // t-Toggle „Thinking sichtbar machen“ (OutputView).
+      output: focused.output.toArray().slice(-60),
       verdict: verdict.view(focused, now),
       files: focused.files,
       filesList: focused.filesList,

@@ -11,8 +11,8 @@ import { Box, Text, useInput } from "ink";
 import { mapKey } from "../keys.mjs";
 import Header from "./Header.mjs";
 import BootView from "./BootView.mjs";
-import ParticlesView from "./ParticlesView.mjs";
 import ReasoningView from "./ReasoningView.mjs";
+import OutputView from "./OutputView.mjs";
 import VerdictView from "./VerdictView.mjs";
 import IdleView from "./IdleView.mjs";
 import SlotsView from "./SlotsView.mjs";
@@ -57,7 +57,10 @@ export default function App({ getSnapshot, subscribe, emit }) {
   } else if (snap.boot && snap.boot.mode !== "live") {
     main = h(BootView, { snap, cols, rows: mainH });
   } else if (snap.mode === "thinking") {
-    main = h(ParticlesView, { snap, cols, rows: mainH });
+    // t-Toggle (2026-09-01): „thinking“ = LLM-Rohtext SICHTBAR (statt
+    // Partikel-Animation, die nichts erklaert); „reasoning“ = strukturierter
+    // Status + Fortschrittsindikator (ReasoningView).
+    main = h(OutputView, { snap, cols, rows: mainH });
   } else {
     main = h(ReasoningView, { snap, cols, rows: mainH });
   }

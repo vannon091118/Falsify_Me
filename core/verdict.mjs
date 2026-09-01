@@ -229,6 +229,24 @@ export function enforceWriteChallenge(content, verdict, opts = {}) {
 }
 
 /**
+ * RESEARCH-Vertrag (2026-09-01): VERDICT: RESEARCH ist nur belastbar, wenn
+ * der BEFUND KONKRET benennt, welches Datum fehlt (Datei:Zeile, konkrete
+ * Datei/Datum). Pauschales „brauche mehr Informationen“ ist kein RESEARCH —
+ * der Guard stuft es fail-closed auf null (PLAN) herunter, damit der Loop
+ * mit einer präzisen Frage weiterarbeitet statt mit einem Datensammel-
+ * Lauf ins Leere zu gehen.
+ */
+const MISSING_DATA = /(?:fehlt|fehlend|benötigt|benoetigt|brauche|brauchen|nicht vorhanden|nicht lesbar|kein zugriff|keine? (?:datei|daten)|missing|need|required|not (?:found|available)|cannot? read|kein zugriff)/i;
+const CONCRETE_REF = /(?:[\w./-]+\.\w+:\d+|[\w./-]+\.(?:js|mjs|cjs|ts|tsx|py|json|md|sh|ps1|txt|sql|go|rs|java)\b|read_file|list_dir|glob)/i;
+
+export function enforceResearchContract(content, verdict) {
+  if (String(verdict || "").toUpperCase() !== "RESEARCH") return verdict;
+  const befund = parseBefund(String(content || "")) || "";
+  const hasMissing = MISSING_DATA.test(befund) && CONCRETE_REF.test(befund);
+  return hasMissing ? "RESEARCH" : null;
+}
+
+/**
  * Regel 5 (UI-103): Ein formales Gate macht keine kaputte Basis „grün".
  * WRITE ist nur belastbar, wenn die Einreichung selbst strukturell kohärent
  * ist — stehen deterministische Blocker dagegen (fehlende Whitelist-Dateien,

@@ -259,7 +259,13 @@ test("onTool-Dateipfad-Extraktion: nur pfadartige Argumente werden als Datei gem
 });
 
 test("Loop-Anker: parseScopeDivergence + Persistenz-Semantik (UI-107)", async () => {
-  const { parseScopeDivergence, parseVerdict } = await mod("core/verdict.mjs");
+  const { parseScopeDivergence, parseVerdict, enforceResearchContract } = await mod("core/verdict.mjs");
+  // RESEARCH-Vertrag: konkret benanntes fehlendes Datum bleibt RESEARCH,
+  // pauschales „brauche mehr Informationen“ wird fail-closed auf PLAN.
+  assert.equal(enforceResearchContract("BEFUND: Es fehlt die Datei artifacts/geheim.mjs:12, die ich nicht lesen kann.\nVERDICT: RESEARCH", "RESEARCH"), "RESEARCH");
+  assert.equal(enforceResearchContract("BEFUND: Ich brauche mehr Informationen.\nVERDICT: RESEARCH", "RESEARCH"), null, "RESEARCH ohne konkret fehlendes Datum = PLAN (fail-closed)");
+  assert.equal(enforceResearchContract("BEFUND: fehlt Zugriff auf read_file fuer artifacts/db.mjs\nVERDICT: RESEARCH", "RESEARCH"), "RESEARCH", "fehlende Datei + Tool-Referenz ist konkret");
+  assert.equal(enforceResearchContract("BEFUND: nix\nVERDICT: WRITE", "WRITE"), "WRITE", "Nur RESEARCH unterliegt dem Vertrag");
   const home = withTempHome();
   try {
     // Parser-Faelle.

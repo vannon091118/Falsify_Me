@@ -32,7 +32,7 @@ import { loadApiKey, keyEnvFile, keyNames } from "../core/keys.mjs";
 import { loadConfig } from "../core/config.mjs";
 import { enforceRateLimit } from "../core/ratelimit.mjs";
 import { SYSTEM_DE, SYSTEM_EN, buildUserContent } from "../core/prompt.mjs";
-import { parseVerdict, parseBefund, parseSubPrompt, enforceWriteChallenge, enforceStructuralCoherence, findingSeverity, parseScopeDivergence } from "../core/verdict.mjs";
+import { parseVerdict, parseBefund, parseSubPrompt, enforceWriteChallenge, enforceStructuralCoherence, findingSeverity, parseScopeDivergence, enforceResearchContract } from "../core/verdict.mjs";
 import { runTwinCheck, extractClaims } from "../core/twin.mjs";
 import { runAgent } from "../core/agent.mjs";
 import { checkFeasibility } from "../core/feasibility.mjs";
@@ -453,6 +453,13 @@ async function main() {
   });
   if (parsedVerdict === "WRITE" && verdict === null) {
     console.warn(yellow("\n⚠ WRITE ohne Challenge-EVIDENZ (kein Falsifikationsversuch mit konkreter Datei:Zeile-/Symbol-/Whitelist-Referenz) – als UNKNOWN behandelt, KEINE Freigabe."));
+  }
+  // RESEARCH-Vertrag (2026-09-01): RESEARCH nur mit KONKRET benanntem
+  // fehlenden Datum im BEFUND — pauschales „brauche mehr Infos“ wird
+  // fail-closed auf PLAN heruntergestuft (kein Datensammel-Lauf ins Leere).
+  if (verdict === "RESEARCH" && !enforceResearchContract(result.content, "RESEARCH")) {
+    console.warn(yellow("\n⚠ RESEARCH ohne konkret benanntes fehlendes Datum (BEFUND nennt keine fehlende Datei/kein fehlendes Datum) – als PLAN behandelt. Der Loop braucht eine präzise Anfrage, keinen Datensammel-Lauf."));
+    verdict = "PLAN";
   }
   // Regel 5 (UI-103): ein formales Gate macht keine kaputte Basis grün —
   // WRITE gegen harte strukturelle Blocker wird zu PLAN (nicht freigegeben).

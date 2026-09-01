@@ -1416,3 +1416,10 @@ STATUS: DONE
 DEPENDS_ON: UI-090 (agent_intent), UI-103 (structural gate)
 VERIFY: node --test tests/queue.test.mjs (Loop-Anker-Test) + Prompt-Daten-Vertrag in system-de/en.md; live: Submit MIT --agent-intent zeigt SCOPE-DIVERGENZ/KONFORM und den Anker im naechsten Lauf.
 RESULT: Schema v4 (scopes.last_divergence, ALTER-only), parseScopeDivergence (DE/EN-Ueberschrift, Divergenz >= 20 Zeichen, sonst kein Anker), run.mjs-Downgrade WRITE->PLAN mit Warnung, Persistenz in der Review-Transaktion (konform leert), buildUserContent-Sektion "Offener Divergenz-Anker" fuer den naechsten Lauf. 83/83 Core + 38/38 UI gruen.
+
+ID: UI-108
+TASK: Vermutungs-Pflicht + RESEARCH-Vertrag als Prompt-DATEN (kommen runtime immer an, nicht nur per Plan-Injektion) + deterministisches RESEARCH-Gate; t-Toggle zeigt LLM-Rohtext (OutputView) statt Partikel, reasoning = Status/Fortschrittsindikator.
+STATUS: DONE
+DEPENDS_ON: UI-105 (Prompt-Daten), UI-098 (Regel 2)
+VERIFY: node --test tests/queue.test.mjs (enforceResearchContract-Faelle) + ui/tui/keys+state+particles; Smoke: Dock-Taste t wechselt OutputView <-> ReasoningView.
+RESULT: system-de/en.md: VERMUTUNGS-PFLICHT (jede Behauptung mit gelesener Datei:Zeile) + RESEARCH-VERTRAG (RESEARCH nur mit konkret benanntem fehlenden Datum im BEFUND); core/verdict.mjs enforceResearchContract (fail-closed -> PLAN), run.mjs-Downgrade mit Warnung; ui/tui.mjs snap.output + OutputView.mjs (neu), App-Routing thinking->OutputView / reasoning->ReasoningView. 86/86 Core + 43/43 UI gruen.
