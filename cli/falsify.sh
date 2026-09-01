@@ -9,8 +9,12 @@
 # Fenster) zu stoeren. Bis zu 3 Worker-Fenster verarbeiten die Queue parallel.
 #
 #   falsify install                          global in PATH einhaengen (einmalig)
+#   falsify run [--submit|--falsiflow] <args>  EINHEITLICHER Einstieg: Direkt-Run,
+#                                            Job-Einreichung (--submit) oder kompletter
+#                                            Flow bis zum Verdict (--falsiflow)
 #   falsify scope new "<user-input>"         Scope anlegen (HEADER = User-Input 1:1)
 #   falsify submit --scope <id> --plan-file plan.txt --root <dir> --files "a.js,b.js" [--diff-file d.patch] [--agent-intent "..."] [--affected "a.js,b.js"]
+#             FLOW-ALIAS für `falsify run --falsiflow` (Generalisierung 2026-09-01)
 #             BLOCKIERT bis zum Verdict (Exit 0=WRITE 1=PLAN/RESEARCH 5=ASK 3=Fehler):
 #             Agents duerfen erst nach VERDICT: WRITE (Freigabe) schreiben.
 #             --no-wait NUR fuer interaktive Tools (danach: falsify wait <id>)
@@ -78,6 +82,7 @@ case "$cmd" in
     # weiterarbeiten. `falsify submit` blockt deshalb standardmaessig bis zum
     # Verdict (Exit 0=WRITE, 1=PLAN/RESEARCH, 5=ASK, 3=Fehler). Nur fuer
     # interaktive Tools, die die Kritik live im Fenster verfolgen, gibt es --no-wait.
+    # Generalisierter Flow: `falsify run --falsiflow ...` delegiert hierher.
     no_wait=0
     for a in "$@"; do [ "$a" = "--no-wait" ] && no_wait=1; done
     out="$(node "$V2_DIR/cli/run.mjs" --submit "$@")" || { echo "$out" >&2; exit 2; }
@@ -185,6 +190,17 @@ case "$cmd" in
     node "$V2_DIR/cli/main.mjs" models "$@"
     ;;
   run)
+    # Generalisierung (2026-09-01): `falsify run` ist der EINHEITLICHE Einstieg.
+    #   falsify run <args>           = Direkt-Run (read-only Review, wie bisher)
+    #   falsify run --submit <args>  = Job einreichen (identisch `falsify submit`)
+    #   falsify run --falsiflow ...  = kompletter Flow: einreichen + blockieren
+    #                                   bis zum Verdict (Exit 0=WRITE, 1=PLAN/
+    #                                   RESEARCH, 5=ASK, 3=Fehler)
+    falsiflow=0
+    if [ "${1:-}" = "--falsiflow" ]; then falsiflow=1; shift; fi
+    if [ "$falsiflow" = "1" ]; then
+      exec bash "$0" submit "$@"
+    fi
     node "$V2_DIR/cli/run.mjs" "$@"
     ;;
   bootstrap)

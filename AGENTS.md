@@ -180,6 +180,11 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
 - `cli/falsify.sh` hat `onboard`, `uninstall` und `abort` als Befehle;
   `help.mjs` und der CLI-Kopf in falsify.sh müssen bei neuen Befehlen
   mitziehen.
+- CLI-Generalisierung (2026-09-01): `falsify run` ist der einheitliche
+  Einstieg — `run --submit` = Job einreichen, `run --falsiflow` = kompletter
+  Flow (einreichen + blockieren bis Verdict); `falsify submit` ist der
+  FLOW-ALIAS und delegiert aus dem run-Branch via `exec bash "$0" submit "$@"`
+  (nur als ERSTES Flag, shift vor Delegation).
 - ZWEI Bootstrap-Einstiege müssen synchron bleiben: `cli/bootstrap.mjs`
   main() und `cli/main.mjs bootstrap` teilen `applyModeDecision`; der
   main.mjs-Einstieg hat den Modus-Entscheid historisch still übersprungen

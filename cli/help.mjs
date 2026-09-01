@@ -10,6 +10,10 @@ Verwendung:
   falsify scope new "<user-input>"        Scope anlegen (HEADER = User-Input 1:1)
   falsify scope show <id> [--full]        Scope-Artefakt (Header, Phase, letzter Befund, alle Befunde)
   falsify scope list [--all]              aktive (oder alle) Scopes
+  falsify run [--submit|--falsiflow] …   EINHEITLICHER Einstieg (Generalisierung
+                                        2026-09-01): Direkt-Run, Job-Einreichung
+                                        (--submit) oder kompletter Flow bis zum
+                                        Verdict (--falsiflow; submit ist Alias)
   falsify log <job-id>                    volles Protokoll eines Jobs (Payload + Antwort)
   falsify answer <job-id> [--file <pfad>] Antwort als Datei exportieren (optional)
   falsify wait <job-id> [--ping] [--abort] blockierend warten; --ping = eine
