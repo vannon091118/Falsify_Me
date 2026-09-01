@@ -26,6 +26,11 @@ read-only, bis FalsifyMe für denselben Scope `VERDICT: WRITE` liefert.
    - Exit `1`: `PLAN` oder `RESEARCH`; nicht schreiben, sondern den Loop fortsetzen.
    - Exit `2`/`3`: Fehler; nicht weitermachen.
 
+Nach dem Einreichen bestätigt der Skill, dass der Job im Dock-Fenster sichtbar
+geworden ist (Fenster-Claim; Status verlässt `QUEUED`), bevor er blockierend
+auf das Verdict wartet. Bei fehlendem Claim bleibt der Job in der Queue und
+der Agent sieht eine Warnung mit `falsify state`-Hinweis.
+
 ## Modi
 
 - `PLAN` ist die Init-Aktion und hält den Header unverändert.

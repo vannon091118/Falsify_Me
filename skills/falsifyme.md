@@ -38,6 +38,11 @@ Plan überarbeiten, `RESEARCH` bedeutet weitere read-only-Daten beschaffen,
 `WRITE` gibt die konkrete Änderung frei. Nach der Änderung wird ein Review im
 selben Scope eingereicht.
 
+Der Skill bestätigt nach dem Einreichen, dass der Job im Dock-Fenster sichtbar
+geworden ist (laufendes Worker-Fenster über `--check`, Job-Claim = Status nicht
+mehr `QUEUED`), bevor er blockierend auf das Verdict wartet. Schlägt die
+Bestätigung fehl, bleibt die Warnung sichtbar und der Job in der Queue.
+
 ## Sicherheitsgrenzen
 
 - Der Skill prüft, aber schreibt nicht in das Zielprojekt.

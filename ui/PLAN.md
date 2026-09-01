@@ -453,3 +453,30 @@ npm run test:phase2 (Dock-Loop + Marker-Pipeline)
 RESULT: PASS — installierter Launcher: start "FalsifyMe-Dock" ui\start-dock.cmd 1;
 beide Desktop-Icons vorhanden; Dock idlet (Boot-Intro -> WARTE AUF EINGABE) und
 visualisiert geclaimte Jobs live ueber die FM-EVT-Pipeline; phase2-Tests 4/4.
+
+ID: UI-058
+TASK: agent-skill-falsify.sh - nach dem Einreichen SICHTBARKEIT IM DOCK
+BESTAETIGEN bevor blockiert wird: submit --no-wait -> worker --check (Fenster
+laeuft) + Status-Poll bis Fenster-Claim (Status verlaesst QUEUED; Fast-Fail-
+Pfade wie ERROR/DONE zaehlen als Claim, da nur der Dock-Worker QUEUED->ERROR
+erzeugen kann) -> erst dann falsify wait. Warnung statt Fehler, wenn kein
+Claim erkannt wird.
+STATUS: DONE
+DEPENDS_ON: UI-052
+VERIFY: bash -n + realer E2E-Lauf des INSTALLIERTEN Skills mit Wegwerf-
+FALSIFY_HOME und echtem Dock-Fenster (Temp-Queue, No-Key-Fehlerpfad)
+RESULT: PASS — E2E zweimal gefahren: Fenster startete (Worker-PID), Job
+eingereicht, "ist im Dock sichtbar (Fenster-Claim: Status ERROR API-Key
+fehlt) - warte auf Verdict" bestaetigt, Verdict UNBEKANNT/Exit 3 (keine
+Freigabe ohne Key), Worker + Temp aufgeraeumt.
+
+ID: UI-059
+TASK: agent-skill-falsify.sh - V2_DIR-Fallback fuer die Benutzerinstallation
+(relativ aufgeloest greift nur im Repo-Checkout): fehlt cli/falsify.sh neben
+dem Skill, auf $HOME/.Falsify_Core umschalten. Ohne Fallback war der
+installierte Skill (~/.agents/skills/falsifyme) funktionslos.
+STATUS: DONE
+DEPENDS_ON: UI-058
+VERIFY: bash -n; V2_DIR-Probe aus dem installierten Pfad
+RESULT: PASS — installierter Skill loest V2_DIR -> C:\Users\Vannon\.Falsify_Core
+auf; E2E (UI-058) lief mit genau dieser Aufloesung.

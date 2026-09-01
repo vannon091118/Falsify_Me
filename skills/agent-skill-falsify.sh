@@ -30,6 +30,12 @@ if [[ "$_SRC" != */* ]]; then
   [ -n "$_FOUND" ] && _SRC="$_FOUND"
 fi
 V2_DIR="$(cd "$(dirname "$_SRC")/.." >/dev/null 2>&1 && pwd)"
+# Benutzerinstallation: relative Auflösung greift nur im Repo-Checkout. Liegt
+# cli/ nicht neben dem Skill (z.B. installiert unter ~/.agents/skills/falsifyme),
+# auf die echte Installation (~/.Falsify_Core) umschalten.
+if [ ! -x "$V2_DIR/cli/falsify.sh" ] && [ -x "$HOME/.Falsify_Core/cli/falsify.sh" ]; then
+  V2_DIR="$HOME/.Falsify_Core"
+fi
 
 # ── Hilfsfunktionen ─────────────────────────────────────────────────────────
 log_step()  { echo "🔄 $*"; }
@@ -134,9 +140,10 @@ falsify_mandatory_check() {
   log_info "Dateien: $files_list"
   [ -n "$diff_file" ] && log_info "Diff: $diff_file"
 
-  # ── 1. Job einreichen + blockierend warten (PFLICHT) ─────────────────────
-  log_step "Falsify-Check wird ausgeführt (blockierend – wartet auf Verdict)..."
+  # ── 1. Job einreichen (NICHT blockierend) ─────────────────────────────────
+  log_step "Job wird eingereicht ..."
   local submit_args=(
+    "--no-wait"
     "--plan-file" "$plan_file"
     "--root" "$root_dir"
     "--files" "$files_list"
@@ -145,17 +152,55 @@ falsify_mandatory_check() {
   [ -n "$diff_file" ] && submit_args+=("--diff-file" "$diff_file")
 
   local submit_output
-  submit_output=$(bash "$V2_DIR/cli/falsify.sh" submit "${submit_args[@]}" 2>&1)
-  local wait_exit=$?
+  submit_output=$(bash "$V2_DIR/cli/falsify.sh" submit "${submit_args[@]}" 2>&1) || { log_error "Einreichen fehlgeschlagen: $submit_output"; return 2; }
 
   local job_id
   job_id=$(echo "$submit_output" | sed -n 's/^JOB_ID=//p' | head -1)
-  [ -n "$job_id" ] && log_ok "Job geprüft: $job_id (Verdict liegt vor)"
+  [ -n "$job_id" ] || { log_error "Keine JOB_ID erhalten: $submit_output"; return 2; }
+  log_ok "Job eingereicht (Queue): $job_id"
+
+  # ── 2. Bestätigen: Job IST IM DOCK-FENSTER SICHTBAR (Claim) – VOR dem
+  #    blockierenden Warten. Ein Worker-Fenster muss laufen (--check) und den
+  #    Job geclaimt haben (Status RUNNING = FM-EVT-Pipeline im Fenster).
+  local dock_check
+  dock_check=$(node "$V2_DIR/ui/worker.mjs" --check 2>&1)
+  if echo "$dock_check" | grep -q "RUNNING"; then
+    log_ok "Dock-Fenster läuft ($(echo "$dock_check" | grep -oP 'RUNNING \K.*' | head -1))"
+  else
+    log_warn "Kein laufendes Dock-Fenster – Job bleibt in der Queue. Fenster starten: ui/start-dock.cmd, dann erneut einreichen."
+  fi
+  local claimed=0
+  local st=""
+  for _i in $(seq 1 10); do
+    st=$(node "$V2_DIR/cli/main.mjs" status "$job_id" 2>/dev/null | head -1)
+    case "$st" in
+      RUNNING*) claimed=1; break ;;
+      # Fehler-/Abschlusszustand bedeutet: der Dock-Worker hat den Job
+      # geclaimt und durchgezogen (Fast-Fail-Pfade RUNNING schneller als der
+      # 1s-Poll) - der Job IST damit in der Dock-Pipeline. Kein QUEUED mehr.
+      ERROR*|DONE*) claimed=1; break ;;
+      QUEUED*) sleep 1 ;;
+      *) break ;;
+    esac
+  done
+  if [ "$claimed" = "1" ]; then
+    log_ok "Job $job_id ist im Dock sichtbar (Fenster-Claim: Status $st) – warte auf Verdict ..."
+  else
+    log_warn "Job $job_id noch QUEUED – kein Worker-Claim erkannt (Status: ${st:-?}). Dock prüfen: falsify state"
+  fi
+
+  # ── 3. Blockierend auf das Verdict warten (PFLICHT) ───────────────────────
+  log_step "Falsify-Check wird ausgeführt (blockierend – wartet auf Verdict)..."
+  local wait_output
+  wait_output=$(bash "$V2_DIR/cli/falsify.sh" wait "$job_id" 2>&1)
+  local wait_exit=$?
 
   # Verdict aus der Warteschleife extrahieren (DONE <VERDICT>)
   local verdict
-  verdict=$(echo "$submit_output" | grep -oP 'DONE \K(PLAN|RESEARCH|WRITE|UNBEKANNT)' | head -1)
+  verdict=$(echo "$wait_output" | grep -oP 'DONE \K(PLAN|RESEARCH|WRITE|UNBEKANNT)' | head -1)
   [ -z "$verdict" ] && verdict="UNBEKANNT"
+  echo "$wait_output" | tail -1 >&2
+  log_ok "Verdict: $verdict (Job $job_id)"
 
   # ── 2. Ergebnis auswerten (Loop-Routing) ─────────────────────────────────
   case "$verdict" in
