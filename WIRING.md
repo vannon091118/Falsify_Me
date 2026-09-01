@@ -104,7 +104,7 @@ Marker-Zeilen im Kindprozess-Stream: `FM-EVT: <json>` — werden vom Parser
 | `{t:"phase", phase, progress?, slot?}` | PLAN·RESEARCH·WRITE·VERDICT; progress 0..1 NUR wenn echt |
 | `{t:"phase_done", phase, slot?}` | Phase abgeschlossen (✓) |
 | `{t:"verdict", v, slot?}` | WRITE·PLAN·RESEARCH·ERROR·TIMEOUT |
-| `{t:"files", n, slot?}` | Whitelist-/Datei-Zaehler |
+| `{t:"files", n, list?, slot?}` | Whitelist-/Datei-Zaehler + echte Dateiliste (max. 20; ohne `list` nur Zaehler) |
 | `{t:"done", slot?}` | Job-Ende: WRITE→SUCCESS, sonst IDLE |
 
 **Slot-Routing (3 Fenster-Slots im EINEN Terminal-pid):** Jedes Event darf
@@ -130,7 +130,7 @@ Kein Fake: fehlender `progress` ⇒ indeterminierter Sweep statt Prozent.
 | Wo | Was | Stand |
 |---|---|---|
 | `ui/worker.mjs` | `createTui({onAbort, options: {stdin: process.stdin}})` + `createParser`-Feed aus dem run.mjs-Kind (TTY). Headless (kein TTY): Text-Ausgabe unverändert, kein Marker | DONE (Worker-Loop bleibt; TUI übernimmt nur Anzeige; FALSIFY_UI=1 nur im TTY-Spawn) |
-| `cli/run.mjs` | `FM-EVT:`-Marker: job, state (LOADING/THINKING/TOOL_ACTIVITY/FINDINGS/ERROR/TIMEOUT), phase/phase_done (aus Scope-Phase; progress wird nie erfunden), activity (via onTool), finding (nur bei echtem Befund), files (echte Whitelist), verdict, done | DONE — Marker gated auf `FALSIFY_UI=1`; Ausgabe sonst unverändert |
+| `cli/run.mjs` | `FM-EVT:`-Marker: job, state (LOADING/THINKING/TOOL_ACTIVITY/FINDINGS/ERROR/TIMEOUT), phase/phase_done (aus Scope-Phase; progress wird nie erfunden), activity (via onTool), finding (nur bei echtem Befund), files (echte Whitelist + Dateiliste), verdict, done | DONE — Marker gated auf `FALSIFY_UI=1`; Ausgabe sonst unverändert |
 | `core/agent.mjs` | additiver `onTool`-Callback je echtem Tool-Aufruf (Tool + Datei-Arg) | DONE — ohne Callback keinerlei Verhaltensänderung |
 | `onAbort` | Job-Kind (run.mjs) echt killen (`createAbort`, PID-Verifikation via `isDead`); danach `state: ABORTED`; ohne laufenden Job schliesst Q das Fenster (`ui.finish`) | DONE |
 | `ui/start-dock.cmd` | sichtbarer Worker-Start: startet `dock-runner.ps1` (Fenster 1..3), Worker rendert die TUI | DONE — neue Datei (fehlte vorher im Repo trotz Verweisen) |

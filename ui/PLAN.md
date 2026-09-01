@@ -659,3 +659,36 @@ onTool echte Dateipfad-Extraktion, Parser-Robustheit gegen Chunk-Splits,
 Phase-Progress-Vertrag vervollstaendigen oder entfernen, Abort-Race
 absichern. Loop ist damit eroeffnet (PLAN -> ueberarbeiten -> erneut
 einreichen); Dock-Fenster idlet weiter (FEN 1 BEREIT).
+
+ID: UI-066
+TASK: SICHTBARE TOGGLE-BAR + ECHTE SCAN-DATEIEN im Dock-Fenster (User-
+Feedback "Ergebnisse, Scan-Dateien und THINKING/REASONING-Toggle muessen
+im Fenster sichtbar sein").
+STATUS: DONE
+DEPENDS_ON: UI-065 (Befund 4: files-Event nur Zaehler, nie Liste)
+VERIFY: node --test --test-force-exit --test-concurrency=1 ui/tui.test.mjs
+ui/demo-agent.test.mjs "ui/tui/*.test.mjs" tests/phase2.test.mjs
+tests/security.test.mjs (116/116 gruen, Demo UI: PASS); files-Event-Test
+(mit/ohne list, Begrenzung auf 20)
+RESULT: PASS - 2026-09-01, Commit b84e2b5:
+(1) cli/run.mjs: files-Event traegt jetzt list=FILE_WHITELIST (echte
+Dateien, nicht nur n) -> State filesList (max. 20, Ring).
+(2) Footer: sichtbare Toggle-Bar "THINKING|REASONING" (aktives Segment
+cyan+fett) statt unsichtbarer T-Taste; T wirkt weiterhin nur bei aktivem
+Job (bewusst, UI-034-Klaerung).
+(3) ReasoningView: SCAN-N-DATEIEN-Zeile mit den echten gescannten Dateien.
+(4) Idle-History: FILES n aus echtem files-Event.
+Breite Wahrheit: State bekommt filesList nur auslist-haltigen Events;
+fehlt list, bleibt der Zaehler sichtbar (Abwaertskompatibel mit
+demo-agent.mjs).
+
+ID: UI-067
+TASK: DOKU-NACHZIEHUNG fuer UI-066 (Contract + TUI-README + PLAN-Stand).
+STATUS: DONE
+DEPENDS_ON: UI-066
+VERIFY: grep files-list/Strings in WIRING.md und ui/README-tui.md
+RESULT: PASS - WIRING.md Event-Contract files Zelle + run.mjs-Zeile auf
+"list?" erweitert; ui/README-tui.md: Tasten-Tabelle (sichtbare Toggle-Bar),
+Ablauf-Schritt 3 (SCAN-N-Zeile), Event-Contract-Codeblock (list, max. 20)
+und veralteter Doku-Kopf (UI-030/034/035/038 + 053/054 sind abgenommen)
+aktualisiert.

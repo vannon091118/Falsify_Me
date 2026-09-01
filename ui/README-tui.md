@@ -5,8 +5,10 @@ Read-only-Gateway, Business-Logik unverändert).
 
 **Dokumentationsstand:** Phase 1 (visuelle Implementierung) abgeschlossen,
 Phase 2 (Worker/CLI-Verdrahtung via FM-EVT) umgesetzt — siehe `ui/PLAN.md`
-BLOCK 6. Offene manuelle Checkpoints (UI-030/034/035/038) und die sichtbare
-Selbsttest-Abnahme (UI-053/054) bleiben ausdrücklich `IN_PROGRESS`.
+BLOCK 6. Visuelle User-Checkpoints (UI-030/034/035/038) und die sichtbare
+Selbsttest-Abnahme (UI-053/054) sind abgenommen und dokumentiert
+(2026-09-01); ehrlich offen bleiben nur die ausdruecklich als User-Check
+markierten Punkte im PLAN.
 
 Die neue **visuelle Worker-Ansicht** („Visible Worker Window"): Der Benutzer
 schaut der Maschine bei der Arbeit zu. Das Fenster ist **reine Beobachtung** —
@@ -110,7 +112,7 @@ node --test --test-force-exit --test-concurrency=1 "ui/tui/*.test.mjs" ui/tui.te
 | Taste | Wirkung |
 |---|---|
 | `Q` / `q` / `STRG-C` | laufen Jobs → **ABORT ALLE Slots** (echtes Kill + PID-Verifikation → WARTE-Screen mit FEN-Status GESTOPPT); sonst (WARTE/fertig) → Fenster schliessen |
-| `T` / `t` | THINKING (Partikel-Animation) ↔ REASONING (strukturierter Status) |
+| `T` / `t` | THINKING (Partikel-Animation) ↔ REASONING (strukturierter Status); aktiver Modus ist im Footer als hervorgehobene **Toggle-Bar** sichtbar (`THINKING|REASONING`, aktives Segment cyan+fett). Wirkt nur waehrend eines laufenden Jobs |
 
 ## Ablauf
 
@@ -122,8 +124,10 @@ node --test --test-force-exit --test-concurrency=1 "ui/tui/*.test.mjs" ui/tui.te
 3. **Jobs von aussen** belegen freie Slots (max. 3, Fokus folgt dem neuesten
    Job): **1 Job** = volle Ansicht (Partikel-Animation oder REASONING-Checkliste,
    Progress-Bar determinate NUR aus echten Werten, Findings ●/!/▲ mit Puls,
-   Verdict-Box ✓ WRITE / ! PLAN / ? RESEARCH / ✕ ERROR/TIMEOUT, Footer mit
-   echten Fakten + Metriken). **2–3 Jobs** = Split-Ansicht: jedes Fenster wird
+   Verdict-Box ✓ WRITE / ! PLAN / ? RESEARCH / ✕ ERROR/TIMEOUT),
+   REASONING-Ansicht mit **SCAN-N-Zeile** der echten gescannten Dateien
+   (aus `files`-Event, max. 20), Footer mit echten Fakten + Metriken
+   inkl. sichtbarer THINKING/REASONING-Toggle-Bar). **2–3 Jobs** = Split-Ansicht: jedes Fenster wird
    ein Mini-Fenster (eingerahmt: FEN-Kopf, Phasen, Findings, Verdict,
    Mini-Partikelfeld) — alles im einen Terminal-pid.
 4. **Abort** beendet alle laufenden Kindprozesse echt (SIGTERM→SIGKILL,
@@ -177,7 +181,8 @@ Prozesses (PID).
 { t: "phase_done", phase, slot? }
 { t: "verdict", v, slot? }                       // WRITE|PLAN|RESEARCH|ERROR|TIMEOUT
 { t: "output", line, slot? }                     // nur begrenzt genutzt
-{ t: "files", n, slot? }
+{ t: "files", n, list?, slot? }             // n = Anzahl, list = echte Scan-Dateien
+                                            //   (max. 20 im State, ohne list nur Zaehler)
 { t: "done", slot? }                             // Jobende (WRITE→SUCCESS, sonst IDLE)
 { t: "focus", slot }                             // Fokus-Slot wechseln (1..3)
 ```
