@@ -172,6 +172,7 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
         jobId: s.jobId,
         scopeId: s.scopeId,
         verdict: verdict.view(s, now),
+        files: s.files,
       })),
       slotPanels: busy.map((s) => ({
         idx: s.idx,
@@ -187,6 +188,8 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
         activePhase: progress.activePhase(s),
         files: s.files,
         activity: s.activity,
+        files: s.files,
+        filesList: s.filesList,
         particles: renderField(fields[s.idx]),
       })),
       boot: bootStage,
@@ -205,6 +208,7 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
       lastEvents: focused.events.toArray().slice(-10),
       verdict: verdict.view(focused, now),
       files: focused.files,
+      filesList: focused.filesList,
       overlay: overlayFor(state),
       metrics: {
         spark: metrics.sparkline(),

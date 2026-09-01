@@ -148,6 +148,9 @@ export const apply = (state, evt, now = Date.now()) => {
     case "files": {
       const slot = slotOf(state, evt);
       slot.files = Number(evt.n) || 0;
+      // Echte Scan-Dateien (run.mjs-Whitelist) im Fenster sichtbar machen;
+      // additiv und begrenzt - ohne list bleibt alles beim alten Verhalten.
+      if (Array.isArray(evt.list)) slot.filesList = evt.list.slice(0, 20);
       refreshGlobal(state, now);
       return true;
     }

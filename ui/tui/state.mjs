@@ -92,6 +92,7 @@ const makeSlot = (idx) => ({
   phases: createPhases(),
   activity: null, // { label, tool, file } | null
   files: 0,
+  filesList: [], // echte Scan-Dateien (files-Event mit list)
   events: createRing(80),  // strukturierte Aktivitaets-Events des Slots
   output: createRing(200), // begrenzte Roh-Output-Zeilen des Slots
 });
@@ -127,6 +128,7 @@ export const createUiState = () => {
     phases: slots[0].phases,
     activity: null,
     files: 0,
+    filesList: [],
     events: slots[0].events,
     output: slots[0].output,
   };

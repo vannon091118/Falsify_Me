@@ -78,7 +78,7 @@ const historyFromSlots = (snap) =>
   (snap.slots ?? []).filter((s) => s.state !== "IDLE").map((s) => {
     const v = s.verdict?.code ? ` · ${s.verdict.code}` : "";
     return {
-      text: `FEN ${s.idx} ${s.jobId ? shortId(s.jobId) : ""} · ${slotStatus(s)}${v}`.replace(/\s+/g, " ").trim(),
+      text: `FEN ${s.idx} ${s.jobId ? shortId(s.jobId) : ""} · ${slotStatus(s)}${v}${s.files > 0 ? ` · ${s.files} DATEIEN` : ""}`.replace(/\s+/g, " ").trim(),
       color: s.state === "SUCCESS" ? "green" : s.state === "ERROR" || s.state === "TIMEOUT" ? "red" : s.state === "ABORTED" ? "yellow" : "gray",
     };
   });

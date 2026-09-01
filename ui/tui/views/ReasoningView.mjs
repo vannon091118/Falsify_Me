@@ -59,6 +59,12 @@ export default function ReasoningView({ snap, cols, rows }) {
   lines.push(h(Box, { key: "bar", width: inner },
     h(ProgressBar, { activePhase: snap.activePhase, cols: inner, now: snap.now })));
 
+  // Gescannte Dateien sichtbar machen (echte Whitelist aus dem files-Event).
+  if (Array.isArray(snap.filesList) && snap.filesList.length) {
+    lines.push(h(Text, { key: "scanH", color: "gray" }, `SCAN ${snap.filesList.length} DATEIEN`));
+    lines.push(h(Text, { key: "scan", color: "cyan" }, `  ${truncate(snap.filesList.join(", "), inner - 2, "…")}`));
+  }
+
   lines.push(h(Text, { key: "actH", color: "gray" }, "AKTIVITÄT"));
   const activity = snap.activity;
   if (activity) {

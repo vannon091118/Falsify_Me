@@ -21,7 +21,17 @@ export default function Footer({ snap, cols }) {
           : snap.state === "ABORTED" ? "GESTOPPT"
             : "–";
   const verdictNote = snap.verdict && snap.state !== "VERDICT" ? ` · VERDICT ${snap.verdict.symbol} ${snap.verdict.code}` : "";
-  const line1 = ` FINDINGS ${counts} · FILES ${String(snap.files).padStart(2, "0")} · WORKER ${worker}${verdictNote} · [Q]/[STRG-C] ABORT · [T] ANSICHT · ${snap.mode === "thinking" ? "THINKING" : "REASONING"}`;
+  // Sichtbare Toggle-Bar: aktiver Modus hervorgehoben, [T] schaltet um.
+  const modeOn = snap.mode === "thinking";
+  const toggleBar =
+    h(Text, { key: "tb", color: "gray" },
+      " ",
+      h(Text, { color: modeOn ? "cyan" : "gray", bold: modeOn }, "THINKING"),
+      h(Text, { color: "gray" }, "|"),
+      h(Text, { color: modeOn ? "gray" : "cyan", bold: !modeOn }, "REASONING"),
+      " ",
+    );
+  const line1 = ` FINDINGS ${counts} · FILES ${String(snap.files).padStart(2, "0")} · WORKER ${worker}${verdictNote} · [Q]/[STRG-C] ABORT · [T] `;
 
   const m = snap.metrics;
   const rssMb = Math.round((m.rssPeak || process.memoryUsage?.().rss || 0) / 1048576);
@@ -31,7 +41,8 @@ export default function Footer({ snap, cols }) {
     h(Text, null, "╭" + fill("─", inner) + "╮"),
     h(Box, { width: cols },
       h(Text, null, "│"),
-      h(Text, null, truncate(line1, inner, "…")),
+      h(Text, null, truncate(line1, inner - 20, "…")),
+      toggleBar,
       h(Text, null, "│"),
     ),
     h(Box, { width: cols },

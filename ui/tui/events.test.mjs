@@ -192,3 +192,20 @@ test("focusSlot: nur gueltige 1..3", () => {
   assert.equal(focusSlot(s, "2"), false, "kein String-Coercion");
   assert.equal(s.activeSlotIdx, 3);
 });
+test("files: Event mit Liste speichert echte Scan-Dateien (begrenzt auf 20)", () => {
+  const s = createUiState();
+  apply(s, { t: "job", id: "job-aa-bb", window: 1 }, t0);
+  apply(s, { t: "files", n: 3, list: ["a.js", "b.js", "c.js"] }, t0);
+  assert.equal(s.files, 3);
+  assert.deepEqual(s.slots[0].filesList, ["a.js", "b.js", "c.js"]);
+  apply(s, {
+    t: "files",
+    n: 30,
+    list: Array.from({ length: 30 }, (_, i) => `f${String(i).padStart(2, "0")}.js`),
+  }, t0);
+  assert.equal(s.slots[0].filesList.length, 20, "Liste bleibt begrenzt");
+  // Ohne list: altes Verhalten (nur Zaehler), Liste bleibt erhalten.
+  apply(s, { t: "files", n: 4 }, t0);
+  assert.equal(s.files, 4);
+  assert.equal(s.slots[0].filesList.length, 20);
+});

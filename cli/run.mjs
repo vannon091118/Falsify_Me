@@ -249,7 +249,7 @@ const phaseLabel = PHASE_LABEL[scope?.phase || job?.mode || "plan"] || "PLAN";
 uiEvt({ t: "job", id: jobId, scope: scope?.id ?? null });
 uiEvt({ t: "state", s: "LOADING" });
 uiEvt({ t: "phase", phase: phaseLabel });
-uiEvt({ t: "files", n: FILE_WHITELIST.length });
+uiEvt({ t: "files", n: FILE_WHITELIST.length, list: FILE_WHITELIST });
 
 // ── API-Key aus FALSIFY_HOME/.env oder Prozessumgebung ───────────────────────
 const apiKey = loadApiKey();
