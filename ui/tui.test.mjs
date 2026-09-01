@@ -21,7 +21,7 @@ test("plain: Event-Pipeline boot->job->state->verdict->done", async () => {
   ui.applyEvent({ t: "boot" });
   assert.equal(ui.state.state, "STARTING");
   ui.applyEvent({ t: "job", id: "job-1234-ab", scope: "scope-5678", window: 2 });
-  assert.equal(ui.state.jobId, "JOB1");
+  assert.equal(ui.state.jobId, "34AB", "shortId = unterscheidbarer Suffix, nicht Praefix");
   ui.applyEvent({ t: "state", s: "LOADING" });
   ui.applyEvent({ t: "state", s: "CLAIMING" });
   ui.applyEvent({ t: "state", s: "THINKING" });

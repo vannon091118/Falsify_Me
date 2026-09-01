@@ -76,9 +76,13 @@ test("activeSlotOf/busySlots/slotsOf Helfer", () => {
   assert.equal(globalIdle(s), false);
 });
 
-test("shortId: normalisiert und kuert", () => {
-  assert.equal(shortId("8f42a1"), "8F42");
-  assert.equal(shortId("scope-31a7-xyz"), "SCOP");
+test("shortId: normalisiert und kuert (LETZTE 4 – unterscheidbarer Suffix)", () => {
+  assert.equal(shortId("8f42a1"), "42A1");
+  assert.equal(shortId("scope-31a7-xyz"), "7XYZ");
+  // Dock-Screenshot-Befund: slice(0,4) ergab fuer JEDE Job-ID "JOB1"
+  // (gemeinsamer job--Praefix). Der Suffix hinten unterscheidet.
+  assert.equal(shortId("job-1788298970015-608z3d"), "8Z3D");
+  assert.notEqual(shortId("job-1788298970015-608z3d"), shortId("job-1788298970016-9abcde"));
   assert.equal(shortId(""), null);
   assert.equal(shortId(null), null);
 });

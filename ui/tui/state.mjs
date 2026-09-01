@@ -149,5 +149,9 @@ export const createUiState = () => {
 export const shortId = (s) => {
   if (!s) return null;
   const clean = String(s).replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-  return clean.slice(0, 4) || null;
+  // LETZTE 4 Zeichen, nicht die ersten: jede echte ID beginnt mit dem
+  // geteilten Praefix ("job-"/"scope-") -> slice(0,4) ergab fuer ALLE Jobs
+  // "JOB1" (Dock-Screenshot-Befund 2026-09-01: zwei Fenster ununterscheidbar).
+  // Der Zufalls-Suffix hinten ist der unterscheidende Teil.
+  return clean.slice(-4) || null;
 };
