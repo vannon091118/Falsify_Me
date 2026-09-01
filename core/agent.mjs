@@ -41,7 +41,7 @@ function streamFlush() {
  *   Callback je echtem Tool-Aufruf (Phase 2 UI-Events; Default: keine Wirkung)
  * @returns {Promise<{content:string, usage:object, toolRounds:number}>}
  */
-export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBase, maxTokens = 20000, reasoningEffort = "high", maxToolRounds = 14, temperature = 0.3, timeoutMs = 180000, root, whitelist = [], onTool, retryBackoffMs = 5000 } = {}) {
+export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBase, maxTokens = 20000, reasoningEffort = "high", maxToolRounds = 14, temperature = 0.3, timeoutMs = 180000, root, whitelist = [], onTool, retryBackoffMs = 1000, timeoutStagesMs = [5000, 30000, 60000] } = {}) {
   const { TOOLS, execTool } = makeTools(root, whitelist);
   const messages = [
     { role: "system", content: systemPrompt },
@@ -50,13 +50,15 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
   let toolRounds = 0;
   let emptyRetries = 0;
 
-  // ── Timeout-Eskalation (2026-09-01): Ein einzelner Round-Timeout reicht
-  // nicht — ueberlastete Provider (Netzwerk-/429-/5xx-Kaskaden, gehaengte
-  // Streams) halten den Job sonst ueber 14 Tool-Runden x 4 Versuche x
-  // timeoutMs in der Schwebe. Ein GESAMT-Zeitbudget (Deadline) beendet die
-  // Ueberlastung deterministisch mit einer ehrlichen Eskalation: kein
-  // Verdict, Job endet als ERROR (run.mjs-Catch, Exit 3).
-  const budgetMs = Math.max(timeoutMs * 3, 600000);
+  // ── Timeout-Eskalation in STUFEN (2026-09-01): ueberlastete Provider
+  // (Netzwerk-/429-/5xx-Kaskaden, gehaengte Streams) sollen nicht ewig in der
+  // Schwebe bleiben, aber auch nicht an einer einzigen langsamen Antwort
+  // scheitern. Die Leiter gibt der API erst wenig Zeit (5 s), dann mehr
+  // (30 s, 60 s) — pro Versuch eine Stufe; nach Erschoepfung eskaliert der
+  // Call deterministisch (kein Verdict, Job endet als ERROR, Exit 3).
+  // Zusaetzlich beendet ein GESAMT-Zeitbudget (Deadline) Tool-Runden-Kaskaden.
+  const sumStages = (timeoutStagesMs || []).reduce((a, b) => a + b, 0) || 60000;
+  const budgetMs = Math.max(sumStages * 3, 600000);
   const deadlineMs = Date.now() + budgetMs;
   const remaining = () => Math.max(1000, deadlineMs - Date.now());
 
@@ -68,7 +70,7 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
     return stripped || String(round?.reasoning || "").trim();
   };
 
-  const fetchRound = (body) => fetchRoundWith(body, { apiKey, apiBase, timeoutMs, deadlineMs, retryBackoffMs });
+  const fetchRound = (body) => fetchRoundWith(body, { apiKey, apiBase, timeoutMs, deadlineMs, retryBackoffMs, timeoutStagesMs });
 
   for (;;) {
     // reasoning_effort nur senden, wenn der Provider es unterstützt
@@ -175,15 +177,19 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
   }
 }
 
-async function fetchRoundWith(body, { apiKey, apiBase, timeoutMs = 180000, deadlineMs = null, retryBackoffMs = 5000 }) {
+async function fetchRoundWith(body, { apiKey, apiBase, timeoutMs = 180000, deadlineMs = null, retryBackoffMs = 1000, timeoutStagesMs = [5000, 30000, 60000] }) {
   let lastErr = null;
-  for (let attempt = 1; attempt <= 4; attempt++) {
+  const stages = Array.isArray(timeoutStagesMs) && timeoutStagesMs.length ? timeoutStagesMs : [5000, 30000, 60000];
+  const attempts = stages.length;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
     let res;
-    // Effektiver Timeout = Round-Timeout, aber nie ueber die Deadline hinaus
-    // (Eskalation: Ueberlastung darf die Deadline nicht sprengen).
-    const effTimeout = deadlineMs ? Math.min(timeoutMs, Math.max(1000, deadlineMs - Date.now())) : timeoutMs;
+    // Effektiver Timeout je STUFE (5s -> 30s -> 60s), gedeckelt auf den
+    // konfigurierten Gesamt-Timeout und die Deadline (Eskalation darf die
+    // Deadline nicht sprengen).
+    const stage = Math.min(stages[attempt - 1] ?? stages[stages.length - 1], timeoutMs);
+    const effTimeout = deadlineMs ? Math.min(stage, Math.max(1000, deadlineMs - Date.now())) : stage;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(new Error(`Überlastung (Timeout nach ${Math.round(effTimeout / 1000)}s)`)), effTimeout);
+    const timer = setTimeout(() => controller.abort(new Error(`Überlastung (Timeout nach ${Math.round(effTimeout / 1000)}s, Stufe ${attempt}/${attempts})`)), effTimeout);
     try {
       res = await fetch(`${apiBase}/chat/completions`, {
         method: "POST",
@@ -192,9 +198,9 @@ async function fetchRoundWith(body, { apiKey, apiBase, timeoutMs = 180000, deadl
         signal: controller.signal,
       });
     } catch (e) {
-      lastErr = /abort/i.test(String(e.name || e.message || "")) ? new Error(`Überlastung (Timeout nach ${Math.round(effTimeout / 1000)}s)`) : e;
-      if (attempt < 4) {
-        process.stderr.write(`⚠️ Netzwerkfehler (${lastErr.message}) – Retry ${attempt}/3 …\n`);
+      lastErr = /abort/i.test(String(e.name || e.message || "")) ? new Error(`Überlastung (Timeout nach ${Math.round(effTimeout / 1000)}s, Stufe ${attempt}/${attempts})`) : e;
+      if (attempt < attempts) {
+        process.stderr.write(`⚠️ Netzwerkfehler (${lastErr.message}) – Retry ${attempt}/${attempts - 1}, Backoff ${Math.round((retryBackoffMs * attempt) / 1000)}s …\n`);
         await sleep(retryBackoffMs * attempt);
         continue;
       }
@@ -231,7 +237,7 @@ async function fetchRoundWith(body, { apiKey, apiBase, timeoutMs = 180000, deadl
     }
     return await readStream(res);
   }
-  throw new Error(`API-Überlastung (Retries erschöpft: ${lastErr?.message || "unbekannt"})`);
+  throw new Error(`API-Überlastung (Stufen ${stages.map((s) => `${Math.round(s / 1000)}s`).join("/")} erschöpft: ${lastErr?.message || "unbekannt"})`);
 }
 
 async function readStream(res) {

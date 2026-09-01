@@ -48,6 +48,31 @@ test("Timeout-Eskalation: haengende API -> kategorisierter Ueberlastungs-Fehler"
   }
 });
 
+test("Stufenleiter: Timeout waechst pro Versuch (5s->30s->60s-Modell), letzte Stufe eskaliert", async () => {
+  const { runAgent } = await mod("../core/agent.mjs");
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (_url, opts) => new Promise((_res, reject) => {
+    opts?.signal?.addEventListener("abort", () => reject(opts.signal.reason));
+  });
+  try {
+    await assert.rejects(
+      runAgent({
+        systemPrompt: "p", userContent: "c", model: "m", apiKey: "k",
+        apiBase: "http://127.0.0.1:1",
+        timeoutStagesMs: [100, 200], retryBackoffMs: 1, maxToolRounds: 1,
+        root: ROOT, whitelist: [],
+      }),
+      (e) => {
+        const msg = String(e.message);
+        return /Stufen .* erschöpft/i.test(msg) && /Stufe 2\/2/i.test(msg);
+      },
+      "2-Stufen-Leiter: erst 100ms, dann 200ms, danach Eskalation mit Stufenangabe"
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test("Deadline-Budget: runAgent rechnet ein Gesamt-Zeitbudget ein (Eskalations-Anker)", async () => {
   const { runAgent } = await mod("../core/agent.mjs");
   const realFetch = globalThis.fetch;
