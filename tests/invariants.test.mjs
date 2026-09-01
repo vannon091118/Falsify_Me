@@ -43,38 +43,65 @@ const ALLOWED_CALLERS = new Set([
   "cli/run.mjs", "ui/worker.mjs", "cli/jobs.mjs", "cli/scope.mjs",
 ]);
 
+/** Alle *.mjs des Repos ausser tests/ + node_modules + .git (ganzer Baum). */
 function prodSources() {
   const out = [];
-  for (const dir of ["artifacts", "cli", "core", "ui"]) {
-    const base = path.join(ROOT, dir);
-    if (!fs.existsSync(base)) continue;
-    for (const f of fs.readdirSync(base, { recursive: true })) {
-      const p = String(f);
-      if (p.endsWith(".mjs")) out.push(path.join(dir, p));
+  const walk = (dir) => {
+    for (const f of fs.readdirSync(dir)) {
+      if (f === "node_modules" || f === ".git" || f === "tests") continue;
+      const p = path.join(dir, f);
+      const st = fs.statSync(p);
+      if (st.isDirectory()) walk(p);
+      else if (f.endsWith(".mjs")) {
+        out.push(path.relative(ROOT, p).replace(/\\/g, "/"));
+      }
     }
-  }
-  return out;
+  };
+  walk(ROOT);
+  return out.sort();
 }
 
-test("STATISCH: Writer nur aus Heimatmodulen + run/worker (kein zweiter Schreibpfad)", async () => {
+/**
+ * Entfernt Kommentare + String-Literale, BEVOR nach Writer-Aufrufen gesucht
+ * wird: eine Erwähnung in Doku-Kommentaren oder Strings ist KEIN Aufruf
+ * (der alte Scan war dafür blind — gegenteilig: false positive).
+ */
+function stripCommentsAndStrings(src) {
+  return String(src)
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n").map((l) => l.replace(/\/\/.*$/, "")).join("\n");
+}
+
+test("STATISCH: Writer nur aus Heimatmodulen + Orchestrierern (GANZER Baum, Kommentar-/String-bereinigt)", async () => {
   const violations = [];
   for (const file of prodSources()) {
     const abs = path.join(ROOT, file);
-    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) continue;
-    const src = fs.readFileSync(abs, "utf8");
+    const src = stripCommentsAndStrings(fs.readFileSync(abs, "utf8"));
     for (const w of WRITERS) {
-      if (new RegExp(w).test(src)) {
-        const base = file.split(path.sep)[0];
-        const key = file.replace(/\\/g, "/");
-        if (!ALLOWED_CALLERS.has(key)) {
-          violations.push(`${key} ruft Writer ${w.replace("\\(", "()")} auf`);
-        }
-        // Auch strukturell: „import … updateScopeAfterReview“ außerhalb run.mjs
-        // wäre ein Hinweis (Import steht auch in jobs.mjs nicht).
+      // Qualifier-empfindlich: auch `jobs.jobDone(...)` (Namespace-Import)
+      // ist ein Aufruf — der alte Scan war für Mitglied-Aufrufe blind.
+      if (new RegExp(`(?:[\\w$]+\\.\\s*)*\\b${w}`).test(src) && !ALLOWED_CALLERS.has(file)) {
+        violations.push(`${file} ruft Writer ${w.replace("\\(", "()")} auf`);
       }
     }
   }
   assert.deepEqual(violations, []);
+});
+
+test("STATISCH: Der Scan-Mechanismus erkennt neue Aufrufer selbst (Selbstzertifizierung)", () => {
+  // Fixture-Lauf: jobToRunning-Aufruf bleibt sichtbar; Erwähnungen in
+  // Kommentar, Block-Kommentar und String zählen NICHT als Aufruf.
+  const src = stripCommentsAndStrings(
+    "// jobDone(db, x);\n/* jobDone(db, x); */\nconst s = 'claimNextJob(db)';\n" +
+      "jobToRunning(db, id, 1);\njobs.jobDone(db);"
+  );
+  assert.match(src, /jobToRunning\(/);
+  assert.doesNotMatch(src, /claimNextJob\(/);
+  // Mitglied-Aufruf (jobs.jobDone) MUSS entdeckt werden — genau die Lücke,
+  // über die ein neuer Aufrufer bisher unbemerkt schreiben konnte:
+  assert.match(src, /(?:[\w$]+\.\s*)*\bjobDone\(/);
 });
 
 test("DYNAMISCH: konsistenter Zustand meldet keine Verstöße", async () => {
@@ -157,6 +184,120 @@ test("UNBEKANNT bewegt die Scope-Phase nicht (nur echte Verdicts ändern Zustand
     assert.equal(getScope(db, s.id).phase, "research");
     updateScopeAfterReview(db, s.id, null, "Kein Verdict erkannt", null);
     assert.equal(getScope(db, s.id).phase, "research", "UNBEKANNT/leer darf die Phase nicht zurücksetzen");
+    closeDb();
+  } finally {
+    process.env.FALSIFY_HOME = savedHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("DYNAMISCH: Direkt-Run (Fenster 0) ist kein Orphan, wenn er lebt (Asymmetrie-Fix)", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-inv-"));
+  process.env.FALSIFY_HOME = home;
+  try {
+    const { openDb, closeDb } = await mod("artifacts/db.mjs");
+    const { createJob, registerWorker, heartbeatWorker } = await mod("artifacts/jobs.mjs");
+    const { checkQueueConsistency } = await mod("artifacts/invariants.mjs");
+    const db = openDb();
+    const j = createJob(db, { scopeId: null, payload: "P", root: ROOT, files: "a.js", mode: "plan", status: "RUNNING" });
+    // Fenster-0-Waisen ohne Liveness: Orphan.
+    let q = checkQueueConsistency(db);
+    assert.match(q.violations.join("\n"), /RUNNING, aber Fenster 0 hat keinen lebenden Worker/);
+    // Direkt-Run registriert sich selbst (startet den Prozess) + Heartbeat:
+    assert.equal(checkQueueConsistency(db).ok, false);
+    registerWorker(db, 0, process.pid);
+    heartbeatWorker(db, 0);
+    const live = checkQueueConsistency(db);
+    assert.deepEqual(
+      live.violations.filter((v) => /Fenster 0/.test(v)),
+      [],
+      "lebender Direkt-Run ist kein Orphan"
+    );
+    closeDb();
+  } finally {
+    process.env.FALSIFY_HOME = savedHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("DYNAMISCH: reapStaleJobs raeumt gecrashte Fenster-0-Waisen auf (Direkt-Run-Recovery)", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-inv-"));
+  process.env.FALSIFY_HOME = home;
+  try {
+    const { openDb, closeDb } = await mod("artifacts/db.mjs");
+    const { createJob, registerWorker } = await mod("artifacts/jobs.mjs");
+    const { reapStaleJobs } = await mod("artifacts/jobs.mjs");
+    const db = openDb();
+    const j = createJob(db, { scopeId: null, payload: "P", root: ROOT, files: "a.js", mode: "plan", status: "RUNNING" });
+    registerWorker(db, 0, 9_999_999); // toter Prozess → Herzschlag-„Zeuge" tot
+    const reaped = reapStaleJobs(db, 3);
+    assert.ok(reaped.includes(j), `Fenster-0-Waise geschlossen (${reaped.join(",")})`);
+    const row = db.prepare("SELECT status FROM jobs WHERE id = ?").get(j);
+    assert.match(String(row.status), /^ERROR Worker-Abbruch \(Recovery\)/);
+    closeDb();
+  } finally {
+    process.env.FALSIFY_HOME = savedHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("DYNAMISCH: neue Checker-Blindstellen sind geschlossen (Phase, hardened-ohne-Finding, Status)", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-inv-"));
+  process.env.FALSIFY_HOME = home;
+  try {
+    const { openDb, closeDb } = await mod("artifacts/db.mjs");
+    const { createScope, updateScopeAfterReview, addFinding } = await mod("artifacts/scopes.mjs");
+    const { createJob, jobDone } = await mod("artifacts/jobs.mjs");
+    const { checkQueueConsistency } = await mod("artifacts/invariants.mjs");
+    const db = openDb();
+
+    // (a) Phase manipuliert: letztes Finding PLAN, aber phase=write.
+    const s1 = createScope(db, "T1");
+    const j1 = createJob(db, { scopeId: s1.id, payload: "P", root: ROOT, files: "a.js", mode: "plan" });
+    updateScopeAfterReview(db, s1.id, "PLAN", "Lücken", null);
+    addFinding(db, { scopeId: s1.id, jobId: j1, round: 1, mode: "plan", befund: "Lücken", content: "x", verdict: "PLAN" });
+    jobDone(db, j1, "PLAN", null);
+    db.prepare("UPDATE scopes SET phase = 'write' WHERE id = ?").run(s1.id);
+
+    // (b) hardened ohne EINZIGES Finding.
+    const s2 = createScope(db, "T2");
+    db.prepare("UPDATE scopes SET status = 'hardened' WHERE id = ?").run(s2.id);
+
+    // (c) status 'DONE WRITE', aber verdict PLAN.
+    const j3 = createJob(db, { scopeId: null, payload: "P", root: ROOT, files: "a.js", mode: "plan" });
+    jobDone(db, j3, "WRITE", null);
+    db.prepare("UPDATE jobs SET verdict = 'PLAN' WHERE id = ?").run(j3);
+
+    const joined = checkQueueConsistency(db).violations.join("\n");
+    assert.match(joined, /phase=write, aber letztes Finding-Verdict=PLAN/, "Phase-vs-Finding-Blindstelle");
+    assert.match(joined, /status=hardened, aber kein einziges Finding/, "hardened-ohne-Finding-Blindstelle");
+    assert.match(joined, /status=DONE WRITE, aber verdict=PLAN/, "DONE-Status-vs-verdict-Blindstelle");
+
+    // (d) 'DONE UNBEKANNT' mit verdict NULL ist konsistent (kein Fake-Befund).
+    const j4 = createJob(db, { scopeId: null, payload: "P", root: ROOT, files: "a.js", mode: "plan" });
+    jobDone(db, j4, null, null);
+    const q4 = checkQueueConsistency(db);
+    assert.equal(q4.violations.filter((v) => v.includes(j4)).length, 0);
+    closeDb();
+  } finally {
+    process.env.FALSIFY_HOME = savedHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("DYNAMISCH: enforceQueueConsistency wirft bei Verletzung, schweigt bei Konsistenz", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-inv-"));
+  process.env.FALSIFY_HOME = home;
+  try {
+    const { openDb, closeDb } = await mod("artifacts/db.mjs");
+    const { createJob, jobDone } = await mod("artifacts/jobs.mjs");
+    const { enforceQueueConsistency } = await mod("artifacts/invariants.mjs");
+    const db = openDb();
+    const j = createJob(db, { scopeId: null, payload: "P", root: ROOT, files: "a.js", mode: "plan" });
+    jobDone(db, j, "WRITE", null);
+    enforceQueueConsistency(db); // konsistent → kein Wurf
+    db.prepare("UPDATE jobs SET verdict = 'PLAN' WHERE id = ?").run(j);
+    assert.throws(() => enforceQueueConsistency(db), /Zustandsmodell inkonsistent/);
     closeDb();
   } finally {
     process.env.FALSIFY_HOME = savedHome;

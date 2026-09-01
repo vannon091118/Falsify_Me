@@ -73,7 +73,13 @@ test("run.mjs: FM-EVT-Marker NUR mit FALSIFY_UI=1 (Ausgabe sonst unveraendert)",
   assert.match(ui.stdout, /FM-EVT: \{"t":"job","id":"/);
   assert.match(ui.stdout, /"t":"state","s":"ERROR"/);
   assert.match(ui.stdout, /"t":"phase","phase":"PLAN"/);
-  assert.match(ui.stdout, /"t":"files","n":2/);
+  // Self-Review-Regel (UI-097): der Lauf mit cwd=Repo ergänzt die
+  // Prüf-Kernkomponenten in die Whitelist — der Zähler ist echt, nicht
+  // hartkodiert 2, und der Prüfmechanismus (Evil-Twin-Gate, Prompt-Daten)
+  // ist im Marker sichtbar (Regel 1: kein blinder Bereich).
+  assert.match(ui.stdout, /"t":"files","n":\d+/);
+  assert.match(ui.stdout, /"core\/twin\.mjs"/);
+  assert.match(ui.stdout, /"core\/prompt-text\/system-eviltwin-de\.md"/);
   assert.match(ui.stderr, /FEHLER: Kein API-Key gefunden/, "menschlicher Text bleibt");
 });
 

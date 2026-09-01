@@ -187,7 +187,7 @@ oder:         start "FalsifyMe-TUI" cmd /k node ui\tui-demo.mjs %*
 |---|---|
 | `tui/parser.mjs` | Chunk→Zeilen→Events (`FM-EVT:`), ANSI-Strip |
 | `core/tools.mjs` | read-only Tool-Set (list_dir/read_file/glob), Whitelist-Zwang |
-| `core/prompt.mjs` | System-/User-Prompt-Bau, HEADER-/Artefakt-Einspielung (pure) |
+| `core/prompt.mjs` | Prompt-Bau + Loader; System-Prompt-Text als DATEN in `core/prompt-text/*.md` (Root-Cause-Fix: keine Template-Literale für Text) |
 | `core/selfreview.mjs` | Self-Review-Scope-Regel: eigenes Checkout erkennen + Kern-Whitelist ergänzen (pure, read-only) |
 | `artifacts/invariants.mjs` | Zustandsmodell-Invariante: checkQueueConsistency (read-only, Regel 3) |
 | `core/twin.mjs` | Unabhängige Gegenprüfung (Evil Twin): runTwinCheck/parseTwinVerdict/extractClaims, Fail-closed (Regel 6) |
@@ -301,6 +301,10 @@ node --test tests/datamodel.test.mjs    # Migration, Intake-Felder, atomare
 node --test tests/twin.test.mjs         # extractClaims, parseTwinVerdict (strenge
                                         # Lesart), Kontext-Trennung, Fail-closed,
                                         # evil-twin-Welle in findings.wave
+
+# Prompt-Texte als Daten (Root-Cause-Fix):
+node --test tests/prompt.test.mjs       # vier System-Prompts laden + Marker,
+                                        # buildUserContent-Diff-Fences, fail-fast
 ```
 
 ## 9. OFFENE UND AUFGESCHOBENE TASKS
@@ -504,9 +508,11 @@ Schema-Version 3 (Migration in artifacts/db.mjs, ALTER-only):
 - Self-Review-Regel (UI-097, „kein blinder Bereich"): `core/selfreview.mjs`
   erkennt ein eigenes Checkout unter `--root` über die Marker
   artifacts/db.mjs + core/tools.mjs + cli/run.mjs und ergänzt die
-  Prüf-Kernkomponenten (SELF_REVIEW_CORE) automatisch in die Whitelist
-  (Union, nur existierende Dateien) – an beiden Stellen (submit + Job-Lauf).
-  Fremdprojekte nie erweitert.
+  Prüf-Kernkomponenten (SELF_REVIEW_CORE: Queue-Wahrheit, Prüf-Pipeline
+  INKL. Evil-Twin-Gate core/twin.mjs und Prompt-Daten
+  core/prompt-text/system-*.md, Worker, Vertrags-Doku) automatisch in die
+  Whitelist (Union, nur existierende Dateien) – an beiden Stellen (submit +
+  Job-Lauf). Fremdprojekte nie erweitert.
 - Challenge-Evidenz semantisch (UI-098/UI-102, Regel 2): `hasChallengeEvidence`
   in core/verdict.mjs verlangt je Versuch (MEHRZEILIGES Bündel) eine
   WIDERLEGUNG mit verifizierter Evidenz: REFUTATION-Vokabular (Bestätigungen
@@ -517,18 +523,31 @@ Schema-Version 3 (Migration in artifacts/db.mjs, ALTER-only):
   Fantasie-Zeile nicht. Selbst-Review deckt ALLE Einstiege ab (Direkt-Run,
   --job-id, --submit) und die Kernliste enthält selfreview+invariants
   (UI-101).
-- Zustandsmodell-Invariante (UI-099, Regel 3): `artifacts/invariants.mjs`
-  (`checkQueueConsistency`, read-only) prüft abgeleitete Zustände gegen
-  ihre Quelldaten (hardened/Conflicts, last_gap/Befund, Orphan-RUNNING,
-  jobs- vs. findings-Verdict, Findings ohne Scope) — integriert in
-  `falsify doctor`. Der Single-Writer-Anspruch wird statisch als
-  Regressionstest erzwungen (tests/invariants.test.mjs; Writer nur aus
-  jobs.mjs/scopes.mjs + run.mjs/worker.mjs). `verdictToPhase` liefert für
-  ASK/UNBEKANNT null: nur echte Verdicts bewegen die Scope-Phase.
+- Zustandsmodell-Invariante (UI-099/UI-106, Regel 3, ERZWUNGEN):
+  `artifacts/invariants.mjs` `checkQueueConsistency` (read-only) prüft
+  abgeleitete Zustände gegen ihre Quelldaten — zusätzlich zu hardened/
+  Conflicts, GAP/Befund, Orphan-RUNNING, jobs- vs. findings-Verdict jetzt
+  auch: hardened-OHNE-Finding, Phase vs. letztes Finding-Verdict, DONE-
+  Status vs. jobs.verdict (inkl. UNBEKANNT-Rand, vorher Blindstellen),
+  Findings ohne Scope. `enforceQueueConsistency` (wirft) läuft im
+  BETRIEBSLOOP: submit (recovery-then-enforce), nach jedem Review-Commit
+  (fail-closed Exit 3), nach jedem Worker-Claim (Job wird nicht
+  verarbeitet). Die Review-Persistenz in cli/run.mjs ist EINE Transaktion
+  (BEGIN IMMEDIATE … COMMIT) – kein Beobachter sieht Zwischenzustände.
+  Direkt-Runs (`falsify run --job-id`, Fenster 0) registrieren sich selbst
+  als Fenster-0-Worker mit Heartbeat (Orphan-Check + reapStaleJobs decken
+  Fenster 0 mit — Asymmetrie-Fix). Der statische Writer-Scan deckt den
+  GANZEN Baum, strippt Kommentare/Strings und erkennt auch
+  Mitglied-Aufrufe (`jobs.jobDone(...)`) — Selbstzertifizierung im Test.
+  `verdictToPhase` liefert für ASK/UNBEKANNT null: nur echte Verdicts
+  bewegen die Scope-Phase.
 - list_dir-Sichtbarkeit (UI-100, Regel 4): NUR Whitelist-Dateien + deren
   Ordnervorfahren sind sichtbar (minimaler Baum); die Namen nicht
   freigegebener Dateien/Ordner leaken nicht (read_file/glob waren schon
   hart; list_dir zeigte vorher alle Einträge des freigegebenen Ordners).
+  Rand: OHNE `--files` (Direkt-Run) ist der ganze Root Zugriffsrahmen
+  (kein Whitelist-Vertrag) — die CLI sagt es ehrlich statt still
+  auszuweiten (`KEIN --files → ganzer Root ist Zugriffsrahmen`).
 - Strukturelle Kohärenz (UI-103, Regel 5): `checkFeasibility` erkennt harte
   strukturelle Widersprüche deterministisch VOR dem Modell: Diff berührt
   Dateien außerhalb der Whitelist („ändert, was es nicht ändern darf") und

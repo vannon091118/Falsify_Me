@@ -29,6 +29,7 @@ import {
   workerPid, isWorkerAlive, listWorkers, listJobs,
   isAbortRequested, clearJobAbort,
 } from "../artifacts/jobs.mjs";
+import { enforceQueueConsistency } from "../artifacts/invariants.mjs";
 // ── Phase 2: Terminal-UI im Worker-Fenster ───────────────────────────────────
 import { createTui } from "./tui.mjs";
 import { createParser } from "./tui/parser.mjs";
@@ -322,6 +323,18 @@ async function main() {
       continue;
     }
     if (!job) { await sleep(1000); continue; }
+    // Regel-3-Enforcement (claim): eine inkonsistente Basis wird NICHT
+    // weiterverarbeitet (fail-closed) — erst falsify doctor. Der Claim selbst
+    // ist atomar (BEGIN IMMEDIATE), alle Review-Commits sind atomar, ein
+    // legitimer Zustand schlaegt hier nie an.
+    try {
+      enforceQueueConsistency(db);
+    } catch (e) {
+      dlog(`Konsistenz-Verletzung vor Verarbeitung: ${e.message.split("\n")[0]}`);
+      say(`✖ Zustandsmodell inkonsistent – Job wird NICHT verarbeitet (falsify doctor).`);
+      await sleep(5000);
+      continue;
+    }
 
     // Scope-Affinität setzt claimNextJob ATOMAR in der Claim-Transaktion
     // (E2E-Befund 5) – hier kein separater Schreibvorgang mehr.

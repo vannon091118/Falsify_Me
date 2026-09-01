@@ -119,6 +119,10 @@ Im Dock erscheint die Phase als `VERIFYING`.
   Prompt justieren; er wirkt als Fallback gegen Scope-Drift. Die DB wird
   dabei nicht geleert.
 - Berechtigungen: Tools sind read-only, Root-Grenzen werden durchgesetzt.
+- Whitelist-Vertrag (`--files` bei Einreichung): nicht freigegebene Daten
+  sind unsichtbar (auch Namen). Ausnahme, ehrlich benannt: ein Direkt-Run
+  ohne `--files` hat keinen Whitelist-Vertrag — der ganze Root ist
+  Zugriffsrahmen (das sagt die CLI beim Start dazu).
 - Cross-Scope- oder Kontext-Mixing gibt es nicht.
 
 ---

@@ -25,7 +25,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDb, closeDb, falsifyHome } from "../artifacts/db.mjs";
-import { createJob, getJob, jobFilesList, jobDone, jobToRunning } from "../artifacts/jobs.mjs";
+import { createJob, getJob, jobFilesList, jobDone, jobToRunning, registerWorker, heartbeatWorker, reapStaleJobs } from "../artifacts/jobs.mjs";
+import { enforceQueueConsistency } from "../artifacts/invariants.mjs";
 import { getScope, updateScopeAfterReview, addFinding, getFindings, nextRound } from "../artifacts/scopes.mjs";
 import { loadApiKey, keyEnvFile, keyNames } from "../core/keys.mjs";
 import { loadConfig } from "../core/config.mjs";
@@ -216,6 +217,19 @@ if (submitMode) {
   console.log(`Dateien (Whitelist): ${filesList.join(", ")}`);
   console.log(`Status: SQLite (falsify status ${id})   ·   Protokoll: falsify log ${id}`);
   console.log(`Ein Worker-Fenster (max. 3, FALSIFY_HOME=${falsifyHome()}) verarbeitet den Job live.`);
+
+  // ── Regel-3-Enforcement (submit): erst Recovery (Waisen schliessen), dann
+  //     Konsistenz erzwingen — eine kaputte Basis darf keine neuen Jobs
+  //     annehmen („Regel 3 wird ERZWUNGEN" gilt jetzt auch im Betriebsloop).
+  try {
+    reapStaleJobs(db, 3);
+    enforceQueueConsistency(db);
+  } catch (e) {
+    console.error(red(`FEHLER: Zustandsmodell inkonsistent – ` +
+      `Erst falsify doctor ausführen (${String(e.message).split("\n")[0].slice(0, 200)})`));
+    closeDb();
+    process.exit(2);
+  }
   closeDb();
   process.exit(0);
 }
@@ -238,6 +252,20 @@ if (jobId) {
     process.exit(2);
   }
   if (job.status === "QUEUED") jobToRunning(db, jobId, null);
+  // Direkt-Run-Liveness (Regel-3-Rig, Asymmetrie-Fix): Jobs ohne Fenster
+  // (falsify run --job-id, window_idx NULL) registrieren sich selbst als
+  // Fenster-0-Worker mit Heartbeat. Ein lebender Direkt-Lauf ist damit KEIN
+  // Orphan (checkQueueConsistency) und ein gecrashter wird von reapStaleJobs
+  // aufgeräumt — gleiche Liveness-Semantik wie Worker-Fenster 1..3. Der
+  // Prozess-Tod ent-registriert effektiv (isProcessAlive/pid).
+  if (!job.window_idx) {
+    try {
+      registerWorker(db, 0, process.pid);
+      heartbeatWorker(db, 0);
+      const hb = setInterval(() => { try { heartbeatWorker(db, 0); } catch { /* egal */ } }, 5000);
+      hb.unref();
+    } catch { /* egal: ohne Liveness läuft der Direkt-Run trotzdem (nur ohne Orphan-Schutz) */ }
+  }
   if (job.scope_id) {
     scope = getScope(db, job.scope_id);
     if (!scope) {
@@ -332,6 +360,11 @@ async function main() {
   console.log(dim(`  Modell : ${model}`));
   console.log(dim(`  Provider: ${CFG.provider} (${CFG.apiBase})`));
   console.log(dim(`  Root   : ${ROOT}  (Agent-Datenzugriff)`));
+  if (!submitMode && !jobId && FILE_WHITELIST.length === 0) {
+    // Direkt-Run ohne --files: Zugriffsrahmen ist der ganze Root — KEIN
+    // Whitelist-Vertrag (Regel 4 gilt nur, wenn es eine Whitelist gibt).
+    console.log(dim("  Zugriff: KEIN --files → ganzer Root ist Zugriffsrahmen (kein Whitelist-Vertrag)"));
+  }
   if (scope) {
     console.log(dim(`  Scope  : ${scope.id}`));
     console.log(dim(`  Phase  : ${scope.phase}  (${scope.phase === "plan" ? "PLAN-Prüfung – Init" : scope.phase === "research" ? "RESEARCH – Datenprüfung" : "WRITE-Prüfung – Review der Umsetzung"})`));
@@ -464,38 +497,60 @@ async function main() {
   if (befund) uiEvt({ t: "finding", severity: findingSeverity(verdict) });
   uiEvt({ t: "phase_done", phase: phaseLabel });
 
-  // ── Persistenz: Job + Scope-Artefakt aktualisieren (FalsifyMe, nur eigene DB) ──
-  if (scope) {
-    updateScopeAfterReview(db, scope.id, verdict, befund, subPrompt);
-    addFinding(db, {
-      scopeId: scope.id,
-      jobId,
-      round: nextRound(db, scope.id),
-      wave: job?.wave || "scan",
-      mode: job?.mode || scope.phase,
-      befund,
-      content: result.content,
-      verdict: verdict || "UNBEKANNT",
-    });
-    // Gegenprüfung als eigenes Finding mit Welle 'evil-twin' – Letztes
-    // Finding trägt IMMER das final geltende Urteil (Invariante 4 bleibt
-    // gültig: jobs.verdict == letztes findings.verdict).
-    if (twin) {
-      addFinding(db, {
-        scopeId: scope.id,
-        jobId,
-        round: nextRound(db, scope.id),
-        wave: "evil-twin",
-        mode: job?.mode || scope.phase,
-        befund: twin.befund
-          ? `GEGENPRÜFUNG ${twin.verdict}: ${twin.befund}`
-          : `GEGENPRÜFUNG ${twin.verdict}${twin.error ? ` (${twin.error})` : ""}`,
-        content: twin.content || "",
-        verdict: verdict || "UNBEKANNT",
-      });
+  // ── Persistenz: Job + Scope-Artefakt aktualisieren (FalsifyMe, nur eigene DB).
+  //     Regel-3-Rig: EIN Review-Write = EINE Transaktion (BEGIN IMMEDIATE …
+  //     COMMIT) — kein Beobachter (anderer Worker, doctor, Checker) sieht je
+  //     einen Zwischenzustand, und ein Teil-Schreiben kann keine zweite Wahrheit
+  //     hinterlassen. Nach dem Commit erzwingt checkQueueConsistency die
+  //     Konsistenz (fail-closed: Verletzung ⇒ kein Verdict-Print, Exit 3).
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      if (scope) {
+        updateScopeAfterReview(db, scope.id, verdict, befund, subPrompt);
+        addFinding(db, {
+          scopeId: scope.id,
+          jobId,
+          round: nextRound(db, scope.id),
+          wave: job?.wave || "scan",
+          mode: job?.mode || scope.phase,
+          befund,
+          content: result.content,
+          verdict: verdict || "UNBEKANNT",
+        });
+        // Gegenprüfung als eigenes Finding mit Welle 'evil-twin' – Letztes
+        // Finding trägt IMMER das final geltende Urteil (Invariante 4 bleibt
+        // gültig: jobs.verdict == letztes findings.verdict).
+        if (twin) {
+          addFinding(db, {
+            scopeId: scope.id,
+            jobId,
+            round: nextRound(db, scope.id),
+            wave: "evil-twin",
+            mode: job?.mode || scope.phase,
+            befund: twin.befund
+              ? `GEGENPRÜFUNG ${twin.verdict}: ${twin.befund}`
+              : `GEGENPRÜFUNG ${twin.verdict}${twin.error ? ` (${twin.error})` : ""}`,
+            content: twin.content || "",
+            verdict: verdict || "UNBEKANNT",
+          });
+        }
+      }
+      jobDone(db, jobId, verdict, null);
+      db.exec("COMMIT");
+    } catch (e) {
+      try { db.exec("ROLLBACK"); } catch { /* egal */ }
+      throw e;
     }
+    enforceQueueConsistency(db);
+  } catch (e) {
+    console.error(red(`✖ Persistenz-/Konsistenzfehler: ${e.message}`));
+    try { jobDone(db, jobId, null, `Review nicht persistent (${String(e.message).split("\n")[0].slice(0, 120)})`); } catch { /* egal */ }
+    uiEvt({ t: "state", s: "ERROR" });
+    closeDb();
+    process.exitCode = 3;
+    return;
   }
-  jobDone(db, jobId, verdict, null);
 
   if (subPrompt) console.log(dim(`SUBPROMPT (gespeichert): ${subPrompt.split("\n")[0]}`));
 

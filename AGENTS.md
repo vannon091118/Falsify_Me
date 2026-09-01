@@ -34,16 +34,22 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   `claimNextJob`/`addFinding`/`updateScopeAfterReview`/`registerWorker`); nur
   `core/ratelimit.mjs` schreibt direkt, aber in eine eigene Tabelle. Es gibt
   **keine zweite Queue** und keinen zweiten Verdict-Pfad. Regel 3 wird
-  ERZWUNGEN: `artifacts/invariants.mjs checkQueueConsistency` (read-only,
-  in `falsify doctor` integriert) prüft abgeleitete Zustände (hardened/
-  Konflikte, GAP/Befund, Orphan-RUNNING, jobs- vs. findings-Verdict), und
-  `tests/invariants.test.mjs` scannt das Repo statisch: ALLE Zustands-Writer
-  (`createJob`/`jobToRunning`/`jobDone`/`setJobAbort`/`clearJobAbort`/
-  `claimNextJob`/`reapStaleJobs`/`registerWorker`/`unregisterWorker`/
-  `heartbeatWorker`/`setWorkerScope`/`createScope`/`updateScopeAfterReview`/
-  `markScopeDone`/`addFinding`) dürfen nur aus ihren Heimatmodulen +
-  `cli/run.mjs` + `ui/worker.mjs` + `cli/jobs.mjs` (abort) + `cli/scope.mjs`
-  (new) aufgerufen werden.
+  ERZWUNGEN (Enforcement im Betriebsloop, nicht nur doctor):
+  `enforceQueueConsistency` läuft nach jedem Review-Commit (cli/run.mjs,
+  fail-closed Exit 3), nach jedem Submit (recovery-then-enforce) und nach
+  jedem Worker-Claim (Job wird NICHT verarbeitet). Review-Commits sind EINE
+  Transaktion (BEGIN IMMEDIATE … COMMIT) — kein Beobachter sieht je einen
+  Zwischenzustand. `checkQueueConsistency` (= doctor-Variante, read-only)
+  prüft abgeleitete Zustände: hardened/Konflikte, hardened-ohne-Finding,
+  GAP/Befund, Phase vs. letztes Finding-Verdict, DONE-Status vs. jobs.verdict
+  (inkl. UNBEKANNT), Orphan-RUNNING (Fenster 0 = Direkt-Run mit eigener
+  Liveness), jobs- vs. findings-Verdict. `tests/invariants.test.mjs` scannt
+  den GANZEN Repo-Baum statisch (Kommentar-/String-bereinigt,
+  qualifier-aware — auch `jobs.jobDone(...)` wird gefunden; Selbstzertifiz.),
+  und `reapStaleJobs` räumt seit dem Rig auch Fenster-0-Waisen (gecrashte
+  `falsify run --job-id`) auf — Direkt-Runs registrieren sich selbst als
+  Fenster-0-Worker mit Heartbeat (sonst galt jeder legitime Direkt-Lauf als
+  Orphan).
 - `falsify wait` hat **keinen festen Timeout** (Laufzeiten sind
   anbieterabhängig): `--ping` pollt den Job und übergibt die Auswertung an den
   Coder (der Agent entscheidet selbst über Abbruch via `--abort`/`falsify
@@ -106,7 +112,11 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   WRITE) enthalten (E2E-Befund 3) — die Hinweise sind Kontext, kein Urteil.
 - list_dir-Vertrag (Regel 4): zeigt NUR Whitelist-Dateien + Ordnervorfahren
   freigegebener Dateien — Namen nicht freigegebener Daten sind unsichtbar
-  (core/tools.mjs; Regressionstest in tests/security.test.mjs).
+  (core/tools.mjs; Regressionstest in tests/security.test.mjs). Ohne
+  `--files` (Direkt-Run ohne Submit) gibt es keinen Whitelist-Vertrag: der
+  GANZE Root ist Zugriffsrahmen (Tools erlauben alles unter Root); die CLI
+  sagt das ehrlich („KEIN --files → ganzer Root ist Zugriffsrahmen") —
+  kein stiller Sondermodus.
 - Strukturelle Kohärenz (Regel 5, UI-103): feasibility-Blocker sind NICHT
   nur Kontext — ein WRITE wird deterministisch auf PLAN runtergestuft,
   wenn der Diff Dateien außerhalb der Whitelist berührt oder Plan und
@@ -123,11 +133,13 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   bekommt wave='evil-twin' und trägt als LETZTES Finding das final geltende
   Urteil (Invariante 4 unverändert gültig). Zweiter enforceRateLimit-Call
   (noWait=false); TUI-State VERIFYING.
-- Self-Review-Regel (UI-097/UI-101): `core/selfreview.mjs` ergänzt bei
-  erkannter Selbstprüfung (Marker artifacts/db.mjs + core/tools.mjs +
+- Self-Review-Regel (UI-097/UI-101, nachgeschärft 2026-09-01): `core/selfreview.mjs`
+  ergänzt bei erkannter Selbstprüfung (Marker artifacts/db.mjs + core/tools.mjs +
   cli/run.mjs unter --root) die Kern-WHITELIST automatisch
-  (SELF_REVIEW_CORE inkl. selfreview.mjs + invariants.mjs, nur existierende
-  Dateien, Union, Meldung „Selbstprüfung erkannt") — an ALLEN Einstiegen
+  (SELF_REVIEW_CORE inkl. selfreview.mjs + invariants.mjs + twin.mjs +
+  core/prompt-text/system-*.md — der Prüfmechanismus inkl. Evil-Twin-Gate und
+  Prompt-Daten darf NIE unsichtbar bleiben; nur existierende Dateien,
+  Union, Meldung „Selbstprüfung erkannt") — an ALLEN Einstiegen
   (submit, Job-Lauf auf Job-Root, Direkt-Run); Fremdprojekte nie.
   Install-Tools (uninstall, bootstrap/*) sind bewusst nicht im Kern
   (kein Prüfmechanismus).
@@ -241,10 +253,19 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
 - Kernsuite: `node --test tests/onboard.test.mjs tests/bootstrap.test.mjs
   tests/security.test.mjs tests/phase2.test.mjs tests/queue.test.mjs
   tests/feasibility.test.mjs tests/datamodel.test.mjs tests/invariants.test.mjs
-  tests/selfreview.test.mjs` (Stand 2026-09-01; deckt die fünf Regeln ab:
-  Queue eine Wahrheit, list_dir-Namen-Vertrag, WRITE-Challenge-Evidenz,
-  Self-Review-Scope, strukturelle Kohärenz). `tests/settings.test.mjs` läuft
-  separat.
+  tests/selfreview.test.mjs tests/twin.test.mjs tests/prompt.test.mjs`
+  (Stand 2026-09-01; deckt die Regeln ab: Queue eine Wahrheit,
+  list_dir-Namen-Vertrag, WRITE-Challenge-Evidenz, Self-Review-Scope,
+  strukturelle Kohärenz, Evil-Twin-Gegenprüfung, Prompt-Daten).
+  `tests/settings.test.mjs` läuft separat.
+- Prompt-Texte sind DATEN, kein Code: Die System-Prompts leben in
+  `core/prompt-text/*.md` (Loader in `core/prompt.mjs`, `promptText()`).
+  Template-Literale zerbrechen bei Backticks/`${}` im Text (5 SyntaxError-
+  Testfails am 2026-09-01) — Markdown-Dateien können prompt.mjs nicht brechen.
+  Prompt-Edits sind reine Datei-Änderungen; NIE `${}`-Interpolation in die
+  Prompt-Dateien einbauen (Loader lädt rohen Text). `install.mjs copyTree`
+  kopiert den Ordner automatisch (kein Dateifilter); Konsumenten:
+  `cli/run.mjs` (SYSTEM_DE/EN) + `core/twin.mjs` (SYSTEM_EVILTWIN_*).
 - Deterministischer Abort-/Kill-E2E ohne echten Key: Dummy-Key in isolierter
   `FALSIFY_HOME/.env` + lokaler HTTP-Server (SSE ohne `[DONE]`, hält run.mjs
   offen) → CLI-Abort killt den hängenden Job beweisbar (`ERROR Abgebrochen

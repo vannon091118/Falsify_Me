@@ -109,9 +109,15 @@ export function claimNextJob(db, windowIdx, preferredScopeId = null) {
  */
 export function reapStaleJobs(db, maxWindows = 3) {
   const reaped = [];
-  for (let i = 1; i <= maxWindows; i++) {
+  // Fenster 0 = DIREKT-RUNS (falsify run --job-id, window_idx NULL; registrieren
+  // sich selbst als Fenster-0-Worker mit Heartbeat). Ein gecrashter Direkt-Run
+  // altert dadurch genauso aus wie ein gekilltes Worker-Fenster — die Recovery
+  // behandelt beide Pfade gleich (Regel-3-Rig, Asymmetrie-Fix).
+  for (let i = 0; i <= maxWindows; i++) {
     const alive = isWorkerAlive(db, i);
-    const jobs = db.prepare("SELECT id FROM jobs WHERE status = 'RUNNING' AND window_idx = ?").all(i);
+    const jobs = db.prepare(
+      "SELECT id FROM jobs WHERE status = 'RUNNING' AND (window_idx = ? OR (window_idx IS NULL AND ? = 0))"
+    ).all(i, i);
     for (const j of jobs) {
       if (!alive) {
         jobDone(db, j.id, null, "Worker-Abbruch (Recovery)");

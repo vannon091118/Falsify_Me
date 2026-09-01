@@ -1256,7 +1256,13 @@ DEPENDS_ON: UI-097
 VERIFY: node --test tests/selfreview.test.mjs tests/invariants.test.mjs;
 Live: node cli/run.mjs (Direkt-Run ohne Submit) ergänzt Kern automatisch
 RESULT: PASS - Kernliste jetzt 22 Einträge inkl. selfreview+invariants;
-alle drei Eintrittswege decken die Ergänzung ab.
+alle drei Eintrittswege decken die Ergänzung ab. NACHTRAG 2026-09-01
+(Rig-Review Regel 1 „kein blinder Bereich"): SELF_REVIEW_CORE enthält
+zusätzlich core/twin.mjs (Evil-Twin-Gate, Regel 6) und
+core/prompt-text/system-*.md (die Prüf-Regeln als Daten) — gerade der
+Prüfmechanismus selbst darf im Self-Review nicht unsichtbar bleiben.
+Regressionstest „Kein blinder Bereich" in tests/selfreview.test.mjs
+(Whitelist-Inhalt + tatsächlicher read_file-Zugriff auf twin + Prompt).
 
 ID: UI-102
 TASK: Challenge-Evidenz verifiziert statt nur erkannt (Regel 2 Nachschärfung,
@@ -1355,3 +1361,51 @@ RESULT: PASS - 9/9 twin-Tests grün; Kontext-Trennung im Test bewiesen
 (Erst-Reasoning-Schnipsel rutscht nicht in den Twin-User-Content);
 Normalisierungs-Bug BESTÄTIGT→BESTATIGT beim ersten Testlauf gefunden
 und über explizite Map gefixt. Gesamtsuite grün, kein Commit ohne Auftrag.
+
+ID: UI-105
+TASK: Root-Cause-Fix Prompt-Texte: Die vier System-Prompts waren Template-
+Literale in core/prompt.mjs — Backticks/`${}` im Prompt-Text erzeugten
+SyntaxError (5 Testfails am 2026-09-01, „Lektion: nach jedem Prompt-Edit
+node --check" war Symptom-Behandlung). Jetzt sind die Prompt-Texte DATEN:
+core/prompt-text/system-de.md, system-en.md, system-eviltwin-de.md,
+system-eviltwin-en.md (verbatim extrahiert); core/prompt.mjs enthält nur
+noch den Loader promptText(name) (fail-fast mit klarer Meldung bei fehlender
+Datei). Konsumenten-Exports (SYSTEM_DE/EN/EVILTWIN_DE/EN) unverändert.
+buildUserContent bleibt Code (echte Interpolation, Diff-Fences manuell
+escaped — durch Test abgesichert). install.mjs copyTree kopiert den neuen
+Ordner automatisch (kein Dateifilter).
+STATUS: DONE
+DEPENDS_ON: UI-098, UI-104 (Prompt-Inhalte, die jetzt als Daten liegen)
+VERIFY: node --test tests/prompt.test.mjs (5 Tests: Laden nicht-leer,
+Vertrags-Marker DE/EN, Evil-Twin-Vertrag, Diff-Fence-Rendering,
+fail-fast bei fehlender Datei); node --check core/prompt.mjs
+RESULT: PASS - 5/5 gruen; Extraktion verbatim (identische Zeichenlaengen);
+gesamte Kernel-Suite laeuft gegen die Daten-Variante.
+
+ID: UI-106
+TASK: Regel-3-Rig (Enforcement statt nur doctor) + Regel-4-Rand + Doku-Drift
+(adversariales Review 2026-09-01): (1) ENFORCEMENT IM BETRIEBSLOOP —
+enforceQueueConsistency wirft jetzt bei: submit (erst reapStaleJobs =
+Recovery, dann enforce, Exit 2), nach jedem Review-Commit (Exit 3, kein
+Verdict-Print bei Inkonsistenz), nach jedem Worker-Claim (Job wird NICHT
+verarbeitet; fail-closed). Die Review-Persistenz in cli/run.mjs ist EINE
+BEGIN-IMMEDIATE-Transaktion (Scope+Finding+Twin+jobDone) — kein Beobachter
+sieht Zwischenzustände, Teil-Schreiben unmöglich. (2) CHECKER-BLINDSTELLEN
+geschlossen: hardened-OHNE-Finding, Phase vs. letztes Finding-Verdict,
+DONE-Status vs. jobs.verdict (inkl. UNBEKANNT-Rand), Fenster-0-Orphans.
+(3) ASYMMETRIE-FIX: Direkt-Runs (falsify run --job-id, window_idx NULL)
+registrieren sich als Fenster-0-Worker mit eigenem Heartbeat; live = kein
+Orphan, gecrasht = reapStaleJobs räumt (Fenster 0 mit). (4) WRITER-SCAN:
+ganzer Repo-Baum statt 4 Verzeichnisse, Kommentar-/String-Stripping,
+qualifier-aware (jobs.jobDone(...) wird gefunden) + Selbstzertifizierung.
+(5) REGEL-4-RAND: ohne --files ist der ganze Root Zugriffsrahmen (kein
+Whitelist-Vertrag) — dokumentiert (README/WIRING/AGENTS) + ehrlicher
+CLI-Hinweis. (6) DOKU-DRIFT: db.mjs-Kopf (.rate_limit-Datei -> Tabelle in
+falsify.db); tools.mjs-Kopf war bereits post-UI-100 (Befund veraltet).
+STATUS: DONE
+DEPENDS_ON: UI-099 (Invarianten), UI-103 (Regel 5)
+VERIFY: node --test tests/invariants.test.mjs (9 Tests: Ganz-Baum-Scan +
+Selbstzertifizierung, Fenster-0-Liveness/Recovery, neue Blindstellen,
+enforce wirft/schweigt); volle Suite
+RESULT: PASS - 9/9 grün; Selbstzertifizierung deckte die qualifier-Lücke
+(jobs.jobDone) auf und der Scan wurde nachgeschärft; Gesamtsuite grün.

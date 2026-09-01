@@ -7,8 +7,9 @@
 // in ~/.Falsify_Core):
 //   .env          → API-Keys (lokal, nichts für GitHub)
 //   falsify.db    → SQLite (WAL) – Scopes, Findings (Befunde), Jobs, Meta
+//                   + rate_limit-Tabelle (40-RPM-Reservierungen; eine Tabelle
+//                   in derselben Datei, KEINE Datei daneben)
 //   logs/         → Fenster-/Dock-Logs, optionale Antwort-Exporte
-//   .rate_limit   → 40-RPM-Persistenz
 //
 // Privacy-Vertrag: Die Daten gehören dem NUTZER und sind NUR für das lokale
 // FalsifyMe verfügbar (kein Sammeln, kein Telemetrie-Upload). Modelle, die

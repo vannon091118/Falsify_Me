@@ -61,6 +61,29 @@ test("ensureSelfReviewWhitelist: Union mit Kern (nur existierende Ergänzungen),
   assert.deepEqual(r2.files, r.files);
 });
 
+test("Kein blinder Bereich (Regel 1): der PRÜFMECHANISMUS selbst liegt im Self-Review-Scope", async () => {
+  const sr = await mod("core/selfreview.mjs");
+  const r = sr.ensureSelfReviewWhitelist(ROOT, ["README.md"]);
+  // Gerade die Gate- und Regel-Komponenten dürfen nicht unsichtbar bleiben:
+  for (const check of [
+    "core/twin.mjs",                         // Evil-Twin-Gegenprüfung (Regel 6)
+    "core/prompt-text/system-de.md",         // Prüf-Regeln als Daten (DE/EN)
+    "core/prompt-text/system-en.md",
+    "core/prompt-text/system-eviltwin-de.md",
+    "core/prompt-text/system-eviltwin-en.md",
+  ]) {
+    assert.ok(r.files.includes(check), `Prüfmechanismus im Scope: ${check}`);
+  }
+  // Und die Whitelist-Semantik muss den Zugriff tatsächlich gewähren:
+  const { makeTools } = await mod("core/tools.mjs");
+  const api = makeTools(ROOT, r.files);
+  assert.match(api.execTool("read_file", { path: "core/twin.mjs" }), /runTwinCheck/);
+  assert.match(
+    api.execTool("read_file", { path: "core/prompt-text/system-eviltwin-de.md" }),
+    /Evil Twin/
+  );
+});
+
 test("ensureSelfReviewWhitelist: Fremdprojekt bleibt unverändert (nie Zugriffserweiterung)", async () => {
   const sr = await mod("core/selfreview.mjs");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-sr-"));

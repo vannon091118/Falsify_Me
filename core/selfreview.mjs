@@ -15,6 +15,12 @@
 // Dateien ergänzt (feasibility blockt sonst mit „existieren nicht unter root").
 // Fremdprojekte (ohne Marker) bleiben unverändert – nie Zugriffserweiterung
 // außerhalb der Selbstprüfung.
+//
+// KEIN BLINDER BEREICH (Rig-Review 2026-09-01): Die Liste muss den GANZEN
+// Prüfmechanismus enthalten – auch das Evil-Twin-Gate (core/twin.mjs) und die
+// Prompt-Daten (core/prompt-text/*.md = die Prüf-Regeln, unter denen der
+// Reviewer läuft). Werden neue Prüf-Prompt-Dateien ergänzt, gehören sie hier
+// mit auf (sonst ist genau der Prüfmechanismus im Self-Review unsichtbar).
 // ─────────────────────────────────────────────────────────────────────────────
 import fs from "node:fs";
 import path from "node:path";
@@ -22,9 +28,14 @@ import path from "node:path";
 /**
  * Kern-Komponenten der Prüfung (Prüf-Pipeline + Queue-Wahrheit + Vertrag):
  * darf KEINE blinden Bereiche enthalten – genau diese Liste kontrolliert der
- * Self-Review-Scope. Installations-/Deinstallations-Tools (uninstall.mjs,
- * cli/bootstrap/*) sind bewusst NICHT dabei: sie sind kein Prüfmechanismus
- * und bleiben bei Bedarf via --files explizit ergänzbar.
+ * Self-Review-Scope. Neben der Ausführungs-Pipeline gehören AUSDRÜCKLICH
+ * auch das Evil-Twin-Gate (core/twin.mjs) und die Prompt-Daten
+ * (core/prompt-text/system-*.md = die Prüf-Regeln als Daten) dazu: ein
+ * Self-Review muss gerade diese Teile lesen können, sonst bleibt der
+ * Prüfmechanismus unsichtbar (Regel 1, Rig-Review 2026-09-01).
+ * Installations-/Deinstallations-Tools (uninstall.mjs, cli/bootstrap/*) sind
+ * bewusst NICHT dabei: sie sind kein Prüfmechanismus und bleiben bei Bedarf
+ * via --files explizit ergänzbar.
  */
 export const SELF_REVIEW_CORE = [
   // Queue-Wahrheit (einzige Persistenz-Zentrale)
@@ -33,7 +44,11 @@ export const SELF_REVIEW_CORE = [
   "cli/run.mjs", "cli/jobs.mjs", "cli/main.mjs", "cli/falsify.sh", "cli/help.mjs",
   "core/agent.mjs", "core/config.mjs", "core/feasibility.mjs", "core/keys.mjs",
   "core/prompt.mjs", "core/ratelimit.mjs", "core/selfreview.mjs", "core/settings.mjs",
-  "core/tools.mjs", "core/verdict.mjs",
+  "core/tools.mjs", "core/twin.mjs", "core/verdict.mjs",
+  // Prompt-Daten = die Prüf-Regeln (DE/EN + Evil-Twin) – neuer Prüf-Prompt
+  // gehört hier mit auf, sonst ist der Prüfmechanismus unsichtbar (Regel 1).
+  "core/prompt-text/system-de.md", "core/prompt-text/system-en.md",
+  "core/prompt-text/system-eviltwin-de.md", "core/prompt-text/system-eviltwin-en.md",
   // Zustands-Surface (Scope-Lifecycle schreibt Scope-Zustand) + Vertragsprüfung
   "cli/scope.mjs", "cli/doctor.mjs",
   // Verarbeitung + Vertrag (Doku als Vertrag)
