@@ -28,6 +28,15 @@ async function main() {
       console.log(`Keys: ${home}/.env`);
       break;
     }
+    case "bootstrap": {
+      const { runBootstrap } = await import("./bootstrap/main.mjs");
+      const os = await import("node:os");
+      const { packageRoot } = await import("./bootstrap/install.mjs");
+      const r = await runBootstrap({ root: packageRoot, homeDir: os.homedir() });
+      if (!r.ok) process.exit(1);
+      console.log();
+      break;
+    }
     case "doctor": await runDoctor(); break;
     case "settings": await runSettings(args.slice(1)); break;
     case "models": await runModels(args.slice(1)); break;

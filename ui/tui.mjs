@@ -193,9 +193,11 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
         particles: renderField(fields[s.idx]),
       })),
       boot: bootStage,
-      // Optionaler, kleiner Selftest-Status: nur sichtbar, wenn ein externer
-      // Testlauf ihn als echtes Event liefert; nie künstlich erzeugen.
+      // Optionaler, echter Selftest: nur sichtbar, wenn ein externer
+      // Worker selftest-Events mit echten Pruefungen liefert; nie kuenstlich.
       testStatus: state.testStatus ?? null,
+      testSteps: state.testSteps ?? null,
+      testResult: state.testResult ?? null,
       mode,
       dims: { cols: dims.cols, rows: dims.rows },
       now,

@@ -93,8 +93,37 @@ export const apply = (state, evt, now = Date.now()) => {
       return true;
     }
     case "selftest": {
-      // Kleiner echter Teststatus für das Startup-Intro; keine eigene Logik.
-      state.testStatus = typeof evt.status === "string" ? evt.status.slice(0, 32) : null;
+      // Echter Startup-Selftest-Fortschritt (Spec §6). Der Worker emit-t
+      // strukturierte Steps mit echtem Ergebnis (ok: true/false), sobald er
+      // die jeweilige Pruefung durchgefuehrt hat. Keine Fake-Ergebnisse: ein
+      // Step ist nur dann ok=true, wenn die echte Pruefung bestanden wurde.
+      // status (String): kurzes Label fuer die aktuelle Phase (kompatibel).
+      // step (Objekt): { name, ok, detail? } - eine echte Einzelpruefung.
+      // steps (Array): komplette Step-Liste am Ende (ok/ok-fail-Report).
+      if (typeof evt.status === "string") {
+        state.testStatus = evt.status.slice(0, 48);
+      } else if ("status" in evt) {
+        // Ungueltiger Status (kein String) -> kein Fake, aber ehrlich null.
+        state.testStatus = null;
+      }
+      if (evt.step && typeof evt.step === "object") {
+        state.testSteps = state.testSteps ?? [];
+        // Schritt ersetzen (gleicher Name) statt endlos anhaengen.
+        const name = String(evt.step.name || "?").slice(0, 16);
+        const ok = evt.step.ok === true;
+        const detail = typeof evt.step.detail === "string" ? evt.step.detail.slice(0, 60) : null;
+        const idx = state.testSteps.findIndex((s) => s.name === name);
+        const entry = { name, ok, detail, ts: now };
+        if (idx >= 0) state.testSteps[idx] = entry;
+        else state.testSteps.push(entry);
+        // testStatus spiegelt den neuesten Schritt
+        state.testStatus = `${name}${ok ? " ✓" : " ✕"}`.slice(0, 48);
+      }
+      // testResult: finales Ergebnis (pass/fail) - nur vom Worker gesetzt,
+      // wenn der Selftest wirklich abgeschlossen ist.
+      if (evt.result === "pass" || evt.result === "fail") {
+        state.testResult = evt.result;
+      }
       return true;
     }
     case "focus": {
@@ -171,7 +200,10 @@ export const apply = (state, evt, now = Date.now()) => {
 
 // Zeit-Tick: temporale Uebergaenge, die nicht von Events abhaengen.
 // Pro Slot: STARTING ohne Folge-Events endet ehrlich in IDLE.
-// Global: Boot-Intro ohne Job endet ehrlich im Warte-Zustand.
+// Global: Boot-Intro ohne Job endet ehrlich im Warte-Zustand — ABER nur,
+// wenn der echte Selftest abgeschlossen ist (testResult pass/fail). Laeuft
+// der Selftest noch (Steps vorhanden, aber kein Ergebnis), bleibt das
+// Boot-Intro aktiv, damit der Benutzer den echten Fortschritt sieht (Spec §6).
 export const tick = (state, now = Date.now()) => {
   for (const slot of state.slots) {
     if (slot.state === "STARTING" && now - slot.bootAt >= SOFT_CAP_MS) {
@@ -179,7 +211,14 @@ export const tick = (state, now = Date.now()) => {
     }
   }
   if (state.jobsStarted === 0 && state.state === "STARTING" && now - state.bootAt >= SOFT_CAP_MS) {
-    state.state = "IDLE";
+    // Selftest noch am Laufen (Steps da, aber kein Ergebnis)? Boot halten.
+    // Selftest fehlgeschlagen (testResult=fail)? Boot im Fehlerzustand
+    // halten — NICHT in den normalen Idle fallen (Spec §6.6).
+    const selftestRunning = Array.isArray(state.testSteps) && state.testSteps.length > 0 && state.testResult == null;
+    const selftestFailed = state.testResult === "fail";
+    if (!selftestRunning && !selftestFailed) {
+      state.state = "IDLE";
+    }
   }
   refreshGlobal(state, now);
 };

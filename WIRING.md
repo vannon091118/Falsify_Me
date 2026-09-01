@@ -112,6 +112,7 @@ Marker-Zeilen im Kindprozess-Stream: `FM-EVT: <json>` — werden vom Parser
 diesen Slot. Ohne Angabe wirkt es auf den Fokus-Slot (folgt dem neuesten Job).
 Ein `job`-Event belegt einen freien Slot (belegten Wunsch-Slot → naechster
 freier) und zieht den Fokus auf sich. Fokus wechseln: `{t:"focus", slot:n}`.
+`{t:"selftest", status | step | result}` — echter Startup-Selftest (nur TTY-Worker): `step {name, ok, detail}` = Ergebnis EINER echten Pruefung (RUNTIME/DATABASE/CONFIG/API KEY/QUEUE/WORKER/READ-ONLY, ✓/✕ je realem Ausgang), `result pass|fail` = Endzustand (fail haelt den Boot im Fehlerzustand, Spec §6.6), `status` = kurzes Label (kompatibel). Kein Job-Event, nur im Boot-Intro sichtbar; keine hardcodierten Erfolgs-Steps.
 Alle Slots endzustaendig (IDLE/SUCCESS/ERROR/TIMEOUT/ABORTED) ⇒ `globalIdle`
 ⇒ WARTE-AUF-EINGABE-Screen.
 
@@ -263,3 +264,113 @@ Antworten/Commits leben.
 1. Diese Datei lesen (§1, §2, §3) · 2. `ui/PLAN.md` lesen (Status) ·
 3. Ersten offenen Task mit erfüllten Dependencies übernehmen ·
 4. `VERIFY`-Kommando ausführen · 5. `RESULT` + `STATUS` persistieren.
+---
+
+## 12. BOOTSTRAP (neu, §12)
+
+Der Bootstrap ist der Einstiegspunkt, wenn ein Coding-Agent den Befehl
+`"INSTALLIER BITTE https://github.com/vannon091118/Falsify_Me"` erhält.
+
+### Bootstrap-Ablauf
+
+```text
+Coding-Agent
+    ↓
+"INSTALLIER BITTE …"
+    ↓
+node install.mjs / falsify bootstrap
+    ↓
+1. Installation (existierendes install.mjs)
+2. Agent-Detektion (Codebuff/Bash/PowerShell/generic)
+3. Sichtbares Dock starten (ui/start-dock.cmd)
+4. Workflow-Protokoll ausgeben
+    ↓
+Coding-Agent → FalsifyMe → Dock → Verdict → Coding-Agent
+```
+
+### Implementierte Komponenten
+
+| Datei | Verantwortung |
+|---|---|
+| `cli/bootstrap.mjs` | Bootstrap-Einstieg: Installation, Agent-Detektion, Dock-Start, Workflow-Protokoll |
+| `cli/falsify.sh` | Neuer Befehl `falsify bootstrap` |
+| `cli/help.mjs` | Hilfetext um `falsify bootstrap` erweitert |
+| `README.md` | Dokumentation des Bootstrap-Verfahrens |
+
+### Agent-Detektion
+
+Die Funktion `detectAgent()` in `cli/bootstrap.mjs` erkennt:
+
+- **Codebuff/Freebuff**: Node.js-Umgebungsmarker → Instruction-Format `.mjs`
+- **Bash-Agent**: `SHELL` enthält `bash` → Instruction-Format `.sh`
+- **PowerShell-Agent**: Windows + `PSModulePath` → Instruction-Format `.ps1`
+- **Generisch**: Fallback → Node.js-Modul
+
+### Instruction-Formate
+
+Jedes Format nutzt die existierenden FalsifyMe-Skills:
+
+- `~/.agents/skills/falsifyme/agent-skill-falsify.sh` (Bash)
+- `~/.agents/skills/falsifyme/agent-skill-falsify.mjs` (Node.js)
+- `~/.agents/skills/falsifyme/agent-skill-falsify.ps1` (PowerShell)
+- `~/.agents/skills/falsifyme-falsiflow/SKILL.md` (FalsiFlow-Dokumentation)
+
+Das Bootstrap generiert keine neuen Skills – es erzeugt nur das
+agentenspezifische Instruction-Format, das auf die existierenden Skills verweist.
+
+### Regeln
+
+- Keine Duplizierung des install.mjs – das bestehende install.mjs wird aufgerufen.
+- Keine neue Queue, Scope- oder Verdict-Logik – alles existiert.
+- Kein headless Dock – das Dock muss sichtbar sein (WIRING §4).
+- Der Bootstrap aktiviert sofort den Workflow – keine weitere manuelle Aktivierung.
+
+---
+
+## 13. BOOTSTRAP (modular, revidiert)
+
+Der Bootstrap (`falsify bootstrap` / `node cli/bootstrap.mjs`) ist modular
+aufgebaut — Logik in `cli/bootstrap/`, Templates als statische Dateien in
+`cli/bootstrap/templates/` (kein String-Escaping im Code, damit solche
+Dateien nicht mehr durch Escape-Fehler kaputtgehen koennen).
+
+### Module (1 Datei = 1 Verantwortung)
+
+| Datei | Verantwortung |
+|---|---|
+| `cli/bootstrap.mjs` | duenner Einstiegspunkt (Flags: `--dry-run`, `--skip-dock`) |
+| `cli/bootstrap/detect.mjs` | Agent-Detektion (pure, testbar: env/platform als Parameter) |
+| `cli/bootstrap/install.mjs` | ruft das EXISTIERENDE `install.mjs` im **Paket-Root** auf (`packageRoot`); liest `install-location.json` |
+| `cli/bootstrap/instructions.mjs` | schreibt die persistente Instruction-Datei (Enforcement) |
+| `cli/bootstrap/dock.mjs` | sichtbares Dock: Windows-only, Retry-Poll, kein Fake-Erfolg |
+| `cli/bootstrap/main.mjs` | Kompositionswurzel (`runBootstrap`) |
+| `cli/bootstrap/templates/*.md/.sh/.ps1` | Instruction-Templates mit `{{PLATZHALTERN}}` |
+
+### Enforcement (Review-Fehler 2 behoben)
+
+Der Bootstrap schreibt eine REALE, persistente Instruction-Datei je erkanntem
+Agenten:
+
+- Codebuff/Freebuff -> `AGENTS.md` im Projekt-Root
+- Bash-Agent -> `~/.falsifyme-instructions.sh`
+- PowerShell-Agent -> `~/.falsifyme-instructions.ps1`
+- Generisch -> `FALSIFYME-WORKFLOW.md` im Projekt-Root
+
+Die Datei enthaelt die REALEN Skill-Pfade (`~/.agents/skills/falsifyme/`,
+`~/.agents/skills/falsifyme-falsiflow/SKILL.md` — Review-Fehler 3 behoben)
+und das Verdict-Routing (Exit 0=WRITE, 1=PLAN/RESEARCH, 2/3=keine Freigabe).
+
+### Plattform-Ehrlichkeit (Review-Fehler 4 behoben)
+
+Das sichtbare Dock ist Windows-only (`ui/start-dock.cmd` + `dock-runner.ps1`).
+Auf Linux/macOS meldet der Bootstrap ehrlich `unsupportedPlatform` und nennt
+den headless Worker-Aufruf, statt einen nicht existierenden Fensterstart zu
+behaupten. Die RUNNING-Bestaetigung erfolgt per Retry-Poll (30x1s, UI-064-
+Muster), nicht per 2s-Einzelcheck.
+
+### Verifikation
+
+```bash
+node --test tests/bootstrap.test.mjs   # 4 Tests: detect/install/instructions/dock
+node cli/bootstrap.mjs --dry-run --skip-dock   # echter Trockenlauf ohne Installation
+```

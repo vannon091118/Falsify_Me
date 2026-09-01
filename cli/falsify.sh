@@ -148,7 +148,10 @@ case "$cmd" in
   run)
     node "$V2_DIR/cli/run.mjs" "$@"
     ;;
-  help|-h|--help)
+  bootstrap)
+    node "$V2_DIR/cli/bootstrap.mjs" "$@"
+    ;;
+  -h|--help)
     sed -n '2,34p' "$0"
     ;;
   *)

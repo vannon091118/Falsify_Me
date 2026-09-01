@@ -17,4 +17,5 @@ Verwendung:
   falsify settings show                   effektive Runtime-Settings (Secrets maskiert)
   falsify settings set key=value …       Provider/Model/API-Base/API-Key runtime setzen
   falsify models [--api-base URL]         verfügbare Modelle + Provider-Pricing abrufen
+  falsify bootstrap                       Bootstrap: Installiere + Dock-Start + Agent-Integration
   falsify help                            diese Hilfe`;

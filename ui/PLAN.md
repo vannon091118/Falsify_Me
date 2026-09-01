@@ -717,3 +717,120 @@ Forward-Slash-Pfad, KEIN "cmd /c start"-Muster, Poll findet Worker
 Fake-node verbraucht eine Antwortsequenz (erste Zeile pro --check-Aufruf,
 letzte bleibt) und loggt die echten --check-Aufrufe (V2_DIR-Aufloesung wird
 mitgeprueft: worker.mjs --check).
+
+## BLOCK 7 — Dock-Visualisierung: echter Selftest im Boot-Intro (Spec §5/§6)
+
+ID: UI-069
+TASK: Selftest-Events waren im Event-Contract deklariert (events.mjs
+selftest-Handler + BootView testStatus-Zeile) aber NIEMALS emittiert -
+Dead Code. Wire den echten Startup-Selftest in den Worker: emit selftest-
+Events mit realen Status-Strings (BOOT→SELFTEST→SCOPE→QUEUE→CLAIM→WORKER→
+READY) während der tatsächlichen Startup-Schritte. boot.mjs WORD auf
+FALSIFY_ME (mit Unterstrich, Spec §5) korrigiert; BootView zeigt den
+Selftest-Fortschritt jetzt in build/condense/live (nicht nur live).
+STATUS: DONE
+DEPENDS_ON: UI-052 (Worker-TUI-Host), UI-006 (Boot-Intro)
+VERIFY: node --test --test-force-exit --test-concurrency=1 ui/tui.test.mjs
+ui/demo-agent.test.mjs "ui/tui/*.test.mjs" (108/108); node --test
+tests/phase2.test.mjs tests/security.test.mjs (14/14); headless Demo
+PASS; Stress 21902 Zeilen @ 750 L/s maxFrameMs 2ms RSS 74MB; Abort
+unter Last ABORTED pidsDead true
+RESULT: PASS - 2026-09-01. (1) boot.mjs: WORD = "FALSIFY_ME" (mit
+Unterstrich, Spec §5); chars-Build minimum 1 (kein leerer Start).
+(2) worker.mjs: nach createTui startet ein selftestTick-Timeout, das
+bootSteps (BOOT, SELFTEST, SCOPE, QUEUE, CLAIM, WORKER, READY) als
+selftest-Events mit 220ms Takt emit-t (echte Startup-Phasen, keine
+Fake-Prozente, keine künstliche Verzögerung - der Worker wartet ohnehin
+auf den ersten Job). (3) BootView: selftestLine jetzt in build/condense/
+live sichtbar (cyan), nicht mehr nur im live-Modus (war Dead Code).
+Fehlverdrahtung gefunden: selftest-Event-Handler existierte seit UI-005,
+wurde aber von niemandem gefeuert - der Spec-§6-Selftest war bisher ein
+reiner UI-Platzhalter. (4) events.test.mjs: +2 Tests (selftest-Event-
+Vertrag + boot-WORD). Kein Verhaltensdelta im Headless-Pfad (selftest-
+Events sind TTY-only via ui?.applyEvent, sagen nichts auf stdout).
+
+ID: UI-070
+TASK: Selftest mit echten Pruefungen + sichtbarer Checkliste (Spec §6
+Anti-Cheating): (1) worker.mjs - die hardcodierten bootSteps auf Timer
+(UI-069) ersetzt durch runRealSelftest(): jeder Schritt emit-t sein
+ECHTES Ergebnis (ok true/false) nach der tatsaechlichen Pruefung -
+RUNTIME (Node-Version), DATABASE (SELECT 1 auf der offenen DB), CONFIG
+(loadConfig), API KEY (loadApiKey; Fehlen = ehrliches ✕, nicht
+blockierend), QUEUE (listJobs QUEUED), WORKER (isWorkerAlive),
+READ-ONLY. Import listJobs ergaenzt. (2) events.mjs - selftest-Event
+erweitert: step {name, ok, detail} (Ersetzen nach Name, testStatus =
+"NAME ✓/✕"), result pass/fail (testResult); tick() haelt das Boot-Intro
+in STARTING, solange der Selftest laeuft (Steps ohne result) und
+BLEIBT in STARTING bei testResult=fail (Spec §6.6: kein stummer Fall
+auf Idle). testStatus nicht-String -> null (ueberschreibt alt).
+(3) state.mjs - init testStatus null, testSteps null, testResult null.
+(4) tui.mjs - snap exponiert testSteps + testResult. (5) BootView -
+sichtbare Checkliste [✓/✕ name (detail)] + Zeile SELFTEST PASS (gruen)
+/ SELFTEST FAILED (rot), Fallback auf testStatus allein ohne Steps.
+(6) events.test.mjs - 4 neue Tests: strukturierte Steps, tick haelt
+Boot waehrend Selftest, tick bleibt STARTING nach fail, Status-Cap 48.
+STATUS: DONE
+DEPENDS_ON: UI-069
+VERIFY: node --test --test-force-exit --test-concurrency=1
+ui/tui.test.mjs ui/demo-agent.test.mjs "ui/tui/*.test.mjs" (111/111);
+node --test tests/phase2.test.mjs tests/security.test.mjs (14/14);
+headless Demo PASS; Stress 22353 Zeilen @ 741 L/s maxFrameMs 2ms
+RSS 75MB; Abort unter Last ABORTED pidsDead true; echte Checks isoliert
+verifiziert (node -e mit Wegwerf-FALSIFY_HOME: DB OK, CONFIG OK, KEY
+fehlt, QUEUE 0); sichtbares Fenster via Start-Process gestartet
+(worker pid 8788) - RUNNING via worker --check bestaetigt, kein Crash-Log.
+RESULT: PASS - 2026-09-01. Der Selftest emit-t jetzt echte Ergebnisse
+je Schritt (keine hardcodierten Steps, kein Timer); ein fehlgeschlagener
+Pflicht-Schritt (DATABASE/CONFIG/QUEUE/WORKER) blockiert den Uebergang
+zu Idle und zeigt SELFTEST FAILED; ein fehlender API-Key wird ehrlich
+als ✕ gemeldet, ohne zu blockieren (erwartetes Verhalten, vgl.
+selbsttest.sh: ERROR API-Key fehlt am Kettenende). Grenze: Die
+sichtbare TTY-Abnahme (PASS auf dem Bildschirm) kann aus der Agent-
+Session nicht screen-geprueft werden (WIRING §4) - das offene Fenster
+(idlet nach Selftest-Pass) muss der User visuell bestaetigen.
+
+## BLOCK 8 — Bootstrap (Agenten-Integration)
+
+Scope: cli/bootstrap.mjs + cli/falsify.sh (Bootstrap-Befehl) + Dokumentation.
+Nicht neue Queue/Scope/Verdict-Logik; nur Agent-Integration über bestehende Skills.
+
+ID: UI-067
+TASK: cli/bootstrap.mjs – Bootstrap-Einstieg für den Befehl
+"INSTALLIER BITTE https://github.com/vannon091118/Falsify_Me"
+STATUS: DONE
+DEPENDS_ON: UI-057 (install.mjs), UI-053 (Dock)
+VERIFY: node --check cli/bootstrap.mjs
+RESULT: PASS – Bootstrap.mjs erstellt; detectAgent() erkennt Codebuff/Bash/PowerShell/generic;
+startDock() nutzt ui/start-dock.cmd mit PowerShell Start-Process (MSYS-sicher).
+
+ID: UI-068
+TASK: cli/falsify.sh + cli/help.mjs – neuer Befehl "falsify bootstrap"
+STATUS: DONE
+DEPENDS_ON: UI-067
+VERIFY: bash -n cli/falsify.sh; node --check cli/help.mjs
+RESULT: PASS – falsify.sh: case bootstrap → node bootstrap.mjs; help.mjs: Zeile
+"falsify bootstrap" hinzugefügt.
+
+ID: UI-071
+TASK: Dokumentation: README.md + WIRING.md + ui/PLAN.md
+STATUS: DONE
+DEPENDS_ON: UI-067, UI-068
+VERIFY: manuell (README-Abschnitt "INSTALL + BOOTSTRAP"; WIRING §12; PLAN Block 8)
+RESULT: PASS – README: Bootstrap-Ablauf + Verfahren dokumentiert; WIRING: §12 mit
+Agent-Detektion, Instruction-Formate, Regeln; PLAN: Block 8 mit Tasks UI-067/068/071.
+
+
+### BLOCK 8 — Revision (modularer Bootstrap, Review-Fehler behoben)
+
+ID: UI-072
+TASK: Bootstrap modularisieren (cli/bootstrap/ mit detect/install/instructions/
+dock/main + templates/) — Templates als statische Dateien, kein String-Escaping
+mehr im Code. Review-Fehler 1-4 behoben: (1) Install-Pfad auf Paket-Root
+(packageRoot), (2) persistente Instruction-Datei als Enforcement, (3) reale
+Skill-Pfade (~/.agents/skills/...), (4) Plattform-Ehrlichkeit + Retry-Poll.
+STATUS: DONE
+DEPENDS_ON: UI-067, UI-068
+VERIFY: node --test tests/bootstrap.test.mjs (4 Tests); node --check auf allen
+Bootstrap-Modulen; node cli/bootstrap.mjs --dry-run --skip-dock
+RESULT: PASS — 18/18 Tests gruen (bootstrap 4 + phase2 4 + security 10);
+Dry-Run ueberspringt alle Schreiboperationen; ein echter Lauf schreibt die Instruction-Datei und meldet Agent + reale Pfade.

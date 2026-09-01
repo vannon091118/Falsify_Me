@@ -4,7 +4,8 @@
 // Der Soft-Cap (STARTING -> IDLE) lebt in events.tick (SOFT_CAP_MS).
 // Pure, kein I/O.
 
-export const WORD = "FALSIFYME";
+// Spec §5: visueller Startup als F A L S I F Y _ M E (mit Unterstrich, gespaced).
+export const WORD = "FALSIFY_ME";
 export const BUILD_MS = 900;
 export const CONDENSE_MS = 600;
 export const BLOCK_ROWS = ["░", "░ █ ░", "░ ███ █ ░", "░ ███████ █ ░"];
@@ -23,7 +24,7 @@ export const stage = (state, now = Date.now()) => {
     return {
       mode: "build",
       t,
-      chars: Math.min(WORD.length, Math.ceil(t * WORD.length)),
+      chars: Math.min(WORD.length, Math.max(1, Math.ceil(t * WORD.length))),
       block: Math.min(3, Math.floor(t * 4)),
     };
   }

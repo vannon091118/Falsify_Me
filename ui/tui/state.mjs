@@ -131,6 +131,12 @@ export const createUiState = () => {
     filesList: [],
     events: slots[0].events,
     output: slots[0].output,
+    // Selftest-Felder (Spec §6): nur aus echten selftest-Events vom Worker.
+    // testStatus = aktuelles Label; testSteps = echte Checklist;
+    // testResult = pass/fail (Endzustand). Nie kuenstlich gesetzt.
+    testStatus: null,
+    testSteps: null,
+    testResult: null,
   };
 };
 

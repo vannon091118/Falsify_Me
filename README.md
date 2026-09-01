@@ -360,3 +360,49 @@ WIRING.md    Integrations-/Modul-Landkarte (Einstieg für Agents)
 - Produktkern dependency-frei; einzige Runtime-Dependencies sind `ink` +
   `react` (Terminal-UI). `npm install` ist dennoch nötig.
 - MIT-Lizenz, siehe `LICENSE`.
+### INSTALL + BOOTSTRAP (ein Befehl, aktiviert den Workflow)
+
+Der Bootstrap ist der Einstiegspunkt für Coding-Agenten. Nach der Installation
+aktiviert er den FalsifyMe-Workflow — ohne weitere manuelle Aktivierung.
+
+```bash
+# Vollständige Installation + Agent-Integration + Dock-Start
+node install.mjs
+node cli/bootstrap.mjs
+
+# Oder über die Bash-CLI:
+falsify bootstrap
+
+# Flags: --dry-run (kein Schreiben), --skip-dock (kein Dock-Start)
+# Node-CLI-Pfad: node cli/main.mjs bootstrap
+```
+
+Der Bootstrap:
+
+1. **Installiert FalsifyMe** — das existierende `install.mjs` (Paket-Root).
+2. **Detektiert den Agenten** — Codebuff/Freebuff, Bash, PowerShell oder generisch.
+3. **Schreibt eine persistente Instruction-Datei** — `AGENTS.md` im Projekt-Root
+   (Codebuff/Freebuff), `~/.falsifyme-instructions.sh` (Bash) oder
+   `~/.falsifyme-instructions.ps1` (PowerShell), `FALSIFYME-WORKFLOW.md` (generisch).
+   Die Datei enthält die realen Skill-Pfade (`~/.agents/skills/falsifyme/`,
+   `~/.agents/skills/falsifyme-falsiflow/SKILL.md`) und das Verdict-Routing
+   (Exit 0 = WRITE/Freigabe, 1 = PLAN/RESEARCH/Loop, 2/3 = keine Freigabe)
+   und zwingt den Agenten in den FalsiFlow.
+4. **Startet das sichtbare Dock** — Windows-only (`ui/start-dock.cmd`);
+   auf anderen Plattformen meldet der Bootstrap das ehrlich und nennt
+   den Worker-Aufruf (`node ui/worker.mjs`).
+
+Rollen: FalsifyMe = unabhängiger read-only Falsifizierungs-Agent ·
+Coding-Agent = eigentliche Arbeits-/Write-Instanz ·
+Dock = sichtbare Visualisierung der laufenden FalsifyMe-Arbeit ·
+Installation = aktiviert die FalsifyMe-Workflow-Integration.
+
+Verifikation:
+
+```bash
+node --test tests/bootstrap.test.mjs
+node cli/bootstrap.mjs --dry-run --skip-dock
+```
+
+FalsifyMe bleibt read-only; der Coding-Agent bleibt für alle Änderungen
+verantwortlich.

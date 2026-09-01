@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createUiState, SLOT_TERMINAL } from "./state.mjs";
 import { apply, focusSlot, tick, SOFT_CAP_MS } from "./events.mjs";
+import { WORD } from "./boot.mjs";
 
 const t0 = 1_000_000;
 
@@ -208,4 +209,72 @@ test("files: Event mit Liste speichert echte Scan-Dateien (begrenzt auf 20)", ()
   apply(s, { t: "files", n: 4 }, t0);
   assert.equal(s.files, 4);
   assert.equal(s.slots[0].filesList.length, 20);
+});
+
+test("selftest: echter Status fuer Boot-Intro (Spec §6)", () => {
+  const s = createUiState();
+  apply(s, { t: "boot" }, t0);
+  assert.equal(s.testStatus ?? null, null, "vor selftest-Event: kein Status");
+  assert.equal(apply(s, { t: "selftest", status: "BOOT → SELFTEST" }, t0), true);
+  assert.equal(s.testStatus, "BOOT → SELFTEST");
+  apply(s, { t: "selftest", status: "READY" }, t0 + 1);
+  assert.equal(s.testStatus, "READY");
+  // Kein String -> null (kein Fake)
+  assert.equal(apply(s, { t: "selftest", status: 42 }, t0 + 2), true);
+  assert.equal(s.testStatus, null);
+  // Status wird gekappt (kein UI-Ueberlauf)
+  const long = "X".repeat(60);
+  apply(s, { t: "selftest", status: long }, t0 + 3);
+  assert.equal(s.testStatus.length, 48);
+});
+
+test("selftest: strukturierte Steps mit echtem Ergebnis (Spec §6)", () => {
+  const s = createUiState();
+  apply(s, { t: "boot" }, t0);
+  // Schritt 1: ok=true (echte Pruefung bestanden)
+  apply(s, { t: "selftest", step: { name: "RUNTIME", ok: true, detail: "node 22" } }, t0);
+  assert.equal(s.testSteps.length, 1);
+  assert.equal(s.testSteps[0].name, "RUNTIME");
+  assert.equal(s.testSteps[0].ok, true);
+  assert.equal(s.testStatus, "RUNTIME ✓");
+  // Schritt 2: ok=false (echte Pruefung fehlgeschlagen)
+  apply(s, { t: "selftest", step: { name: "API KEY", ok: false, detail: "fehlt" } }, t0 + 1);
+  assert.equal(s.testSteps.length, 2);
+  assert.equal(s.testSteps[1].ok, false);
+  assert.equal(s.testStatus, "API KEY ✕");
+  // Gleicher Name ersetzt statt doppelt
+  apply(s, { t: "selftest", step: { name: "RUNTIME", ok: true } }, t0 + 2);
+  assert.equal(s.testSteps.length, 2);
+  assert.equal(s.testSteps[0].name, "RUNTIME");
+  // Finales Ergebnis: pass/fail
+  apply(s, { t: "selftest", result: "fail" }, t0 + 3);
+  assert.equal(s.testResult, "fail");
+});
+
+test("tick: Selftest laufend haelt Boot-Intro (Spec §6)", () => {
+  const s = createUiState();
+  apply(s, { t: "boot" }, t0);
+  // Selftest-Steps vorhanden, aber kein Ergebnis -> Boot bleibt STARTING
+  apply(s, { t: "selftest", step: { name: "RUNTIME", ok: true } }, t0);
+  tick(s, t0 + SOFT_CAP_MS + 1);
+  assert.equal(s.state, "STARTING", "Boot bleibt waehrend Selftest aktiv");
+  // Selftest pass -> Boot darf in IDLE fallen
+  apply(s, { t: "selftest", result: "pass" }, t0 + SOFT_CAP_MS + 2);
+  tick(s, t0 + SOFT_CAP_MS + 3);
+  assert.equal(s.state, "IDLE", "Nach Selftest-Pass in IDLE");
+});
+
+test("tick: Selftest fail bleibt im Fehlerzustand (Spec §6.6)", () => {
+  const s = createUiState();
+  apply(s, { t: "boot" }, t0);
+  apply(s, { t: "selftest", step: { name: "DATABASE", ok: false } }, t0);
+  apply(s, { t: "selftest", result: "fail" }, t0 + 1);
+  tick(s, t0 + SOFT_CAP_MS + 1);
+  assert.equal(s.state, "STARTING", "Bei Selftest-Fail NICHT in Idle fallen");
+});
+
+test("boot word: FALSIFY_ME mit Unterstrich (Spec §5)", () => {
+  // Stellt sicher, dass das Boot-Intro das Wort mit Unterstrich zeigt.
+  assert.equal(WORD, "FALSIFY_ME");
+  assert.equal(WORD.length, 10);
 });
