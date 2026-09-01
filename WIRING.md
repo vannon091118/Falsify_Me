@@ -1,9 +1,8 @@
 # FALSIFYME — WIRING INDEX (für LLM-Agents & Entwickler)
 
-Schnellster Einstieg, um die Terminal-UI (Phase 1 implementiert) mit dem
-Produktpfad (Worker/CLI) zu verdrahten — die nächste Phase. Offene manuelle
-Checkpoints und aufgeschobene Integrationsaufgaben stehen verbindlich in
-`ui/PLAN.md`.
+Schnellster Einstieg in die Terminal-UI (Phase 1 implementiert, Phase 2
+verdrahtet: `cli/run.mjs`-Marker + Worker-TUI). Offene manuelle Checkpoints
+und neue Integrationsaufgaben stehen verbindlich in `ui/PLAN.md`.
 
 > **Regel:** Index lesen → `ui/PLAN.md` (Fortschritt/Status) → relevante Modul-
 > Dateien lesen → implementieren. NICHT raten, NICHT aus Erinnerung rekonstruieren.
@@ -28,8 +27,10 @@ ui/                        ← NEUE Terminal-UI (Phase 1 abgeschlossen)
 core/settings.mjs          ← Runtime-Provider/Model/Key + live /models-Abfrage
 cli/settings.mjs           ← settings show/set + models (siehe §6)
   tui/views/               ← React/Ink Views (NUR Darstellung, stateless)
-worker.mjs                 ← PRODUKT: NICHT angefasst (Integration = Phase 2)
-cli/run.mjs                ← PRODUKT: NICHT angefasst (Kindprozess des Workers)
+worker.mjs                 ← PRODUKT: TUI-Host (createTui + Parser-Feed, Phase 2)
+cli/run.mjs                ← PRODUKT: FM-EVT:-Marker (Kindprozess des Workers)
+core/agent.mjs             ← additiver onTool-Callback (echte Tool-Aktivitaet)
+ui/start-dock.cmd          ← sichtbarer Worker-Start (Fenster 1..3)
 ```
 
 ### START / TEST (Run-Optionen)
@@ -124,15 +125,15 @@ Kein Fake: fehlender `progress` ⇒ indeterminierter Sweep statt Prozent.
 > Verdrahtung ist weiterhin `createTui` + `createParser`; stdin-JSONL ist die
 > dokumentierte Alternative, kein zusätzlicher Job- oder User-Input.
 
-## 4. WIRING-PUNKTE FÜR PHASE 2 (nächste Phase, Produktpfad)
+## 4. WIRING-PUNKTE PHASE 2 (umgesetzt — Stand siehe ui/PLAN.md BLOCK 6)
 
-| Wo | Was | Vorsicht |
+| Wo | Was | Stand |
 |---|---|---|
-| `ui/worker.mjs` | Primär: `createTui({onAbort, options: {stdin: process.stdin}})` + direkter `createParser({onEvent: ui.applyEvent, onLine: ui.noteLine})`-Feed aus dem Worker-Stream. Alternative für getrennte Prozesse: stdin-JSONL-Feed an `tui-demo.mjs`/einen TUI-Runner | Worker-Fenster-Schleife (Claim-Loop) bleibt; TUI-Fenster übernimmt nur Anzeige |
-| `cli/run.mjs` | optional `FM-EVT:`-Marker an den relevanten Stellen ausgeben (Job, Scope, Phase, Finding, Verdict, Zustände) — oder Events aus vorhandenen Prints ableiten | NUR Marker ADDIEREN, Ausgabe sonst unveraendert (Worker/CLI-Output bleibt kompatibel) |
-| `onAbort` | Job-Kind (run.mjs) echt killen + auf `close` warten; danach `ui.applyEvent({t:"state",s:"ABORTED"})` | Keine UI-Fake-Beendigung; PID-Verifikation via `tui/abort.mjs` (`isDead`) |
-| `tui/terminal.mjs` | enter/exit Alt-Screen beim Worker-Start/Ende | Ink übernimmt Mode 2026 + Cursor bereits selbst |
-| `ui/start-dock.cmd` (etc.) | Fenster starten die TUI statt Textausgabe; bei separatem Prozess stdin-JSONL an den TUI-Runner pipen | Kein `-NoExit`-Quoting-Bruch (siehe bekannte wt.exe-Falle unten); START/TEST-Icons via `tui-make-icons.ps1` |
+| `ui/worker.mjs` | `createTui({onAbort, options: {stdin: process.stdin}})` + `createParser`-Feed aus dem run.mjs-Kind (TTY). Headless (kein TTY): Text-Ausgabe unverändert, kein Marker | DONE (Worker-Loop bleibt; TUI übernimmt nur Anzeige; FALSIFY_UI=1 nur im TTY-Spawn) |
+| `cli/run.mjs` | `FM-EVT:`-Marker: job, state (LOADING/THINKING/TOOL_ACTIVITY/FINDINGS/ERROR/TIMEOUT), phase/phase_done (aus Scope-Phase; progress wird nie erfunden), activity (via onTool), finding (nur bei echtem Befund), files (echte Whitelist), verdict, done | DONE — Marker gated auf `FALSIFY_UI=1`; Ausgabe sonst unverändert |
+| `core/agent.mjs` | additiver `onTool`-Callback je echtem Tool-Aufruf (Tool + Datei-Arg) | DONE — ohne Callback keinerlei Verhaltensänderung |
+| `onAbort` | Job-Kind (run.mjs) echt killen (`createAbort`, PID-Verifikation via `isDead`); danach `state: ABORTED`; ohne laufenden Job schliesst Q das Fenster (`ui.finish`) | DONE |
+| `ui/start-dock.cmd` | sichtbarer Worker-Start: startet `dock-runner.ps1` (Fenster 1..3), Worker rendert die TUI | DONE — neue Datei (fehlte vorher im Repo trotz Verweisen) |
 
 **Bekannte Falle Windows:** `wt.exe` aus einer Agent-/Headless-Session oeffnet KEIN sichtbares Fenster und Git-Bash zerlegt Argumente mit Leerzeichen + konvertiert `/k` zu Pfaden (Fehler 0x80070002 — "new-tab …" wird als Datei gesucht). Deshalb: **Fenster immer aus einer User-Konsole starten** — nie aus einer Agent-Shell:
 
@@ -224,16 +225,22 @@ manuellen User-Checkpoints `UI-030`, `UI-034`, `UI-035` und `UI-038` sowie der
 Abschluss-Task `UI-040`. Sie dürfen nicht als abgeschlossen behauptet werden,
 solange der User die sichtbare Prüfung nicht bestätigt hat.
 
-Die echte Phase-2-Integration in Worker/CLI ist bewusst aufgeschoben. Sie ist
-kein Bestandteil der abgeschlossenen UI-Phase und darf nicht durch Doku oder
-Demo-Befehle als bereits verdrahtet dargestellt werden.
+Die Phase-2-Integration in Worker/CLI ist umgesetzt und via
+`npm run test:phase2` verifiziert (BLOCK 6 in `ui/PLAN.md`); die sichtbare
+Selbsttest-Abnahme (UI-053/UI-054) steht noch aus und muss aus einer
+User-Konsole laufen, nicht aus einer Agent-Shell. Neue Behauptungen über
+die Verdrahtung gehören in `ui/PLAN.md` Block 6 und dürfen nicht nur in
+Antworten/Commits leben.
 
 ## 10. REGELN (unverhandelbar)
 
-- **NUR UI-Scope anfassen:** neue Dateien unter `ui/`; einzige bestehende
-  Aenderung bisher: `package.json` deps (`ink`, `react`).
-- Phase 1 = abgeschlossen; Integrationstasks gehören nach `ui/PLAN.md`
-  als neue Tasks (`UI-0xx`, Status TODO, `DEPENDS_ON`, `VERIFY`, erst dann DONE).
+- **SCOPE:** Phase 1 = nur `ui/` + `package.json` deps. Phase 2 (BLOCK 6,
+  abgeschlossen) umfasst `cli/run.mjs` (nur Marker addieren), `ui/worker.mjs`
+  (TUI-Host), `ui/start-dock.cmd` (neu) und `core/agent.mjs` (nur additiver
+  `onTool`-Callback). Alles andere bleibt unangetastet.
+- Phase 1/2 = abgeschlossen; neue Integrations-/Feature-Tasks gehören nach
+  `ui/PLAN.md` als neue Tasks (`UI-0xx`, Status TODO, `DEPENDS_ON`, `VERIFY`,
+  erst dann DONE).
 - Keine Refactors/Reparaturen „nebenbei"; kein Chat-/Steuerungs-UX.
 - Abschluss einer Phase ausschliesslich wie in PLAN.md geregelt (`UI BUILD COMPLETE` / `BLOCKED: <ID> <Grund>`).
 

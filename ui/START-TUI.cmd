@@ -29,7 +29,8 @@ if not exist "ui\.tui-desktop-optin" (
 
 :run
 rem Sichtbares Konsolenfenster – Projekteigene start-Mechanik (kein wt-Bruch)
-start "FalsifyMe-TUI-Demo" cmd /k node ui\tui-demo.mjs %*
+rem Beobachtung ist KEINE Demo: gleiche Pipeline, WARTE AUF EINGABE, kein --auto.
+start "FalsifyMe-TUI-Beobachtung" cmd /k node ui\tui-demo.mjs %*
 exit /b 0
 
 :icons

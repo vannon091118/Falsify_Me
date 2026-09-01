@@ -25,8 +25,20 @@ export async function runDoctor() {
   const needMajor = Number(String(pkg.engines?.node || ">=22").replace(/[^0-9.]/g, "").split(".")[0]);
   if (major >= needMajor) ok(`Node ${process.versions.node} (>= ${needMajor} gefordert)`);
   else bad(`Node ${process.versions.node} zu alt (>= ${needMajor} gefordert)`);
-  if (pkg.dependencies && Object.keys(pkg.dependencies).length === 0) ok("keine externen Dependencies (node:sqlite eingebaut)");
-  else bad("unerwartete Dependencies in package.json");
+  // Produktkern bleibt dependency-frei; die Terminal-UI braucht bewusst
+  // ink + react (Doku: package.json). Alles andere ist unerwartet.
+  const DOC_DEPS = { ink: "^7.1.1", react: "^19.2.8" };
+  const unexpected = Object.keys(pkg.dependencies || {}).filter((k) => !(k in DOC_DEPS));
+  if (unexpected.length) {
+    bad(`unerwartete Dependencies in package.json: ${unexpected.join(", ")}`);
+  } else {
+    // ink/react muessen tatsaechlich aufloesbar sein (TUI startet sonst nicht).
+    const missing = ["ink", "react"].filter((m) => {
+      try { import.meta.resolve(m); return false; } catch { return true; }
+    });
+    if (missing.length) bad(`TUI-Dependencies fehlen in node_modules: ${missing.join(", ")} (npm install ausfuehren)`);
+    else ok("Dependencies ok (ink + react fuer Terminal-UI; Produktkern bleibt dependency-frei)");
+  }
 
   // 2) Konfiguration (Validierung – wirft bei ungültigen Werten)
   try {

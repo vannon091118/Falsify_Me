@@ -27,6 +27,10 @@ import {
   registerWorker, unregisterWorker, heartbeatWorker,
   workerScope, setWorkerScope, workerPid, isWorkerAlive, listWorkers,
 } from "../artifacts/jobs.mjs";
+// ── Phase 2: Terminal-UI im Worker-Fenster ───────────────────────────────────
+import { createTui } from "./tui.mjs";
+import { createParser } from "./tui/parser.mjs";
+import { createAbort } from "./tui/abort.mjs";
 
 const V2_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const RUN_ENTRY = path.join(V2_DIR, "cli", "run.mjs");
@@ -98,17 +102,53 @@ async function main() {
   }
   registerWorker(db, WINDOW_IDX, process.pid);
 
-  console.log("");
-  console.log("┌─────────────────────────────────────────────────────────────┐");
+  // ── Phase 2: TUI im sichtbaren Worker-Fenster (nur bei TTY) ───────────────
+  // Die Anzeige ist reine Beobachtung: Events kommen von run.mjs (FM-EVT:-Marker)
+  // bzw. von hier (Claim/Abort). Text-Ausgaben (say) bleiben dem Headless-Betrieb
+  // (Agent-Kontexte, Logs) vorbehalten - Ausgabe dort unverändert wie bisher.
+  const TTY = Boolean(process.stdout.isTTY);
+  let ui = null;
+  let childRef = null;   // laufender run.mjs-Kindprozess (für Abort)
+  let aborting = false;
+  const uiEvt = (o) => ui?.applyEvent({ ...o, slot: WINDOW_IDX });
+  const say = (s) => {
+    if (!TTY) console.log(s);
+  };
+
+  if (TTY) {
+    ui = await createTui({
+      onAbort: async () => { abortFlow().catch(() => {}); },
+      onExit: (code) => process.exit(code || 0),
+      options: { stdin: process.stdin, seed: WINDOW_IDX * 13 + 7 },
+    });
+  }
+
+  const abortFlow = async () => {
+    if (aborting || !ui) return;
+    const child = childRef;
+    if (!child) {
+      // Kein Job am Laufen: Beobachtungsfenster schließen (Q/STRG-C).
+      ui.finish(0);
+      return;
+    }
+    aborting = true;
+    uiEvt({ t: "state", s: "ABORTING" });
+    const r = await createAbort({ child, killDelayMs: 2000 }).request();
+    uiEvt({ t: "state", s: r === "ABORTED" ? "ABORTED" : "ERROR" });
+    aborting = false;
+  };
+
+  say("");
+  say("┌─────────────────────────────────────────────────────────────┐");
   const box = `  Falsify-Dock · Fenster ${WINDOW_IDX}/${MAX_WINDOWS}`;
-  console.log(`│${box}${' '.repeat(58 - box.length)}│`);
-  console.log("│  Dieses Fenster bleibt OFFEN und verarbeitet Jobs aus der   │");
-  console.log("│  SQLite-Warteschlange (FALSIFY_HOME), live, parallel.       │");
-  console.log("└─────────────────────────────────────────────────────────────┘");
-  console.log(`FALSIFY_HOME : ${falsifyHome()}`);
-  console.log("Strg+C beendet dieses Fenster. Status je Job: falsify status <job-id>");
+  say(`│${box}${' '.repeat(58 - box.length)}│`);
+  say("│  Dieses Fenster bleibt OFFEN und verarbeitet Jobs aus der   │");
+  say("│  SQLite-Warteschlange (FALSIFY_HOME), live, parallel.       │");
+  say("└─────────────────────────────────────────────────────────────┘");
+  say(`FALSIFY_HOME : ${falsifyHome()}`);
+  say("Strg+C beendet dieses Fenster. Status je Job: falsify status <job-id>");
   title(`Falsify-Dock ${WINDOW_IDX}/${MAX_WINDOWS} · wartet auf Jobs`);
-  console.log("");
+  say("");
 
   for (;;) {
     heartbeatWorker(db, WINDOW_IDX);
@@ -125,54 +165,78 @@ async function main() {
 
     setWorkerScope(db, WINDOW_IDX, job.scope_id || "");
     title(`Falsify-Dock ${WINDOW_IDX} · ${job.scope_id || "ohne Scope"} · ${job.id}`);
-    console.log(`\n──────────────────────────────────────────────`);
-    console.log(`▶ JOB ${job.id}  gestartet ${new Date().toLocaleTimeString()}  (Fenster ${WINDOW_IDX})`);
-    console.log(`  Scope: ${job.scope_id || "–"}  ·  Phase: ${job.mode || "?"}`);
-    if (job.root) console.log(`  Datenzugriff: ${job.root}`);
-    if (job.files) console.log(`  Whitelist: ${job.files}`);
-    console.log(`──────────────────────────────────────────────\n`);
+    uiEvt({ t: "job", id: job.id, scope: job.scope_id || null });
+    uiEvt({ t: "state", s: "CLAIMING" });
+    say(`\n──────────────────────────────────────────────`);
+    say(`▶ JOB ${job.id}  gestartet ${new Date().toLocaleTimeString()}  (Fenster ${WINDOW_IDX})`);
+    say(`  Scope: ${job.scope_id || "–"}  ·  Phase: ${job.mode || "?"}`);
+    if (job.root) say(`  Datenzugriff: ${job.root}`);
+    if (job.files) say(`  Whitelist: ${job.files}`);
+    say(`──────────────────────────────────────────────\n`);
 
-    const child = spawn(process.execPath, [RUN_ENTRY, "--job-id", job.id], { cwd: V2_DIR, stdio: "inherit" });
+    const child = spawn(process.execPath, [RUN_ENTRY, "--job-id", job.id], {
+      cwd: V2_DIR,
+      // TTY (sichtbares Fenster): stdout des Kindes wird gefüttert (FM-EVT:
+      // → UI-Pipeline; sonstige Zeilen → Ring). Headless: wie bisher inheriten,
+      // damit die Ausgabe unverändert im Fenster/Log landet.
+      ...(TTY
+        ? { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FALSIFY_UI: "1" } }
+        : { stdio: "inherit" }),
+    });
+    childRef = child;
+    if (TTY) {
+      const parser = createParser({
+        onEvent: (evt) => ui.applyEvent({ ...evt, slot: WINDOW_IDX }),
+        onLine: (line) => ui?.noteLine(line),
+      });
+      child.stdout.on("data", (chunk) => parser.feed(chunk.toString()));
+      child.stdout.on("end", () => parser.flush());
+      child.stderr.on("data", (chunk) => {
+        for (const l of chunk.toString().split("\n")) if (l.trim()) ui?.noteLine(l);
+      });
+    }
     const code = await new Promise((resolve) => child.on("close", resolve));
+    childRef = null;
     dlog(`job ${job.id} beendet code=${code}`);
 
     // Falls run.mjs den Job nicht abgeschlossen hat (Crash), hier nachziehen.
     const done = getJob(db, job.id);
     if (!done || done.status === "RUNNING") {
       jobDone(db, job.id, null, `Worker-Abbruch (Exit-Code ${code})`);
+      uiEvt({ t: "state", s: "ERROR" });
     }
 
-    console.log(`\n──────────────────────────────────────────────`);
+    say(`\n──────────────────────────────────────────────`);
     const d = getJob(db, job.id);
     if (d?.status?.startsWith("DONE")) {
       const v = d.verdict || d.status.replace("DONE ", "");
       if (v === "WRITE") {
-        console.log("▶ JOB FERTIG: WRITE — Freigabe: READ-ONLY → WRITE.");
+        say("▶ JOB FERTIG: WRITE — Freigabe: READ-ONLY → WRITE.");
         title(`Falsify-Dock ${WINDOW_IDX} · FERTIG: WRITE`);
         bell();
       } else if (v === "RESEARCH") {
-        console.log("▶ JOB FERTIG: RESEARCH — FalsifyMe braucht weitere Daten (Loop).");
+        say("▶ JOB FERTIG: RESEARCH — FalsifyMe braucht weitere Daten (Loop).");
         title(`Falsify-Dock ${WINDOW_IDX} · FERTIG: RESEARCH`);
         bell();
       } else if (v === "PLAN") {
-        console.log("▶ JOB FERTIG: PLAN — Iteration überarbeiten (Loop).");
+        say("▶ JOB FERTIG: PLAN — Iteration überarbeiten (Loop).");
         title(`Falsify-Dock ${WINDOW_IDX} · FERTIG: PLAN`);
         bell();
       } else {
-        console.log(`▶ JOB FERTIG: ${v} — nicht freigegeben.`);
+        say(`▶ JOB FERTIG: ${v} — nicht freigegeben.`);
         title(`Falsify-Dock ${WINDOW_IDX} · FERTIG: ${v}`);
         bell();
       }
     } else if (d?.status?.startsWith("ERROR")) {
-      console.log(`▶ JOB FERTIG mit Fehler: ${d.status}`);
+      say(`▶ JOB FERTIG mit Fehler: ${d.status}`);
       title(`Falsify-Dock ${WINDOW_IDX} · FEHLER`);
       bell();
     } else {
-      console.log(`▶ JOB FERTIG mit Code ${code} (Fehler – siehe oben)`);
+      say(`▶ JOB FERTIG mit Code ${code} (Fehler – siehe oben)`);
       title(`Falsify-Dock ${WINDOW_IDX} · FEHLER`);
       bell();
     }
-    console.log(`──────────────────────────────────────────────\n`);
+    say(`──────────────────────────────────────────────\n`);
 
     await sleep(400);
     title(`Falsify-Dock ${WINDOW_IDX}/${MAX_WINDOWS} · wartet auf Jobs`);

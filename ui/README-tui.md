@@ -3,9 +3,10 @@
 **Version v0.02 Beta** (`0.2.0-beta` im `package.json`; Produkt-Runtime bleibt
 Read-only-Gateway, Business-Logik unverändert).
 
-**Dokumentationsstand:** Die visuelle Phase-1-Implementierung ist abgeschlossen;
-offene manuelle Checkpoints und die echte Phase-2-Worker-Integration bleiben in
-`ui/PLAN.md` ausdrücklich als `IN_PROGRESS` bzw. als nächste Phase markiert.
+**Dokumentationsstand:** Phase 1 (visuelle Implementierung) abgeschlossen,
+Phase 2 (Worker/CLI-Verdrahtung via FM-EVT) umgesetzt — siehe `ui/PLAN.md`
+BLOCK 6. Offene manuelle Checkpoints (UI-030/034/035/038) und die sichtbare
+Selbsttest-Abnahme (UI-053/054) bleiben ausdrücklich `IN_PROGRESS`.
 
 Die neue **visuelle Worker-Ansicht** („Visible Worker Window"): Der Benutzer
 schaut der Maschine bei der Arbeit zu. Das Fenster ist **reine Beobachtung** —
@@ -14,9 +15,11 @@ einen User-Input für Jobs gibt es nicht. Jobs kommen von ausserhalb
 (FEN 1..3) im EINEN Terminal-Prozess (pid)** visualisiert. Kein Chat, keine
 Agentensteuerung.
 
-> UI-Scope: NUR `ui/` (neu) + `package.json` (deps `ink`, `react`).
-> **KEINE Produktdatei** (`cli/*`, `artifacts/*`, `core/*`, `skills/*`, `ui/worker.mjs`)
-> wurde veraendert. Die Integration in den echten Worker ist die NAECHSTE Phase.
+> **Phase-1-Scope** war NUR `ui/` + `package.json` (deps `ink`, `react`).
+> **Phase 2 (umgesetzt)** hat additiv verdrahtet: `ui/worker.mjs` (TUI-Host),
+> `cli/run.mjs` (nur FM-EVT:-Marker, gated auf FALSIFY_UI=1 — Ausgabe sonst
+> unverändert), `core/agent.mjs` (nur additiver onTool-Callback),
+> `ui/start-dock.cmd` (neu). Kein Refactor von Produktlogik.
 
 ## §1 Start und Betriebsmodi
 

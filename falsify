@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# falsify – PATH-Shim → FalsifyMe 2.0 (cli)
+_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
+exec bash "$_DIR/cli/falsify.sh" "$@"

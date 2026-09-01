@@ -1,0 +1,6 @@
+# Laufzeit-/Tool-Verzeichnisse - niemals ins Repo
+node_modules/
+.freebuff/
+.Falsify_Core/
+.Falsify_Private/
+.Falsify/

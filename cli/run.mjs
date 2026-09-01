@@ -37,6 +37,19 @@ import { runAgent } from "../core/agent.mjs";
 // Provider-neutrale Konfiguration (Env → ~/.Falsify/config.json → Defaults).
 const CFG = loadConfig();
 
+// ── UI-Events (Phase 2): FM-EVT:-Marker für die Terminal-UI ──────────────────
+// Nur mit FALSIFY_UI=1 ausgeben (setzt der Worker-Fenster-Starter). Ohne das
+// Flag bleibt die CLI-Ausgabe unverändert (Agent-/Script-Kompatibilität).
+// Jedes Event trägt sein Fenster (window = FALSIFY_WINDOW), damit parallele
+// Worker-Fenster die Slots 1..3 im selben Terminal-PID korrekt füllen können.
+const UI_EVTS = process.env.FALSIFY_UI === "1";
+const UI_WINDOW = Number(process.env.FALSIFY_WINDOW) || 1;
+const uiEvt = (o) => {
+  if (!UI_EVTS) return;
+  console.log("FM-EVT: " + JSON.stringify({ ...o, window: UI_WINDOW }));
+};
+const PHASE_LABEL = { plan: "PLAN", research: "RESEARCH", write: "WRITE" };
+
 // ── ANSI ─────────────────────────────────────────────────────────────────────
 const C = (n, s) => `\x1b[${n}m${s}\x1b[0m`;
 const bold = (s) => C(1, s);
@@ -231,11 +244,19 @@ if (jobId) {
   job = getJob(db, jobId);
 }
 
+// ── UI-Start-Events (Phase 2): Job bekannt -> Slot belegen (nur FALSIFY_UI=1) ──
+const phaseLabel = PHASE_LABEL[scope?.phase || job?.mode || "plan"] || "PLAN";
+uiEvt({ t: "job", id: jobId, scope: scope?.id ?? null });
+uiEvt({ t: "state", s: "LOADING" });
+uiEvt({ t: "phase", phase: phaseLabel });
+uiEvt({ t: "files", n: FILE_WHITELIST.length });
+
 // ── API-Key aus FALSIFY_HOME/.env oder Prozessumgebung ───────────────────────
 const apiKey = loadApiKey();
 if (!apiKey) {
   console.error(red(`FEHLER: Kein API-Key gefunden (gesucht: ${keyNames().join(", ")}). Trage einen Key in ${keyEnvFile()} ein oder setze die passende Umgebungsvariable.`));
   console.error(dim(`Provider/Ziel: ${CFG.provider} (${CFG.apiBase}) – anpassbar via FALSIFY_API_BASE/FALSIFY_MODEL oder ${CFG.configFile}.`));
+  uiEvt({ t: "state", s: "ERROR" });
   // Job sauber schliessen, damit er nicht als RUNNING hängen bleibt.
   if (jobId) jobDone(db, jobId, null, "API-Key fehlt");
   closeDb();
@@ -276,6 +297,7 @@ async function main() {
 
   const t0 = Date.now();
   let result;
+  uiEvt({ t: "state", s: "THINKING" });
   try {
     result = await runAgent({
       systemPrompt, userContent, model, apiKey,
@@ -287,8 +309,14 @@ async function main() {
       timeoutMs: CFG.timeoutMs,
       root: ROOT,
       whitelist: FILE_WHITELIST,
+      onTool: (info) => {
+        uiEvt({ t: "state", s: "TOOL_ACTIVITY" });
+        uiEvt({ t: "activity", tool: info.tool, file: info.file, label: `${info.tool}(${info.file ?? ""})` });
+      },
     });
   } catch (e) {
+    const timedOut = /timeout/i.test(String(e.message));
+    uiEvt({ t: "state", s: timedOut ? "TIMEOUT" : "ERROR" });
     console.error(red(`\n✖ ${e.message}`));
     jobDone(db, jobId, null, e.message);
     const secs = ((Date.now() - t0) / 1000).toFixed(1);
@@ -303,6 +331,13 @@ async function main() {
   const verdict = parseVerdict(result.content);
   const befund = parseBefund(result.content);
   const subPrompt = parseSubPrompt(result.content);
+
+  // ── UI-Befund-/End-Events (Phase 2): Review-Erkenntnis + Verdict ──────────
+  // Nur echte Werte: finding nur, wenn der Review wirklich einen Befund hat;
+  // progress wird NICHT erfunden (kein Prozent ohne echten Fortschritt).
+  uiEvt({ t: "state", s: "FINDINGS" });
+  if (befund) uiEvt({ t: "finding", severity: "discovered" });
+  uiEvt({ t: "phase_done", phase: phaseLabel });
 
   // ── Persistenz: Job + Scope-Artefakt aktualisieren (FalsifyMe, nur eigene DB) ──
   if (scope) {
@@ -327,6 +362,8 @@ async function main() {
   if (befund) console.log(dim(`BEFUND: ${befund}`));
 
   if (verdict === "WRITE") {
+    uiEvt({ t: "verdict", v: "WRITE" });
+    uiEvt({ t: "done" });
     console.log(green(bold(`\nVERDICT: WRITE → Freigabe: READ-ONLY → WRITE`)));
     if (scope) console.log(green(`Scope ${scope.id} ist freigegeben – der Agent darf jetzt schreiben (WRITE-Loop/REVIEW-Loop).`));
     closeDb();
@@ -334,6 +371,8 @@ async function main() {
     return;
   }
   if (verdict === "RESEARCH" || verdict === "PLAN") {
+    uiEvt({ t: "verdict", v: verdict });
+    uiEvt({ t: "done" });
     const hint = verdict === "RESEARCH"
       ? "→ FalsifyMe braucht weitere Daten: read-only recherchieren, Befunde ergänzen, erneut einreichen."
       : "→ Iteration überarbeiten (Plan konkretisieren), erneut einreichen.";
@@ -343,6 +382,7 @@ async function main() {
     process.exitCode = 1;
     return;
   }
+  uiEvt({ t: "state", s: "ERROR" });
   console.log(yellow("\n(kein VERDICT vom Modell erkannt – bitte Kritik oben lesen)"));
   console.log(yellow("→ KEINE Zusage von FalsifyMe: Exit 3 – Agent darf NICHT weiterarbeiten."));
   closeDb();

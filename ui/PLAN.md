@@ -362,3 +362,83 @@ STATUS: IN_PROGRESS
 DEPENDS_ON: UI-039, UI-047
 VERIFY: PLAN.md vollstaendig DONE
 RESULT: Alle Implementierungs-/Test-/Verifikations-Tasks DONE (inkl. BLOCK 4b: WARTE-AUF-EINGABE-Modus + 3 Fenster-Slots); 4 visuelle User-Checkpoints (UI-030/034/035/038) mit Live-Fenster gestartet - Bestaetigung durch User
+## BLOCK 6 — Phase 2: Worker/CLI ↔ TUI-Verdrahtung (FM-EVT)
+
+Scope: cli/run.mjs (nur Marker addieren), core/agent.mjs (nur additiver
+onTool-Callback), ui/worker.mjs (TUI-Host), ui/start-dock.cmd (neu, fehlte
+vorher trotz Verweisen in README/Selbsttest/WIRING). kein Refactor nebenbei.
+
+ID: UI-050
+TASK: cli/run.mjs – FM-EVT:-Marker (job/state/phase/phase_done/files/finding/
+activity/verdict/done), gated auf FALSIFY_UI=1 (setzt der Worker im TTY-Spawn);
+ohne Flag ist die CLI-Ausgabe unveraendert. progress wird NIE erfunden;
+finding nur bei echtem Befund; timeout-Erkennung -> TIMEOUT-State.
+STATUS: DONE
+DEPENDS_ON: UI-042..UI-047 (Event-Contract)
+VERIFY: npm run test:phase2 (Marker-Gate-Test mit echtem Kindprozess)
+RESULT: PASS — ohne FALSIFY_UI keine Marker + Exit 2 + stderr-Text; mit Flag
+job/LOADING/PLAN/files/ERROR-Marker auf stdout, Text bleibt auf stderr.
+
+ID: UI-051
+TASK: core/agent.mjs – additiver onTool-Callback je echtem Tool-Aufruf
+(Tool + Datei-Arg), Default keine Wirkung; JSDoc ergaenzt.
+STATUS: DONE
+DEPENDS_ON: —
+VERIFY: npm run test:phase2 + bestehende Suite (kein Verhaltensdelta)
+RESULT: PASS — ohne Callback identisches Verhalten (Kern-Tests gruen).
+
+ID: UI-052
+TASK: ui/worker.mjs – TUI-Host: createTui({onAbort, stdin}) nur bei TTY;
+Kind stdout/stderr -> createParser -> applyEvent/noteLine (FALSIFY_UI=1 im
+TTY-Spawn); onAbort killt den Job echt (createAbort, PID-Check) und meldet
+ABORTED, ohne Job schliesst Q das Fenster; Headless-Pfad (kein TTY)
+unveraendert: Text-Ausgabe, stdio inherit, keine Marker.
+STATUS: DONE
+DEPENDS_ON: UI-050
+VERIFY: npm run test:phase2 (Worker-Loop-Test + --check) + Selbsttest
+RESULT: PASS — headless: QUEUED->RUNNING->ERROR via DB, ▶ JOB + FERTIG-Text,
+keine FM-EVT-Zeilen; --check -> STOPPED.
+
+ID: UI-053
+TASK: ui/start-dock.cmd – sichtbarer Worker-Start (Fenster 1..3) ueber
+dock-runner.ps1; Datei existierte im Repo nicht, obwohl README/Selbsttest/
+WIRING sie referenzierten.
+STATUS: IN_PROGRESS
+DEPENDS_ON: UI-052
+VERIFY: npm run selftest (startet das echte Fenster) + CRLF/ASCII-Check
+RESULT: TEILWEISE — Datei angelegt (CRLF/ASCII geprueft). Selftest-Lauf in
+der Agent-Shell wurde zweimal abgebrochen; sichtbares Fenster aus einer
+User-Konsole starten (bekannte wt.exe-/Agent-Shell-Falle, siehe WIRING §4).
+Nur durch den User/naechsten Agenten per npm run selftest abschliessbar.
+
+ID: UI-054
+TASK: Verifikation Phase 2: tests/phase2.test.mjs (4 Tests) + npm run selftest
+STATUS: IN_PROGRESS
+DEPENDS_ON: UI-050..UI-053
+VERIFY: node --test tests/phase2.test.mjs; npm run selftest; UI-Suite 105/105
+RESULT: TEILWEISE PASS — phase2 4/4 (Marker-Gate, Parser->UI-State inkl.
+Slot 1 ERROR/global IDLE, Worker-Loop headless, --check) und UI-Suite
+105/105 gruen; der sichtbare Selftest-Fensterlauf (npm run selftest) steht
+mangels User-Konsole in der Agent-Shell noch aus (UI-053).
+
+ID: UI-055
+TASK: Doku auf Wahrheit bringen (README/WIRING/ui-README-tui/PLAN Block 6):
+keine Behauptung "Phase 2 offen"; neue Behauptungen nur mit Testbeleg.
+STATUS: DONE
+DEPENDS_ON: UI-054
+VERIFY: grep "Phase 2" in README/WIRING/ui/README-tui.md + diese Datei
+RESULT: PASS — Status-Text ueberall auf "verdrahtet/umgesetzt" korrigiert;
+manuelle Checkpoints UI-030/034/035/038 bleiben IN_PROGRESS (User).
+
+ID: UI-057
+TASK: Desktop-Start (install.mjs Launcher) startet den Worker-Dock
+(ui\start-dock.cmd 1) statt tui-demo.mjs - KEIN Demo-Modus; Beobachter-
+Fenstertitel ohne "Demo"; README-Icon-Beschreibung angepasst. Skill-Pfad
+(ensure_dock_window + submit in die SQLite-Queue) bleibt unveraendert.
+STATUS: DONE
+DEPENDS_ON: UI-053, UI-056
+VERIFY: node --check install.mjs; grep im installierten START-FALSIFYME.cmd;
+npm run test:phase2 (Dock-Loop + Marker-Pipeline)
+RESULT: PASS — installierter Launcher: start "FalsifyMe-Dock" ui\start-dock.cmd 1;
+beide Desktop-Icons vorhanden; Dock idlet (Boot-Intro -> WARTE AUF EINGABE) und
+visualisiert geclaimte Jobs live ueber die FM-EVT-Pipeline; phase2-Tests 4/4.

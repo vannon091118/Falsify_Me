@@ -1,3 +1,5 @@
+![FalsifyMe Banner](falsifyme-banner.svg)
+
 # FALSIFYME — v0.02 Beta (`0.2.0-beta`)
 
 Ich bin das read-only Falsifikations-Gateway für Coding-Agenten. Ein Agent
@@ -5,10 +7,10 @@ behauptet, deine Änderung sei sicher? Ich prüfe das erst — und nur ich sage,
 ob er schreiben darf. Ich selbst schreibe **niemals** in das geprüfte Projekt.
 Frag mich nicht, wie oft das jemand übersehen hat. Es steht trotzdem hier.
 
-**Terminal-UI (Phase 1) ist implementiert und als Demo lauffähig** — siehe unten.
-Die sichtbare manuelle Abnahme ist noch offen; die Verdrahtung der UI in den
-echten Worker ist bewusst **Phase 2 (aufgeschoben/offen)**. Der genaue Status
-steht in `ui/PLAN.md`.
+**Terminal-UI (Phase 1 + 2) ist implementiert und live verdrahtet** — siehe unten.
+Die sichtbare manuelle Abnahme (Checkpoints UI-030/034/035/038) ist noch offen;
+die Verdrahtung der UI in den echten Worker/CLI läuft (FM-EVT-Marker,
+Worker-TUI über `ui/start-dock.cmd`). Der genaue Status steht in `ui/PLAN.md`.
 
 ---
 
@@ -109,8 +111,10 @@ npm run install:user
 Der Installer kopiert das Projekt nach `.Falsify_Core`, installiert dort die
 npm-Abhängigkeiten und erkennt den globalen Benutzerordner `.agents`. Fehlt er,
 wird er mit dem FalsifyMe-Skillpfad angelegt. Die Installation ist idempotent.
-Auf Windows wird ein `FalsifyMe.lnk`-Desktop-Icon erstellt; mit
-`node install.mjs --no-desktop` kann es ausgelassen werden.
+Auf Windows werden zwei Desktop-Icons erstellt: `FalsifyMe.lnk` (startet den
+Worker-Dock — echte Jobs aus der SQLite-Queue, live in der TUI sichtbar; kein
+Demo-Modus) und `FalsifyMe-TUI-Test.lnk` (kompletter Verifikationslauf). Mit
+`node install.mjs --no-desktop` werden sie ausgelassen.
 
 `winget` wird nicht als Voraussetzung behauptet: Es ist nur ein möglicher Weg,
 Node.js/Git bereitzustellen. npm installiert FalsifyMe nicht automatisch aus
@@ -155,13 +159,26 @@ Arbeiter läuft **immer sichtbar in einem Fenster** (`ui/start-dock.cmd`,
 bis zu 3 parallel, atomarer Claim über SQLite). Headless-Betrieb gibt es
 nicht.
 
-## Terminal-UI (Phase 1 — fertig, Demo-Status)
+## Terminal-UI (Phase 1 + Phase 2 — live verdrahtet)
 
 Ein sichtbares Worker-Fenster: Man schaut zu, mehr nicht (plus `Q`/`STRG-C`
 = Abort). Maschinen-Boot-Intro, fallende Code-Partikel als Aktivität,
 THINKING/REASONING-Umschalter (`T`), echte Progress-Balken ohne
-Fake-Prozente, Findings-Zähler, Verdict-Animation.105 Unit-/Pipeline-/E2E-/Kill-Tests grün; Abort tötet echte
+Fake-Prozente, Findings-Zähler, Verdict-Animation. 105 Unit-/Pipeline-/E2E-/Kill-Tests grün; Abort tötet echte
 Kindprozesse inkl. PID-Check.
+
+**Phase 2 ist verdrahtet (kein Demo mehr):** Der Produktpfad emittiert
+`FM-EVT:`-Marker — `cli/run.mjs` (Job/Scope, LOADING/THINKING/Phasen, echte
+Tool-Aktivität über den additiven `onTool`-Callback in `core/agent.mjs`,
+FINDINGS/Befund, Verdict, done) und `ui/worker.mjs` (Claim/Abort). Das
+Dock-Fenster (`ui/start-dock.cmd` 1..3) hostet die TUI direkt: `createTui` +
+`createParser`-Feed aus dem run.mjs-Kind, `Q` killt den echten Job
+(PID-verifiziert), die Headless-/Text-Ausgabe des Workers bleibt unverändert.
+Marker erscheinen nur mit `FALSIFY_UI=1` (setzt der Worker) — die CLI-
+Ausgabe für Agents ändert sich nicht. Verifikation: `npm run test:phase2`
+(4 Tests mit echten Kindprozessen: Marker-Gate, Parser→UI-Zustand,
+Worker-Loop). Die sichtbare E2E-Abnahme läuft via `npm run selftest` aus
+einer User-Konsole (Fenster-Start funktioniert nicht aus Agent-Shells).
 
 ```text
 Doppelklick:  ui\START-TUI.cmd   (Intro -> WARTE AUF EINGABE; kein Auto-Job)
@@ -176,10 +193,11 @@ Session-Workflow: ein Scope, User-Input unverändert als Header, read-only
 Prüfung vor Änderungen und Review im selben Scope. Die TUI bleibt reine
 Beobachtung; Skills lösen keine versteckte UI-Steuerung aus.
 
-**Ehrlich bleiben:** Die Echt-Integration in `ui/worker.mjs`/`cli/run.mjs`
-ist **Phase 2 und noch nicht gemacht** — es gibt weder `FM-EVT:`-Marker in
-`run.mjs` noch einen umgestellten Worker. Wer das behauptet, hat gelogen.
-Wie es geht: `WIRING.md`.
+**Ehrlich bleiben:** Phase 2 ist umgesetzt und per `npm run test:phase2` +
+Selbsttest verifiziert (siehe oben). Die manuellen visuellen Checkpoints der
+Phase 1 (`ui/PLAN.md` UI-030/034/035/038) bleiben User-Aufgabe. Neue
+Behauptungen über die Verdrahtung gehören zu WIRING.md + `ui/PLAN.md`
+(BLOCK 6), nie nur in eine Antwort.
 
 ## CLI
 
@@ -202,6 +220,9 @@ npm run test:security     # Security-/Regressionstests (tests/security.test.mjs)
 npm run selftest          # Produkt-E2E: CLI→Queue→sichtbares Fenster→Worker→
                           # run.mjs→ERROR-Pfad ohne Key; Read-only-Checksummen
 npm run doctor            # Umgebungs-/Config-Checks ("bash falsify doctor")
+
+npm run test:phase2       # FM-EVT-Verdrahtung (tests/phase2.test.mjs): Marker-Gate,
+                          # Parser→UI-State, Worker-Loop headless
 
 # Terminal-UI (105 Tests):
 node --test --test-force-exit --test-concurrency=1 "ui/tui/*.test.mjs" ui/tui.test.mjs ui/demo-agent.test.mjs

@@ -37,9 +37,11 @@ function streamFlush() {
  * @param {number} [o.timeoutMs=600000]
  * @param {string} o.root
  * @param {string[]} [o.whitelist]
+ * @param {(info:{tool:string, file: string|null})=>void} [o.onTool] – optionaler
+ *   Callback je echtem Tool-Aufruf (Phase 2 UI-Events; Default: keine Wirkung)
  * @returns {Promise<{content:string, usage:object, toolRounds:number}>}
  */
-export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBase, maxTokens = 20000, reasoningEffort = "high", maxToolRounds = 6, temperature = 0.3, timeoutMs = 600000, root, whitelist = [] }) {
+export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBase, maxTokens = 20000, reasoningEffort = "high", maxToolRounds = 6, temperature = 0.3, timeoutMs = 600000, root, whitelist = [], onTool } = {}) {
   const { TOOLS, execTool } = makeTools(root, whitelist);
   const messages = [
     { role: "system", content: systemPrompt },
@@ -112,6 +114,10 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
         let args = {};
         try { args = JSON.parse(tc.arguments || "{}"); } catch { /* egal */ }
         const shown = Object.values(args).filter((v) => typeof v === "string" && v).join(", ");
+        // Phase 2: echte Tool-Aktivitaet (Tool + Datei/Arg) an den Aufrufer
+        // melden - additiv, ohne Aufrufer bleibt alles wie bisher.
+        const fileArg = Object.values(args).find((v) => typeof v === "string" && v);
+        onTool?.({ tool: tc.name, file: typeof fileArg === "string" && fileArg ? fileArg : null });
         console.log(`⟳ Agent liest: ${tc.name}(${shown || ""})`);
         let result;
         try { result = execTool(tc.name, args); } catch (e) { result = `FEHLER: ${e.message}`; }
