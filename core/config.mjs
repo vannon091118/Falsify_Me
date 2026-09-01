@@ -94,8 +94,18 @@ export function loadConfig() {
     model: String(pick("FALSIFY_MODEL", data, "model", DEFAULTS.model)).trim(),
     apiBase,
     provider: String(pick("FALSIFY_PROVIDER", data, "provider", providerLabel(apiBase))).trim(),
-    keyEnvNames: String(pick("FALSIFY_API_KEY_ENV", data, "apiKeyEnv", DEFAULTS.apiKeyEnv))
-      .split(",").map((s) => s.trim()).filter(Boolean),
+    keyEnvNames: (() => {
+      // Liste: FALSIFY_API_KEY_ENV → config.json apiKeyEnv → Default. Ein explizit
+      // via `falsify settings set apiKeyName=…` gesetzter Name hat Vorrang
+      // (settings.mjs löst ihn genauso auf) – sonst wäre der konfigurierte
+      // Key-Name für Jobs unsichtbar („Kein API-Key gefunden“).
+      const base = String(pick("FALSIFY_API_KEY_ENV", data, "apiKeyEnv", DEFAULTS.apiKeyEnv))
+        .split(",").map((s) => s.trim()).filter(Boolean);
+      const named = typeof data.apiKeyName === "string" && data.apiKeyName.trim()
+        ? data.apiKeyName.trim()
+        : null;
+      return named ? [named, ...base.filter((n) => n !== named)] : base;
+    })(),
     maxTokens: pickNum("FALSIFY_MAX_TOKENS", data, "maxTokens", DEFAULTS.maxTokens, { min: 256, max: 1_000_000 }),
     reasoningEffort,
     maxToolRounds: pickNum("FALSIFY_MAX_TOOL_ROUNDS", data, "maxToolRounds", DEFAULTS.maxToolRounds, { min: 1, max: 20 }),

@@ -139,6 +139,12 @@ case "$cmd" in
   doctor)
     node "$V2_DIR/cli/main.mjs" doctor
     ;;
+  settings)
+    node "$V2_DIR/cli/main.mjs" settings "$@"
+    ;;
+  models)
+    node "$V2_DIR/cli/main.mjs" models "$@"
+    ;;
   run)
     node "$V2_DIR/cli/run.mjs" "$@"
     ;;

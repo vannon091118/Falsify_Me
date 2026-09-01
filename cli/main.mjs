@@ -36,4 +36,10 @@ async function main() {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) main();
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  // Unerwartete Fehler immer als saubere eine Zeile (kein Stack-Trace) + Exit 3.
+  main().catch((e) => {
+    console.error(`FEHLER: ${e?.message || e}`);
+    process.exit(3);
+  });
+}
