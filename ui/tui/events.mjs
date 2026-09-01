@@ -15,7 +15,7 @@ export const SOFT_CAP_MS = 2500;
 
 export const EVENT_TYPES = Object.freeze([
   "boot", "job", "state", "activity", "finding", "phase", "phase_done",
-  "verdict", "output", "files", "done", "focus", "selftest",
+  "verdict", "output", "files", "done", "focus", "selftest", "stats",
 ]);
 
 const slotOf = (state, evt) => {
@@ -173,6 +173,13 @@ export const apply = (state, evt, now = Date.now()) => {
       return true;
     case "output": {
       slotOf(state, evt).output.push(typeof evt.line === "string" ? evt.line : "");
+      return true;
+    }
+    case "stats": {
+      // Progression-Statistik (User-Anker): GESAMT-Zahlen aus der Queue,
+      // vom Worker beim Idle-/Start-Zustand geliefert. Global (uebergreifend),
+      // kein Slot-Bezug - eine Statistik fuer die ganze lokale FalsifyMe-DB.
+      if (evt.data && typeof evt.data === "object") state.stats = evt.data;
       return true;
     }
     case "files": {

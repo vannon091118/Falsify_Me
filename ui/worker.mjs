@@ -30,6 +30,7 @@ import {
   isAbortRequested, clearJobAbort,
 } from "../artifacts/jobs.mjs";
 import { enforceQueueConsistency } from "../artifacts/invariants.mjs";
+import { collectStats } from "../artifacts/stats.mjs";
 // ── Phase 2: Terminal-UI im Worker-Fenster ───────────────────────────────────
 import { createTui } from "./tui.mjs";
 import { createParser } from "./tui/parser.mjs";
@@ -316,6 +317,17 @@ async function main() {
   title(`Falsify-Dock ${WINDOW_IDX}/${MAX_WINDOWS} · wartet auf Jobs`);
   say("");
 
+  // Progression-Statistik (User-Anker): beim Start + beim Idle-Uebergang
+  // die GESAMT-Zahlen aus der Queue in die UI geben (read-only Ableitung,
+  // Regel 3 - kein zweites Speichersystem). Nie den Worker crashen.
+  let idleStatsSent = false;
+  const emitStats = () => {
+    try {
+      uiEvt({ t: "stats", data: collectStats(db) });
+    } catch { /* egal: Statistik ist Anzeige, kein kritischer Pfad */ }
+  };
+  if (TTY) emitStats(); // Start-Zustand: Anker sofort sichtbar
+
   for (;;) {
     // Abort-Race-Guard: waehrend abortFlow laeuft (killDelay), darf KEIN neuer
     // Job geclaimt werden (childRef waere sonst ueberschrieben). Erst nach
@@ -331,7 +343,14 @@ async function main() {
       await sleep(2000);
       continue;
     }
-    if (!job) { await sleep(1000); continue; }
+    if (!job) {
+      // Idle: Statistik genau einmal pro Leerlauf-Phase aktualisieren
+      // (nicht bei jedem 1-s-Poll - SQLite-Lese ist unnötig im Takt).
+      if (!idleStatsSent) { emitStats(); idleStatsSent = true; }
+      await sleep(1000);
+      continue;
+    }
+    idleStatsSent = false;
     // Regel-3-Enforcement (claim): eine inkonsistente Basis wird NICHT
     // weiterverarbeitet (fail-closed) — erst falsify doctor. Der Claim selbst
     // ist atomar (BEGIN IMMEDIATE), alle Review-Commits sind atomar, ein

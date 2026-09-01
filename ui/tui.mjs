@@ -199,6 +199,10 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
         particles: renderField(fields[s.idx]),
       })),
       boot: bootStage,
+      // Progression-Statistik (User-Anker, stats-Event des Workers) –
+      // globale Gesamtzahlen; der Idle-Screen zeigt sie als persistenten
+      // Anker („X Fehler in Y Tasks, Z Jobs nötig“).
+      stats: state.stats,
       // Optionaler, echter Selftest: nur sichtbar, wenn ein externer
       // Worker selftest-Events mit echten Pruefungen liefert; nie kuenstlich.
       testStatus: state.testStatus ?? null,

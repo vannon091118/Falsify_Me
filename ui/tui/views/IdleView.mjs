@@ -72,6 +72,36 @@ const eventLine = (e) => {
   }
 };
 
+// Progression (User-Anker): GESAMT-Statistik aus der Queue (stats-Event des
+// Workers). „Ohne FalsifyMe haettest du X Fehler in Y Tasks durchgewunken“ –
+// der persistente Anker ueber alle Jobs hinweg, nicht nur die Sitzung.
+const progressionLines = (stats, inner) => {
+  if (!stats) return [];
+  const s = stats;
+  const one = (v, single, plural) => `${v} ${v === 1 ? single : plural}`;
+  const stmt =
+    `Ohne FalsifyMe haettest du ${one(s.errorsCaught ?? 0, "Fehler", "Fehler")} in ` +
+    `${one(s.scopesTotal ?? 0, "Task", "Tasks")} als korrekt durchgewunken – ` +
+    `dafuer waren ${one(s.jobsTotal ?? 0, "Job", "Jobs")} noetig, ` +
+    `${one(s.releases ?? 0, "Freigabe", "Freigaben")} (WRITE).`;
+  const wrap = (txt) => {
+    const out = [];
+    let cur = "";
+    for (const word of txt.split(" ")) {
+      if (cur && strWidth(cur) + 1 + strWidth(word) > inner) { out.push(cur); cur = word; }
+      else cur = cur ? `${cur} ${word}` : word;
+    }
+    if (cur) out.push(cur);
+    return out.slice(0, 2);
+  };
+  const lines = [
+    { text: "PROGRESSION (GESAMT – User-Anker)", color: "cyan", bold: true },
+    ...wrap(stmt).map((t) => ({ text: t, color: "green" })),
+    { text: `Verdicts: ${s.jobsByVerdict?.WRITE ?? 0} WRITE · ${s.jobsByVerdict?.PLAN ?? 0} PLAN · ${s.jobsByVerdict?.RESEARCH ?? 0} RESEARCH · ${s.jobsByVerdict?.UNBEKANNT ?? 0} UNBEKANNT  ·  Findings: ${s.findingsTotal ?? 0}  ·  Modell-Calls: ${s.modelCalls ?? 0}`, color: "gray" },
+  ];
+  return lines;
+};
+
 // Echte abgeschlossene Jobs aus den Slots (Endzustaende, sichtbar bis ein
 // neuer Job den Slot belegt) - ehrliche Session-Geschichte.
 const historyFromSlots = (snap) =>
@@ -128,6 +158,11 @@ export default function IdleView({ snap, cols, rows }) {
     { w: "labelBot" },
     { w: "text", text: "KEIN JOB AKTIV · JOBS KOMMEN VON AGENTS/WORKER", color: "gray" },
   ];
+  // Progression-Anker (kompakt, nur wenn Platz) – zwischen Status und History.
+  const prog = progressionLines(snap.stats, inner);
+  if (prog.length && rows >= 14) {
+    for (const l of prog) block.push({ w: "text", text: l.text, color: l.color, bold: l.bold });
+  }
   if (history.length) {
     block.push({ w: "text", text: "LETZTE AKTIVITÄT", color: "cyan", bold: true });
     for (const line of history) block.push({ w: "text", text: truncate(line.text, inner, "…"), color: line.color });

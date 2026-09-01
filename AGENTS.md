@@ -269,7 +269,7 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   tests/security.test.mjs tests/phase2.test.mjs tests/queue.test.mjs
   tests/feasibility.test.mjs tests/datamodel.test.mjs tests/invariants.test.mjs
   tests/selfreview.test.mjs tests/twin.test.mjs tests/prompt.test.mjs
-  tests/agent.test.mjs`
+  tests/agent.test.mjs tests/stats.test.mjs`
   (Stand 2026-09-01; deckt die Regeln ab: Queue eine Wahrheit,
   list_dir-Namen-Vertrag, WRITE-Challenge-Evidenz, Self-Review-Scope,
   strukturelle Kohärenz, Evil-Twin-Gegenprüfung, Prompt-Daten).

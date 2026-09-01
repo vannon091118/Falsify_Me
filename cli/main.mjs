@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { runScope } from "./scope.mjs";
 import { runStatus, runJobs, runPing, runAbort } from "./jobs.mjs";
 import { runHistory } from "./history.mjs";
+import { runStats } from "./stats.mjs";
 import { runLog } from "./log.mjs";
 import { runAnswer } from "./answer.mjs";
 import { ensureFalsifyHome } from "../artifacts/db.mjs";
@@ -18,6 +19,7 @@ async function main() {
   switch (cmd) {
     case "status": runStatus(args[1]); break;
     case "jobs": runJobs(); break;
+    case "stats": runStats(args.slice(1)); break;
     case "ping": runPing(args[1]); break;
     case "abort": runAbort(args[1]); break;
     case "history": runHistory(args.slice(1)); break;

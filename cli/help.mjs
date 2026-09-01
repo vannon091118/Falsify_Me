@@ -6,6 +6,8 @@ export const HELP_TEXT = `FalsifyMe 2.0 · Verwaltungs-CLI
 Verwendung:
   falsify status <job-id>                 Status + Zeiten eines Jobs
   falsify jobs                            Warteschlange: QUEUED / RUNNING / DONE / ERROR
+  falsify stats [--json]                  Progression-Statistik (User-Anker): X Fehler in Y Tasks, Z Jobs,
+                                          Verdicts, Findings, SQLite-Nutzung – read-only aus der Queue
   falsify history [--last n]              letzte Befunde aus der DB
   falsify scope new "<user-input>"        Scope anlegen (HEADER = User-Input 1:1)
   falsify scope show <id> [--full]        Scope-Artefakt (Header, Phase, letzter Befund, alle Befunde)

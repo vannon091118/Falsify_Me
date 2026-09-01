@@ -69,6 +69,19 @@ test("plain: VERIFYING (Evil Twin) setzt twinActive und zeigt Roh-Text", async (
   assert.equal(ui.getSnap().twinActive, false, "nach der Gegenpruefung normales Bild");
 });
 
+test("plain: stats-Event (Progression-Anker) wird global gespeichert", async () => {
+  const ui = await createTui();
+  assert.equal(ui.getSnap().stats, null, "ohne Event kein Anker");
+  ui.applyEvent({ t: "stats", data: { jobsTotal: 11, errorsCaught: 4, scopesTotal: 2, releases: 2, findingsTotal: 13, modelCalls: 12, jobsByVerdict: { WRITE: 2, PLAN: 5, RESEARCH: 2, UNBEKANNT: 1 }, sqlite: { bytes: 49152, rowsPerTable: { jobs: 11 } } } });
+  const snap = ui.getSnap();
+  assert.equal(snap.stats.jobsTotal, 11);
+  assert.equal(snap.stats.errorsCaught, 4);
+  assert.equal(snap.stats.releases, 2);
+  // Ungueltiges Event (kein data-Objekt): ignoriert, kein Crash
+  assert.equal(ui.applyEvent({ t: "stats" }), true);
+  assert.equal(ui.getSnap().stats.jobsTotal, 11, "bestehender Anker bleibt");
+});
+
 test("plain: Aktivitaets-Labels landen im Partikel-Pool", async () => {
   const ui = await createTui();
   ui.applyEvent({ t: "activity", tool: "glob", file: "**/*.js", label: "glob('**/*.js')" });
@@ -200,6 +213,13 @@ test("TTY-Views: App rendert Boot/Live/Reasoning/Verdict via Ink (fake stdout)",
 
   // Idle-Ansicht (WARTE AUF EINGABE): leerer History-Pfad
   inst = mount({ ...snap, globalIdle: true, state: "IDLE", stateLabel: "WARTE AUF EINGABE" });
+  inst.unmount();
+
+  // Idle-Ansicht MIT Progression-Anker (stats-Event): rendert fehlerfrei
+  inst = mount({
+    ...snap, globalIdle: true, state: "IDLE", stateLabel: "WARTE AUF EINGABE",
+    stats: { jobsTotal: 11, errorsCaught: 4, scopesTotal: 2, releases: 2, findingsTotal: 13, modelCalls: 12, jobsByVerdict: { WRITE: 2, PLAN: 5, RESEARCH: 2, UNBEKANNT: 1 }, sqlite: { bytes: 49152, rowsPerTable: { jobs: 11 } } },
+  });
   inst.unmount();
 
   // Idle-Ansicht mit ECHTER Session-History (Slot mit Vorderdict + letzte Events)

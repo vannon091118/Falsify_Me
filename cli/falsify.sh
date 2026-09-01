@@ -20,7 +20,7 @@
 #             --no-wait NUR fuer interaktive Tools (danach: falsify wait <id>)
 #   falsify wait <job-id>                    STILLER CHECKBACK (jede Sekunde, KEIN Timeout):
 #                                            Ergebnis kommt im Moment der Fertigstellung.
-#   falsify status <job-id> | falsify jobs | falsify state | falsify check
+#   falsify status <job-id> | falsify jobs | falsify stats [--json] | falsify state | falsify check
 #   falsify scope show <id> | falsify scope list
 #   falsify log <job-id> | falsify answer <job-id> [--file pfad]
 #   falsify history [--last n]
@@ -159,6 +159,11 @@ case "$cmd" in
     ;;
   jobs)
     node "$V2_DIR/cli/main.mjs" jobs
+    ;;
+  stats)
+    # Progression-Statistik (User-Anker): Gesamtzahlen aus der Queue
+    # (read-only). `--json` fuer Skripte/Agents.
+    node "$V2_DIR/cli/main.mjs" stats "$@"
     ;;
   state|check)
     node "$V2_DIR/ui/worker.mjs" --"$cmd"

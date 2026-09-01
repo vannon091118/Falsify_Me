@@ -62,6 +62,8 @@ core/agent.mjs             ← additiver onTool-Callback (echte Tool-Aktivitaet)
 ui/start-dock.cmd          ← sichtbarer Worker-Start (Fenster 1..3)
 cli/onboard.mjs            ← Onboarding-Dialog (falsify onboard, siehe §13)
 cli/jobs.mjs               ← status/jobs/ping/abort (Wait-Auswertung + CLI-Abbruch)
+artifacts/stats.mjs        ← Progression-Statistik (read-only User-Anker aus der Queue)
+cli/stats.mjs              ← falsify stats [--json] (Anzeige der Statistik)
 cli/onboard/prompts.mjs    ← echter readline-Dialog: ask/askSecret(maskiert)/confirm
 cli/onboard/steps.mjs      ← Onboarding-Ablauf (Settings abfragen, Dock-Start)
 uninstall.mjs              ← vollständige Deinstallation (Gegenstück zu install.mjs)
@@ -307,6 +309,11 @@ node --test tests/twin.test.mjs         # extractClaims, parseTwinVerdict (stren
 # Prompt-Texte als Daten (Root-Cause-Fix):
 node --test tests/prompt.test.mjs       # vier System-Prompts laden + Marker,
                                         # buildUserContent-Diff-Fences, fail-fast
+
+# Progression-Statistik (User-Anker, read-only aus der Queue):
+node --test tests/stats.test.mjs        # Gesamtzahlen (jobs/findings/scopes/
+                                        # rate_limit), UNBEKANNT aus dem Status,
+                                        # Ein-Satz-Anker, READ-ONLY-Beweis
 ```
 
 ## 9. OFFENE UND AUFGESCHOBENE TASKS

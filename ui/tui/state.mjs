@@ -140,6 +140,9 @@ export const createUiState = () => {
     testStatus: null,
     testSteps: null,
     testResult: null,
+    // Progression-Statistik (User-Anker): GESAMT-Zahlen aus der Queue,
+    // vom Worker per stats-Event geliefert (global, read-only Anzeige).
+    stats: null,
   };
 };
 

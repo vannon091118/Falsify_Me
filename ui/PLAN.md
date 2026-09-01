@@ -1430,3 +1430,10 @@ STATUS: DONE
 DEPENDS_ON: UI-104 (Evil-Twin-Gate), UI-108 (OutputView/Roh-Text-Ring)
 VERIFY: node --test --test-force-exit --test-concurrency=1 "ui/tui/*.test.mjs" ui/tui.test.mjs (plain: VERIFYING setzt twinActive + Roh-Text im Ring; TTY-Views: EvilTwinView rendert fehlerfrei); Smoke: Dock live waehrend WRITE-Gegenpruefung -> Bild wechselt auf Rot/Schwarz.
 RESULT: state.mjs VERIFYING-Farbe rot; tui.mjs snap.twinActive (global + pro Slot); EvilTwinView.mjs (neu, Rot/Schwarz-Kontrast, invertierter Kopf, Roh-Text aus dem Output-Ring, Ergebnis-Legende); App-Routing VERIFYING -> EvilTwinView (unabhaengig vom t-Toggle); SlotsView markiert VERIFYING-Panels rot mit "⚔ EVIL TWIN"-Tag; Twin-Prompts DE/EN tragen den Ton seit UI-104 (verifiziert). 86/86 Core + 112/112 UI gruen.
+
+ID: UI-110
+TASK: Progression-Statistik (persistenter User-Anker): "Ohne FalsifyMe haettest du X Fehler in Y Tasks durchgewunken, dafuer waren Z Jobs noetig" als GESAMT-Statistik - read-only aus der Queue abgeleitet (Regel 3, kein zweites Speichersystem), inkl. SQLite-Nutzung (Dateigroesse, Zeilen je Tabelle) und nachweisbarer Modell-Calls.
+STATUS: DONE
+DEPENDS_ON: UI-090 (Queue-Datenmodell), UI-104 (evil-twin-Welle fuer Call-Zaehlung)
+VERIFY: node --test tests/stats.test.mjs (Gesamtzahlen, UNBEKANNT aus dem Status, Ein-Satz-Anker, READ-ONLY-Beweis, leere DB); ui/tui.test.mjs (stats-Event im Snap, IdleView mit Anker); live: falsify stats + Dock-Idle-Screen zeigt den Anker.
+RESULT: artifacts/stats.mjs collectStats (jobsByStatus/Verdict, findingsByVerdict/Wave, scopesByStatus/Phase, errorsCaught=findings PLAN+RESEARCH, releases=WRITE, unbekannt aus Status "DONE UNBEKANNT", modelCalls=Jobs-mit-Verdict+evil-twin, sqlite.bytes+rowsPerTable) + progressionStatement; cli/stats.mjs `falsify stats [--json]`; TUI: stats-Event (events.mjs/state.mjs/tui.mjs snap.stats), IdleView-Progression-Panel (kompakt ab rows>=14), Worker emitStats bei Start + Idle-Uebergang. 89/89 Core + 113/113 UI gruen.
