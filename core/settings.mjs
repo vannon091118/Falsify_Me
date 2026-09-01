@@ -1,0 +1,197 @@
+// FalsifyMe - Runtime-Settings
+// Verantwortung: provider-/modell-neutrale Konfiguration ausserhalb des Repos.
+// Secrets werden nur in FALSIFY_HOME/.env gespeichert und niemals ausgegeben.
+import fs from "node:fs";
+import path from "node:path";
+import { falsifyHome } from "../artifacts/db.mjs";
+import { loadConfig } from "./config.mjs";
+
+const CONFIG_KEYS = Object.freeze([
+  "provider", "apiBase", "model", "apiKeyEnv", "maxTokens", "reasoningEffort",
+  "maxToolRounds", "maxRpm", "lang", "temperature", "timeoutMs", "pricing",
+]);
+
+const cloneJson = (value) => JSON.parse(JSON.stringify(value));
+
+function configPath() {
+  return path.join(falsifyHome(), "config.json");
+}
+
+function envPath() {
+  return process.env.FALSIFY_ENV || path.join(falsifyHome(), ".env");
+}
+
+function readJson(file) {
+  try {
+    const value = JSON.parse(fs.readFileSync(file, "utf8"));
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function writePrivate(file, content) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, content, { encoding: "utf8", mode: 0o600 });
+  try { fs.chmodSync(file, 0o600); } catch { /* Windows ACLs */ }
+}
+
+function readEnv(file) {
+  try { return fs.readFileSync(file, "utf8"); } catch { return ""; }
+}
+
+function hasEnvKey(file, name) {
+  const marker = `${name}=`;
+  return readEnv(file).split(/\r?\n/).some((line) => {
+    if (!line.startsWith(marker)) return false;
+    return line.slice(marker.length).trim().replace(/^["']|["']$/g, "").length > 0;
+  });
+}
+
+function quoteEnv(value) {
+  return JSON.stringify(String(value));
+}
+
+function writeEnvKey(name, value) {
+  if (!/^[A-Z_][A-Z0-9_]*$/i.test(name)) {
+    throw new Error(`Ungueltiger API-Key-Name: ${name}`);
+  }
+  const file = envPath();
+  const source = readEnv(file);
+  const lines = source ? source.split(/\r?\n/) : [];
+  const marker = `${name}=`;
+  let replaced = false;
+  const next = lines.map((line) => {
+    if (line.startsWith(marker)) {
+      replaced = true;
+      return `${name}=${quoteEnv(value)}`;
+    }
+    return line;
+  });
+  if (!replaced) next.push(`${name}=${quoteEnv(value)}`);
+  writePrivate(file, next.join("\n").replace(/\n+$/, "") + "\n");
+  return file;
+}
+
+function redact(value, key = "") {
+  if (value === undefined || value === null) return value;
+  if (/key|secret|token|password/i.test(key)) return value ? "********" : "";
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redact(v, k)]));
+  }
+  if (Array.isArray(value)) return value.map((v) => redact(v, key));
+  return value;
+}
+
+function validateString(value, key) {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${key} muss ein nichtleerer Text sein`);
+  return value.trim();
+}
+
+function validateSettings(patch) {
+  const out = {};
+  for (const [key, value] of Object.entries(patch ?? {})) {
+    if (!CONFIG_KEYS.includes(key) && key !== "apiKey" && key !== "apiKeyName") {
+      throw new Error(`Unbekannte Runtime-Einstellung: ${key}`);
+    }
+    if (["provider", "model", "apiKeyEnv", "apiKeyName"].includes(key)) out[key] = validateString(value, key);
+    else if (key === "apiBase") {
+      const v = validateString(value, key).replace(/\/+$/, "");
+      if (!/^https?:\/\//i.test(v)) throw new Error("apiBase muss mit http:// oder https:// beginnen");
+      out[key] = v;
+    } else if (key === "pricing") {
+      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("pricing muss ein Objekt sein");
+      out[key] = cloneJson(value);
+    } else if (["maxTokens", "maxToolRounds", "maxRpm", "temperature", "timeoutMs"].includes(key)) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) throw new Error(`${key} muss eine Zahl sein`);
+      out[key] = n;
+    } else if (key === "reasoningEffort" || key === "lang") {
+      out[key] = validateString(value, key);
+    } else {
+      out[key] = value;
+    }
+  }
+  if (out.apiKey !== undefined) {
+    if (!out.apiKeyName) out.apiKeyName = out.apiKeyEnv || "FALSIFY_API_KEY";
+  }
+  return out;
+}
+
+/** Liest die effektive Konfiguration und gibt niemals den API-Key zurueck. */
+export function getRuntimeSettings() {
+  const cfg = loadConfig();
+  const file = readJson(configPath());
+  const keyName = String(file.apiKeyName || file.apiKeyEnv || process.env.FALSIFY_API_KEY_ENV || "FALSIFY_API_KEY").split(",")[0].trim();
+  const result = {
+    provider: file.provider || cfg.provider,
+    apiBase: cfg.apiBase,
+    model: cfg.model,
+    apiKeyEnv: cfg.keyEnvNames.join(","),
+    keyConfigured: Boolean(process.env[keyName]?.trim()) || hasEnvKey(envPath(), keyName),
+    configFile: configPath(),
+    envFile: envPath(),
+  };
+  if (file.pricing !== undefined) result.pricing = redact(file.pricing);
+  for (const key of ["maxTokens", "reasoningEffort", "maxToolRounds", "maxRpm", "lang", "temperature", "timeoutMs"]) {
+    result[key] = cfg[key];
+  }
+  return result;
+}
+
+/**
+ * Aktualisiert Runtime-Werte. Provider/Model/API-Base werden in config.json,
+ * der Key ausschließlich in der privaten .env gespeichert.
+ */
+export function updateRuntimeSettings(patch = {}) {
+  const normalized = validateSettings(patch);
+  const file = readJson(configPath());
+  const key = normalized.apiKey;
+  const keyName = normalized.apiKeyName || normalized.apiKeyEnv;
+  delete normalized.apiKey;
+  // Der Name darf in config.json stehen; der geheime Wert bleibt ausschliesslich
+  // in .env und wird nie in der Konfigurationsdatei gespeichert.
+  if (keyName) normalized.apiKeyName = keyName;
+  Object.assign(file, normalized);
+  writePrivate(configPath(), JSON.stringify(file, null, 2) + "\n");
+  if (key !== undefined) writeEnvKey(keyName || "FALSIFY_API_KEY", key);
+  return getRuntimeSettings();
+}
+
+function authHeaders(apiKey) {
+  return apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+}
+
+/**
+ * Ruft den OpenAI-kompatiblen /models-Endpunkt ab. Pricing wird nur aus der
+ * Provider-Antwort (pricing/cost) oder lokaler config.json uebernommen.
+ */
+export async function fetchAvailableModels({ apiBase, apiKey, timeoutMs = 15000 } = {}) {
+  const settings = getRuntimeSettings();
+  const base = String(apiBase || settings.apiBase).replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(base)) throw new Error("apiBase muss mit http:// oder https:// beginnen");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}/models`, {
+      headers: { Accept: "application/json", ...authHeaders(apiKey) },
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    let body;
+    try { body = JSON.parse(text); } catch { body = {}; }
+    if (!res.ok) throw new Error(`Models-Abfrage HTTP ${res.status}: ${text.slice(0, 300)}`);
+    const localPricing = readJson(configPath()).pricing || {};
+    const rows = Array.isArray(body.data) ? body.data : Array.isArray(body.models) ? body.models : [];
+    return rows.map((item) => {
+      const id = typeof item === "string" ? item : String(item.id || item.name || "");
+      const pricing = item.pricing ?? item.cost ?? localPricing[id] ?? null;
+      return { id, ownedBy: item.owned_by ?? item.provider ?? null, pricing };
+    }).filter((item) => item.id);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export const settingsPaths = () => ({ configFile: configPath(), envFile: envPath() });
+export const redactSettings = redact;

@@ -1,0 +1,230 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// FalsifyMe 2.0 · core/agent.mjs – Modell-Loop (Agent mit Tools)
+// -----------------------------------------------------------------------------
+// Streaming (Reasoning grau, Kritik weiß, ⟳ Tool-Aufrufe), 429-/Netz-Retry,
+// Leere-Antwort-Handling, Runden-Limit. Reine Funktion ohne DB-Zugriff.
+// ─────────────────────────────────────────────────────────────────────────────
+import { makeTools } from "./tools.mjs";
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ── Flüssige Ausgabe: kleine Stream-Chunks in ~40-ms-Frames bündeln ─────────
+let streamBuf = "";
+let streamTimer = null;
+function streamWrite(s) {
+  streamBuf += s;
+  if (!streamTimer) streamTimer = setInterval(() => {
+    if (streamBuf) { try { process.stdout.write(streamBuf); } catch { /* egal */ } streamBuf = ""; }
+  }, 40);
+}
+function streamFlush() {
+  if (streamTimer) { clearInterval(streamTimer); streamTimer = null; }
+  if (streamBuf) { try { process.stdout.write(streamBuf); } catch { /* egal */ } streamBuf = ""; }
+}
+
+/**
+ * Führt den Falsifizierungs-Agent-Loop aus.
+ * @param {Object} o
+ * @param {string} o.systemPrompt
+ * @param {string} o.userContent
+ * @param {string} o.model
+ * @param {string} o.apiKey
+ * @param {string} o.apiBase
+ * @param {number} [o.maxTokens=20000]
+ * @param {string} [o.reasoningEffort='high'] – 'auto'|'off' lässt den Parameter weg
+ * @param {number} [o.maxToolRounds=6]
+ * @param {number} [o.temperature=0.3]
+ * @param {number} [o.timeoutMs=600000]
+ * @param {string} o.root
+ * @param {string[]} [o.whitelist]
+ * @returns {Promise<{content:string, usage:object, toolRounds:number}>}
+ */
+export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBase, maxTokens = 20000, reasoningEffort = "high", maxToolRounds = 6, temperature = 0.3, timeoutMs = 600000, root, whitelist = [] }) {
+  const { TOOLS, execTool } = makeTools(root, whitelist);
+  const messages = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userContent },
+  ];
+  let toolRounds = 0;
+  let emptyRetries = 0;
+
+  const fetchRound = (body) => fetchRoundWith(body, { apiKey, apiBase, timeoutMs });
+
+  for (;;) {
+    // reasoning_effort nur senden, wenn der Provider es unterstützt
+    // ('auto'/'off' = Parameter weglassen – OpenAI-kompatibel, z. B. OpenAI selbst).
+    const body = {
+      model,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+      tools: TOOLS,
+      stream: true,
+    };
+    const re = String(reasoningEffort || "").toLowerCase();
+    if (re !== "auto" && re !== "off" && re !== "none") body.reasoning_effort = re;
+
+    let round;
+    try {
+      round = await fetchRound(body);
+    } catch (e) {
+      if (/HTTP 4\d\d/.test(String(e.message)) && toolRounds === 0) {
+        process.stderr.write(`⚠️ ${e.message} – Retry ohne Tools/reasoning_effort …\n`);
+        round = await fetchRound({ ...body, tools: undefined, reasoning_effort: undefined });
+      } else {
+        throw e;
+      }
+    }
+    if (process.env.FALSIFY_DEBUG) {
+      process.stderr.write(`[dbg] runde: content=${(round.content || "").length}B toolCalls=[${(round.toolCalls || []).map((t) => t.name).join(",")}] finish=${round.finish || "?"} nachrichtenzahl=${messages.length}\n`);
+    }
+
+    const calls = (round.toolCalls || []).filter((t) => t.name);
+
+    const c = (round.content || "").trim();
+    const looksLikeToolJson = /^\s*\{[\s\S]*"(tool|name|path|arguments|function)"\s*:/.test(c);
+    if (!calls.length && (!c || looksLikeToolJson) && emptyRetries < 3) {
+      emptyRetries++;
+      process.stderr.write(`⚠️ Leere Antwort (finish=${round.finish || "?"}) – Versuch ${emptyRetries}/3 …\n`);
+      if (emptyRetries >= 2) {
+        messages.push({ role: "user", content: "Antworte JETZT direkt mit deiner Falsifikations-Kritik – nur Text, sofort, ohne weiteres Nachdenken und ohne Tools. Ende mit: BEFUND: … und VERDICT: PLAN, RESEARCH oder WRITE." });
+        round = await fetchRound({ ...body, tools: undefined, reasoning_effort: undefined });
+        const c2 = (round.content || "").trim();
+        if (c2 && !/^\s*\{[\s\S]*"(tool|name|path|arguments|function)"\s*:/.test(c2)) {
+          return { content: c2, usage: round.usage || {}, toolRounds };
+        }
+      }
+      continue;
+    }
+
+    if (calls.length && toolRounds >= maxToolRounds) {
+      round = await fetchRound({
+        ...body,
+        tools: undefined,
+        messages: [...messages, { role: "user", content: "Gib jetzt deine abschließende Falsifikations-Kritik mit BEFUND und VERDICT (PLAN | RESEARCH | WRITE) – ohne weitere Tool-Aufrufe." }],
+      });
+      return { content: (round.content || "").trim(), usage: round.usage || {}, toolRounds };
+    }
+
+    if (calls.length) {
+      toolRounds++;
+      for (const tc of calls) {
+        let args = {};
+        try { args = JSON.parse(tc.arguments || "{}"); } catch { /* egal */ }
+        const shown = Object.values(args).filter((v) => typeof v === "string" && v).join(", ");
+        console.log(`⟳ Agent liest: ${tc.name}(${shown || ""})`);
+        let result;
+        try { result = execTool(tc.name, args); } catch (e) { result = `FEHLER: ${e.message}`; }
+        const callId = tc.id || `call_${toolRounds}_${Date.now()}`;
+        messages.push({ role: "assistant", content: null, tool_calls: [{ id: callId, type: "function", function: { name: tc.name, arguments: tc.arguments || "{}" } }] });
+        messages.push({ role: "tool", tool_call_id: callId, content: result });
+      }
+      continue;
+    }
+
+    return { content: (round.content || "").trim(), usage: round.usage || {}, toolRounds };
+  }
+}
+
+async function fetchRoundWith(body, { apiKey, apiBase, timeoutMs = 600000 }) {
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    let res;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error(`Timeout nach ${Math.round(timeoutMs / 1000)}s`)), timeoutMs);
+    try {
+      res = await fetch(`${apiBase}/chat/completions`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (e) {
+      lastErr = e;
+      if (attempt < 4) {
+        process.stderr.write(`⚠️ Netzwerkfehler (${e.message}) – Retry ${attempt}/3 …\n`);
+        await sleep(5000 * attempt);
+        continue;
+      }
+      break;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (res.status === 429) {
+      const retryAfter = Number(res.headers.get("retry-after") || 0) * 1000;
+      const wait = retryAfter || 5000 * attempt;
+      process.stderr.write(`⚠️ 429 Rate-Limit – warte ${Math.round(wait / 1000)}s (Retry ${attempt}/3) …\n`);
+      await sleep(wait);
+      continue;
+    }
+    if (res.status >= 500 && attempt < 4) {
+      process.stderr.write(`⚠️ HTTP ${res.status} – Retry ${attempt}/3 …\n`);
+      await sleep(5000 * attempt);
+      continue;
+    }
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status}: ${t.slice(0, 500)}`);
+    }
+
+    const ctype = res.headers.get("content-type") || "";
+    if (!ctype.includes("text/event-stream")) {
+      const data = await res.json();
+      const choice = data.choices?.[0]?.message || {};
+      const toolCalls = (choice.tool_calls || []).map((tc) => ({ id: tc.id, name: tc.function?.name, arguments: tc.function?.arguments }));
+      const content = choice.content || choice.reasoning_content || "";
+      if (content) { streamWrite(content); streamFlush(); }
+      return { content, usage: data.usage || {}, toolCalls };
+    }
+    return await readStream(res);
+  }
+  throw new Error(`API nach Retries fehlgeschlagen: ${lastErr?.message || "unbekannt"}`);
+}
+
+async function readStream(res) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let content = "";
+  let usage = {};
+  let finish = null;
+  const toolCalls = [];
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line.startsWith("data:")) continue;
+      const payload = line.slice(5).trim();
+      if (payload === "[DONE]") { streamFlush(); return { content: content.trim(), usage, toolCalls, finish }; }
+      let chunk;
+      try { chunk = JSON.parse(payload); } catch { continue; }
+      if (chunk.usage) usage = chunk.usage;
+      const choice = chunk.choices?.[0];
+      if (!choice) continue;
+      if (choice.finish_reason) finish = choice.finish_reason;
+      const delta = choice.delta || {};
+      const reasoning = delta.reasoning_content || "";
+      const text = delta.content || "";
+      if (reasoning) streamWrite(reasoning);
+      if (text) {
+        streamWrite(text);
+        content += text;
+      }
+      const tcs = delta.tool_calls;
+      if (tcs) for (const tc of tcs) {
+        const idx = tc.index ?? 0;
+        toolCalls[idx] = toolCalls[idx] || { id: "", name: "", arguments: "" };
+        if (tc.id) toolCalls[idx].id = tc.id;
+        if (tc.function?.name) toolCalls[idx].name += tc.function.name;
+        if (tc.function?.arguments) toolCalls[idx].arguments += tc.function.arguments;
+      }
+    }
+  }
+  streamFlush();
+  return { content: content.trim(), usage, toolCalls, finish };
+}

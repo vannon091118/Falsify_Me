@@ -1,0 +1,81 @@
+{
+  "name": "FalsfyME Agent Skill",
+  "version": "2.0.0",
+  "description": "Pflicht-Review für Coding-Agents (Scope-Protokoll): PLAN ist immer Init, User-Input 1:1 als HEADER, Loop bis Scope erfüllt – Freigabe nur bei VERDICT: WRITE",
+
+  "settings": {
+    "mandatory": true,
+    "blockOnFail": true,
+    "pollIntervalMs": 1000,
+    "timeoutMs": 300000,
+    "language": "de",
+    "maxWindows": 3,
+    "persistence": "SQLite (WAL) in FALSIFY_HOME (~/.Falsify) – ausserhalb des Repos",
+    "readOnlyVsProject": true
+  },
+
+  "defaults": {
+    "rootDir": ".",
+    "maxToolRounds": 6,
+    "reasoningEffort": "high",
+    "maxTokens": 20000
+  },
+
+  "scopeProtocol": {
+    "context": "IMMER nur 1 Scope – jeder Job startet das Modell neu (frische Modell-Konversation)",
+    "jobLoop": "PLAN-Loop → WRITE-Loop → REVIEW-Loop bis Scope erfüllt; das LETZTE Review bestimmt das Output-Verdict",
+    "modes": [
+      "PLAN – immer die Init-Aktion: User-Input 1:1 wird HEADER des Prompts und bleibt in allen Scope-Prompts",
+      "RESEARCH – FalsifyMe braucht weitere Daten: read-only recherchieren, Befunde ergänzen, erneut einreichen",
+      "WRITE – Freigabe: READ-ONLY → WRITE; danach Umsetzung erneut reviewen (WRITE-/REVIEW-Loop)"
+    ],
+    "artifact": "1 Artefakt pro Scope (SQLite), aktualisiert durch FalsifyMe: User-Input, letzter vollständiger zusammenfassender Befund, ALLE Befunde, Sub-Prompt (Modell-Update)",
+    "subPrompt": "Nach JEDEM Job aktualisiert das MODELL den Prompt selbst: ein 3-Zeilen-SUBPROMPT (Prompt-Anpassung + wichtiger Scope-Kontext + Drift-Anker), gespeichert im Scope-Artefakt und im nächsten Job als FALLBACK gegen Drift eingespielt",
+    "contextCleanup": "Nach dem finalen Review endet der Modellkontext; die DB bleibt vollständig (Zugriff nur auf die Ergebnisse des eigenen Scopes)"
+  },
+
+  "integration": {
+    "bash": {
+      "skillFile": "agent-skill-falsify.sh",
+      "usage": "bash agent-skill-falsify.sh --user-input \"<User-Input 1:1>\" --plan plan.txt --root /path --files \"a.js,b.js\"",
+      "note": "Bash ist LLM-Standard - bis zu 3 Falsify-Fenster, IMMER offen"
+    },
+    "node": {
+      "skillFile": "agent-skill-falsify.mjs",
+      "usage": "import { falsifyMandatoryCheck } from './agent-skill-falsify.mjs';"
+    },
+    "powershell": {
+      "skillFile": "agent-skill-falsify.ps1",
+      "usage": ".\\agent-skill-falsify.ps1 -UserInput \"<User-Input 1:1>\" -PlanFile plan.txt -RootDir C:\\path -Files \"a.js,b.js\""
+    }
+  },
+
+  "workflow": {
+    "steps": [
+      "1. SCOPE-START: PLAN ist IMMER die Init-Aktion – User-Input 1:1 als HEADER (falsify scope new \"<user-input>\")",
+      "2. Iteration einreichen: falsify submit --scope <id> --plan-file <datei> --root <root> --files <liste> (blockiert bis zum Verdict)",
+      "3. VERDICT: WRITE → FREIGABE (READ-ONLY → WRITE): jetzt umsetzen, dann Umsetzung erneut reviewen bis Scope erfüllt",
+      "4. VERDICT: RESEARCH → FalsifyMe braucht weitere Daten: read-only recherchieren, Befunde ergänzen, erneut einreichen",
+      "5. VERDICT: PLAN → Plan überarbeiten (HEADER behalten), erneut einreichen",
+      "6. Neuer Scope startet frisch/getrennt (Context wird nie vermischt); FalsifyMe bleibt read-only zum Projekt"
+    ]
+  },
+
+  "agentInstructions": {
+    "de": "PFLICHT: FalsifyMe-Review vor jeder Code-Änderung. PLAN ist IMMER die Init-Aktion: User-Input 1:1 als HEADER (falsify scope new). Loop bis Scope erfüllt: VERDICT: WRITE = Freigabe (READ-ONLY → WRITE) und umsetzen; VERDICT: RESEARCH = read-only recherchieren (FalsifyMe braucht Daten), Befunde ergänzen, erneut einreichen; VERDICT: PLAN = Plan überarbeiten, erneut einreichen. 1 Artefakt pro Scope (SQLite). Jeder Job startet das Modell neu – kein Kontext-Mixing. Bis zu 3 Falsify-Fenster, immer offen. FalsifyMe bleibt absolut read-only zum Projekt. Nutze: bash agent-skill-falsify.sh --user-input \"<user-input>\" --plan <plan-datei> --root <projekt-root> --files <datei-liste>",
+    "en": "MANDATORY: FalsifyMe review before every code change. PLAN is ALWAYS the init action: quote the user input 1:1 as HEADER (falsify scope new). Loop until the scope is fulfilled: VERDICT: WRITE = release (READ-ONLY → WRITE) and implement; VERDICT: RESEARCH = research read-only (FalsifyMe needs data), add findings, resubmit; VERDICT: PLAN = rework the plan, resubmit. 1 artifact per scope (SQLite). Every job restarts the model fresh – no context mixing. Up to 3 Falsify windows, always open. FalsifyMe stays absolutely read-only to the project. Use: bash agent-skill-falsify.sh --user-input \"<user-input>\" --plan <plan-file> --root <project-root> --files <file-list>"
+  },
+
+  "exitCodes": {
+    "0": "WRITE - Freigabe: READ-ONLY → WRITE (Scope erfüllt)",
+    "1": "PLAN/RESEARCH - nicht freigegeben: Loop fortsetzen (überarbeiten / read-only recherchieren)",
+    "2": "Konfigurationsfehler",
+    "3": "API/Netzwerkfehler oder kein Verdict"
+  },
+
+  "windowManagement": {
+    "rule": "Bis zu 3 Falsify-Worker-Fenster (Fenster-Block aufgehoben). Fenster werden GEÖFFNET falls nicht vorhanden, NIEMALS geschlossen und sind IMMER SICHTBAR (kein headless Start erlaubt).",
+    "checkCommand": "node ui/worker.mjs --check",
+    "startCommand": "ui/start-dock.cmd [1|2|3] oder ui/START.cmd"
+  }
+}
