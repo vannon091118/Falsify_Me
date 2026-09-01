@@ -360,9 +360,12 @@ async function main() {
   console.log(dim(`  Modell : ${model}`));
   console.log(dim(`  Provider: ${CFG.provider} (${CFG.apiBase})`));
   console.log(dim(`  Root   : ${ROOT}  (Agent-Datenzugriff)`));
-  if (!submitMode && !jobId && FILE_WHITELIST.length === 0) {
-    // Direkt-Run ohne --files: Zugriffsrahmen ist der ganze Root — KEIN
-    // Whitelist-Vertrag (Regel 4 gilt nur, wenn es eine Whitelist gibt).
+  if (!submitMode && FILE_WHITELIST.length === 0) {
+    // Direkt-Run ohne --files (auch --job-id-Lauf mit leerer Whitelist auf
+    // Fremd-Root): Zugriffsrahmen ist der ganze Root — KEIN Whitelist-
+    // Vertrag (Regel 4 gilt nur, wenn es eine Whitelist gibt). Self-Review-
+    // Checkouts sind hier automatisch ausgeschlossen: die Kern-Ergänzung
+    // macht die Liste nie leer (Evil-Twin-Rig: kosmetische Lücke geschlossen).
     console.log(dim("  Zugriff: KEIN --files → ganzer Root ist Zugriffsrahmen (kein Whitelist-Vertrag)"));
   }
   if (scope) {
