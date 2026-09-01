@@ -430,6 +430,17 @@ VERIFY: grep "Phase 2" in README/WIRING/ui/README-tui.md + diese Datei
 RESULT: PASS — Status-Text ueberall auf "verdrahtet/umgesetzt" korrigiert;
 manuelle Checkpoints UI-030/034/035/038 bleiben IN_PROGRESS (User).
 
+ID: UI-056
+TASK: install.mjs - zweites Desktop-Icon FalsifyMe-TUI-Test.lnk
+(ui\TEST-TUI.cmd) neben FalsifyMe.lnk; makeShortcut-Helfer statt
+Einzel-PowerShell; README-Icon-Beschreibung ergaenzt.
+STATUS: DONE
+DEPENDS_ON: UI-053
+VERIFY: install-Lauf + WScript.Shell-Zielabfrage beider Icons
+RESULT: PASS — beide Icons erzeugt (Ziele: START-FALSIFYME.cmd bzw.
+ui\TEST-TUI.cmd); Installer-Log nennt beide Namen; Install aus GitHub frisch
+verifiziert (doctor alles ok, phase2-Tests 0 Fail).
+
 ID: UI-057
 TASK: Desktop-Start (install.mjs Launcher) startet den Worker-Dock
 (ui\start-dock.cmd 1) statt tui-demo.mjs - KEIN Demo-Modus; Beobachter-

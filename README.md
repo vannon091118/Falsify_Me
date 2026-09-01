@@ -99,7 +99,9 @@ an:
 - Programmdateien und npm-Abhängigkeiten: `%USERPROFILE%\\.Falsify_Core`
 - SQLite, API-Keys und Logs: `%USERPROFILE%\\.Falsify_Private`
 - globale Agent-Skills: `%USERPROFILE%\\.agents\\skills\\falsifyme`
-- Windows-Desktop-Icon: optional, nach Bestätigung
+- Windows-Desktop-Icons: `FalsifyMe.lnk` (startet den Worker-Dock, echte Jobs
+  live sichtbar) + `FalsifyMe-TUI-Test.lnk` (kompletter Verifikationslauf);
+  Überspringbar mit `--no-desktop`
 
 Aus einem GitHub-Checkout oder Release-Verzeichnis:
 
@@ -183,7 +185,9 @@ einer User-Konsole (Fenster-Start funktioniert nicht aus Agent-Shells).
 ```text
 Doppelklick:  ui\START-TUI.cmd   (Intro -> WARTE AUF EINGABE; kein Auto-Job)
               ui\TEST-TUI.cmd    (kompletter Verifikationslauf)
-Desktop:      FalsifyMe-TUI-Start.lnk / FalsifyMe-TUI-Test.lnk
+Desktop:      FalsifyMe.lnk (Dock - echte Jobs live) ·
+              FalsifyMe-TUI-Test.lnk (Verifikation) ·
+              FalsifyMe-TUI-Start.lnk (Beobachtung, opt-in)
 Terminal:     node ui/tui-demo.mjs                  (Intro -> WARTE AUF EINGABE)
               node ui/tui-demo.mjs --auto --fast     (opt-in Demo)
 ```
@@ -193,11 +197,12 @@ Session-Workflow: ein Scope, User-Input unverändert als Header, read-only
 Prüfung vor Änderungen und Review im selben Scope. Die TUI bleibt reine
 Beobachtung; Skills lösen keine versteckte UI-Steuerung aus.
 
-**Ehrlich bleiben:** Phase 2 ist umgesetzt und per `npm run test:phase2` +
-Selbsttest verifiziert (siehe oben). Die manuellen visuellen Checkpoints der
-Phase 1 (`ui/PLAN.md` UI-030/034/035/038) bleiben User-Aufgabe. Neue
-Behauptungen über die Verdrahtung gehören zu WIRING.md + `ui/PLAN.md`
-(BLOCK 6), nie nur in eine Antwort.
+**Ehrlich bleiben:** Phase 2 ist umgesetzt und per `npm run test:phase2`
+verifiziert (siehe oben). Die sichtbare Selbsttest-Abnahme (`npm run selftest`,
+aus einer User-Konsole) und die manuellen visuellen Checkpoints der Phase 1
+(`ui/PLAN.md` UI-030/034/035/038) stehen noch offen — UI-053/054 sind dort
+ehrlich `IN_PROGRESS`. Neue Behauptungen über die Verdrahtung gehören zu
+WIRING.md + `ui/PLAN.md` (BLOCK 6), nie nur in eine Antwort.
 
 ## CLI
 
@@ -246,7 +251,8 @@ artifacts/   SQLite (WAL), Scopes, Findings, Jobs, atomarer Worker-Claim
 core/        Agent, Prompts, Verdict, Config, Keys, Sandbox, Rate-Limit
 cli/         CLI-Kommandos und Bash-Forwarder (falsify)
 tests/       Security- und Regressionstests
-ui/          Terminal-UI (Phase 1) + Worker-Fenster + Demo-/Teststarter
+ui/          Terminal-UI (Phase 1+2, live verdrahtet) + Worker-Fenster +
+             Teststarter/Beobachtung (tui-demo.mjs nur für Tests/Demo)
 skills/      Agent-Integrationen für Bash, Node.js und PowerShell
 WIRING.md    Integrations-/Modul-Landkarte (Einstieg für Agents)
 ```

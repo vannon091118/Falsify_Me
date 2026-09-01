@@ -1,4 +1,4 @@
-# FalsifyMe 2.0 — Terminal-UI (ui/) — PHASE 1 (UI ONLY)
+# FalsifyMe 2.0 — Terminal-UI (ui/) — PHASE 1 + 2 (live verdrahtet)
 
 **Version v0.02 Beta** (`0.2.0-beta` im `package.json`; Produkt-Runtime bleibt
 Read-only-Gateway, Business-Logik unverändert).
@@ -58,8 +58,9 @@ node ui/tui-demo.mjs --auto --fast --stress
 
 Im echten Beobachtungsbetrieb kommen Jobs ausschließlich von außen. Die TUI
 liest JSONL-Events; jede Zeile ist ein Event, optional mit `slot` oder `window`
-im Bereich `1..3`. Für Phase 2 ist dieser stdin-JSONL-Feed eine Alternative
-zur direkten In-Process-Verdrahtung über `createTui` und `createParser`:
+im Bereich `1..3`. Der stdin-JSONL-Feed ist eine dokumentierte Alternative zur
+direkten In-Process-Verdrahtung über `createTui` + `createParser` (die der
+Worker im Dock nutzt):
 
 ```bash
 node ui/tui-demo.mjs < jobs.jsonl

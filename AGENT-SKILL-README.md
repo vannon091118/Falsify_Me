@@ -47,17 +47,15 @@ Persistenz liegt ausschließlich in `FALSIFY_HOME` außerhalb des Repositories.
 ## Sichtbare Worker
 
 Im normalen Produktionsbetrieb läuft jeder dauerhafte Worker in einem sichtbaren
-Fenster. Unter Windows:
+Fenster. Unter Windows startet das Desktop-Icon `FalsifyMe.lnk` den Dock direkt
+(Fenster 1); weitere Fenster öffnet man mit `ui\start-dock.cmd 1|2|3` (bis zu
+drei parallel). Das Fenster zeigt die Live-TUI: WARTE AUF EINGABE, dann Jobs aus
+der SQLite-Queue (FM-EVT-Pipeline) bis zum Verdict.
 
-```bat
-START.cmd
-start-dock.cmd 1
-```
-
-Bis zu drei Worker-Fenster können parallel laufen. Linux und macOS unterstützen
-CLI, SQLite und Worker-Prozess; die `.cmd`-Fensterstarter sind Windows-spezifisch.
-Der kurzlebige `selbsttest.sh` ist nur ein automatisierter Fehlerpfad-Test und
-öffnet kein Fenster.
+Linux und macOS unterstützen CLI, SQLite und Worker-Prozess; die `.cmd`-Fenster-
+starter sind Windows-spezifisch. Der kurzlebige `selbsttest.sh` ist ein
+automatisierter Fehlerpfad-Test, der das echte sichtbare Worker-Fenster über
+`ui/start-dock.cmd` startet (Windows; kein headless Fallback).
 
 ## API-Konfiguration
 
@@ -82,6 +80,7 @@ Exit-Code `2`.
 falsify ensure-home
 falsify doctor
 npm run test:security
+npm run test:phase2
 npm run selftest
 ```
 

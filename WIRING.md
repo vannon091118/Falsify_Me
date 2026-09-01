@@ -12,7 +12,7 @@ und neue Integrationsaufgaben stehen verbindlich in `ui/PLAN.md`.
 ## 1. SO IST DIE LANDKARTE (30 Sekunden)
 
 ```
-ui/                        ← NEUE Terminal-UI (Phase 1 abgeschlossen)
+ui/                        ← Terminal-UI (Phase 1+2, live verdrahtet)
   PLAN.md                  ← Persistente Task-Chain; offene Tasks bleiben sichtbar
   README-tui.md            ← Start, Tasten, Event-Contract, Design-Check
   WIRING.md                ← DIESER INDEX
@@ -66,7 +66,7 @@ Desktop-Icons; die Entscheidung wird in `ui\.tui-desktop-optin` gespeichert
 ```js
 // ui/tui.mjs
 const ui = await createTui({
-  onAbort: async () => { /* Phase 2: Job-/Agent-Prozess ECHT killen */ },
+  onAbort: async () => { /* Worker: Job-Kind ECHT killen (createAbort, PID-Check) */ },
   onExit:  (code) => { /* Fenster schliesst */ },
   options: {
     seed: 7,
@@ -177,8 +177,9 @@ oder:         start "FalsifyMe-TUI" cmd /k node ui\tui-demo.mjs %*
 `%USERPROFILE%\\.Falsify_Core` bzw. `~/.Falsify_Core`, getrennt von privaten
 Laufzeitdaten unter `.Falsify_Private`. Der Installer prüft den globalen
 `.agents`-Ordner und legt `skills/falsifyme` dort an; fehlt `.agents`, wird er
-angelegt. Unter Windows wird nach der Installation ein Desktop-Icon erzeugt.
-Option: `node install.mjs --no-desktop`.
+angelegt. Unter Windows werden zwei Desktop-Icons erzeugt: `FalsifyMe.lnk`
+(startet den Worker-Dock, echte Jobs live sichtbar) und `FalsifyMe-TUI-Test.lnk`
+(kompletter Verifikationslauf). Option: `node install.mjs --no-desktop`.
 
 Der Skill beschreibt den FalsiFlow für die jeweilige Agent-Session: Scope-Start,
 unveränderter User-Input als Header, read-only Prüfung, Verdict-Schleife und
@@ -207,6 +208,9 @@ lokaler Konfiguration übernommen, niemals erfunden. Die bestehende
 ## 8. TEST-/VERIFIKATIONS-BEFEHLE (für Agents)
 
 ```bash
+npm run test:phase2      # FM-EVT-Verdrahtung (Marker-Gate, Parser→UI-State,
+                         # Worker-Loop headless)
+
 # Komplette UI-Suite (105 Tests):
 node --test --test-force-exit --test-concurrency=1 "ui/tui/*.test.mjs" ui/tui.test.mjs ui/demo-agent.test.mjs
 
