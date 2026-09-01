@@ -38,11 +38,24 @@
 //   }
 // ─────────────────────────────────────────────────────────────────────────────
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
-const V2_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// Install-Verzeichnis robust aufloesen (Paritaet mit agent-skill-falsify.sh):
+//   1. relative Aufloesung (Repo-Checkout: cli/ liegt neben der skills/),
+//   2. Fallback auf die Benutzerinstallation ~/.Falsify_Core (install.mjs).
+// So funktioniert der installierte Skill (~/.agents/skills/falsifyme) direkt
+// nach `node install.mjs` – ohne hartkodierte Benutzerpfade.
+export function resolveV2Dir(scriptDir = path.dirname(fileURLToPath(import.meta.url)), homeDir = os.homedir()) {
+  const relative = path.resolve(scriptDir, '..');
+  if (fs.existsSync(path.join(relative, 'cli', 'falsify.sh'))) return relative;
+  const installed = path.join(homeDir, '.Falsify_Core');
+  if (fs.existsSync(path.join(installed, 'cli', 'falsify.sh'))) return installed;
+  return relative;
+}
+const V2_DIR = resolveV2Dir();
 
 // ── Typen ──────────────────────────────────────────────────────────────────
 /**

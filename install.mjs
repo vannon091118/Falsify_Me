@@ -19,7 +19,7 @@ const copyTree = async (src, dst) => {
   await fs.mkdir(dst, { recursive: true });
   const entries = await fs.readdir(src, { withFileTypes: true });
   for (const entry of entries) {
-    if (["node_modules", ".git", ".Falsify_Core", ".Falsify_Private"].includes(entry.name)) continue;
+    if (["node_modules", ".git", ".Falsify_Core", ".Falsify_Private", "falsifyme-falsiflow.md"].includes(entry.name)) continue;
     const from = path.join(src, entry.name);
     const to = path.join(dst, entry.name);
     if (entry.isDirectory()) await copyTree(from, to);
@@ -57,6 +57,13 @@ runNpm(["install", "--omit=dev", "--no-audit", "--no-fund"]);
 await fs.writeFile(path.join(coreDir, "install-location.json"), JSON.stringify({ coreDir, privateDir, installedAt: new Date().toISOString() }, null, 2));
 await fs.mkdir(skillsDir, { recursive: true });
 await copyTree(path.join(root, "skills"), path.join(skillsDir, "falsifyme"));
+// FalsiFlow-Session-Skill: eigener Skill-Ordner mit SKILL.md, damit
+// /falsifyme-falsiflow direkt nach der Installation funktioniert. Der
+// Session-Workflow nutzt NUR aufgeloeste Pfade (~/.Falsify_Core, siehe
+// skills/falsifyme-falsiflow.md) – keine hartkodierten Benutzerpfade.
+const falsiflowSkillDir = path.join(skillsDir, "falsifyme-falsiflow");
+await fs.mkdir(falsiflowSkillDir, { recursive: true });
+await fs.copyFile(path.join(root, "skills", "falsifyme-falsiflow.md"), path.join(falsiflowSkillDir, "SKILL.md"));
 
 if (!noDesktop && process.platform === "win32") {
   const desktop = path.join(home, "Desktop");
@@ -123,4 +130,5 @@ if (!noDesktop && process.platform === "win32") {
 console.log(`FalsifyMe installiert: ${coreDir}`);
 console.log(`Private Daten: ${privateDir}`);
 console.log(`Agent-Skills: ${path.join(skillsDir, "falsifyme")}`);
+console.log(`FalsiFlow-Skill: ${falsiflowSkillDir}`);
 if (process.platform === "win32") console.log(`Desktop-Icons: ${noDesktop ? "übersprungen" : "FalsifyMe.lnk + FalsifyMe-TUI-Test.lnk"}`);

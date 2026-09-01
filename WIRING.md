@@ -177,9 +177,18 @@ oder:         start "FalsifyMe-TUI" cmd /k node ui\tui-demo.mjs %*
 `%USERPROFILE%\\.Falsify_Core` bzw. `~/.Falsify_Core`, getrennt von privaten
 Laufzeitdaten unter `.Falsify_Private`. Der Installer prüft den globalen
 `.agents`-Ordner und legt `skills/falsifyme` dort an; fehlt `.agents`, wird er
-angelegt. Unter Windows werden zwei Desktop-Icons erzeugt: `FalsifyMe.lnk`
+angelegt. Zusätzlich installiert er den FalsiFlow-Session-Skill
+`falsifyme-falsiflow` unter `.agents/skills/falsifyme-falsiflow/SKILL.md`.
+Unter Windows werden zwei Desktop-Icons erzeugt: `FalsifyMe.lnk`
 (startet den Worker-Dock, echte Jobs live sichtbar) und `FalsifyMe-TUI-Test.lnk`
 (kompletter Verifikationslauf). Option: `node install.mjs --no-desktop`.
+
+Die Skill-Skripte (`skills/agent-skill-falsify.sh/.mjs/.ps1`) lösen ihr
+Install-Verzeichnis selbst auf: Repo-Checkout relativ, installierte Kopie
+(`~/.agents/skills/falsifyme`) mit Fallback auf `~/.Falsify_Core` — keine
+hartkodierten Benutzerpfade. Achtung: das Install-Verzeichnis heißt
+`.Falsify_Core` (mit führendem Punkt); ein Pfad ohne Punkt existiert nicht
+(`MODULE_NOT_FOUND`).
 
 Der Skill beschreibt den FalsiFlow für die jeweilige Agent-Session: Scope-Start,
 unveränderter User-Input als Header, read-only Prüfung, Verdict-Schleife und

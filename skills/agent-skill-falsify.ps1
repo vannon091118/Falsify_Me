@@ -51,6 +51,13 @@ param(
 # ── Skript-Lage ─────────────────────────────────────────────────────────────
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $V2Dir = (Resolve-Path "$ScriptDir\..").Path
+# Installierte Lage (~/.agents/skills/falsifyme): cli/ liegt NICHT neben dem
+# Skill – auf die Benutzerinstallation (~/.Falsify_Core, erzeugt von
+# install.mjs) umschalten, damit der Skill direkt nach der Installation laeuft
+# (Paritaet mit agent-skill-falsify.sh).
+if (-not (Test-Path (Join-Path $V2Dir "cli\falsify.sh")) -and (Test-Path (Join-Path $HOME ".Falsify_Core\cli\falsify.sh"))) {
+    $V2Dir = Join-Path $HOME ".Falsify_Core"
+}
 
 # ── Hilfsfunktionen ────────────────────────────────────────────────────────
 function Write-Step    { param([string]$Msg) Write-Host "🔄 $Msg" -ForegroundColor Cyan }

@@ -33,6 +33,19 @@ bash ./skills/agent-skill-falsify.sh \
   --files "src/a.js,src/b.js"
 ```
 
+Das Skill-Skript löst sein Install-Verzeichnis selbst auf: im Repo-Checkout
+relativ, in der installierten Kopie (`~/.agents/skills/falsifyme`) als Fallback
+`~/.Falsify_Core` (mit führendem Punkt — der Pfad ohne Punkt existiert nicht!).
+Nach `node install.mjs` lautet der Aufruf daher z. B.:
+
+```bash
+bash ~/.agents/skills/falsifyme/agent-skill-falsify.sh \
+  --user-input "<User-Input exakt>" \
+  --plan plan.txt \
+  --root /absoluter/pfad/zum/projekt \
+  --files "src/a.js,src/b.js"
+```
+
 Bis `VERDICT: WRITE` vorliegt, bleibt der Agent read-only. `PLAN` bedeutet
 Plan überarbeiten, `RESEARCH` bedeutet weitere read-only-Daten beschaffen,
 `WRITE` gibt die konkrete Änderung frei. Nach der Änderung wird ein Review im
@@ -72,3 +85,7 @@ Die Benutzerinstallation wird aus dem Repository mit `node install.mjs`
 angestoßen. Sie trennt Programmdateien (`.Falsify_Core`) von privaten Daten
 (`.Falsify_Private`) und installiert diesen Skill im Benutzerbereich unter
 `.agents/skills/falsifyme`, sofern der Agent diese Konvention unterstützt.
+Zusätzlich wird der Session-Workflow-Skill `falsifyme-falsiflow` unter
+`.agents/skills/falsifyme-falsiflow/SKILL.md` installiert — er beschreibt den
+kompletten FalsiFlow (Fenster, Scope, Submit, Verdict-Schleife) mit
+aufgelösten statt hartkodierten Pfaden.

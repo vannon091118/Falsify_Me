@@ -91,6 +91,96 @@ Scopes verwenden.
 
 ---
 
+## Schnellstart — für neue Nutzer (direkter Installationsweg)
+
+Ein neuer Benutzer kommt mit genau **drei** Befehlen vom GitHub-Repository zum
+ersten geprüften Auftrag — ohne einen Entwicklungs-Checkout auseinanderzunehmen.
+Es gibt keine hartkodierten Pfade: Programm- und Laufzeitordner werden beim
+Installieren automatisch bestimmt und angelegt.
+
+### Voraussetzungen (alle dokumentiert, keine stillen)
+
+| Voraussetzung | Warum | Prüfen |
+|---|---|---|
+| Node.js ≥ 22.5 | `node:sqlite` (eingebaut) + ink/react | `node --version` |
+| Git Bash (Windows) | Die CLI ist eine Bash-CLI — `bash` muss auf dem PATH sein | `bash --version` |
+| API-Key (optional) | Nur für einen echten Falsifikations-Lauf nötig (OpenAI-kompatibler Endpunkt) | siehe unten |
+
+Die Installation legt nichts in dein Projekt an: Das Programm liegt im
+npm-globalen Ordner, alle Laufzeitdaten (SQLite, Keys, Logs) entstehen
+automatisch unter `FALSIFY_HOME` (Default: `~/.Falsify`), außerhalb des Repos.
+
+### INSTALL (ein Befehl, global)
+
+```bash
+npm install -g https://github.com/vannon091118/Falsify_Me.git
+```
+
+Danach ist `falsify` auf dem PATH. npm erzeugt die Start-Shims für Windows,
+Linux und macOS und installiert die Runtime-Abhängigkeiten (`ink`, `react`)
+automatisch mit. Hinweis für spätere Veröffentlichung: sobald das Paket auf
+npm liegt, geht auch `npm install -g falsifyme`.
+
+### START & Prüfung
+
+```bash
+falsify doctor
+```
+
+Erwartet: Node-Version, Abhängigkeiten (ink/react) OK, `FALSIFY_HOME`-Pfad,
+API-Key-Status, SQLite-WAL — am Ende eine klare Meldung, was fehlt (falls
+etwas fehlt) und `OK`, wenn alles passt.
+
+### Erster Auftrag (User-Workflow)
+
+```bash
+falsify ensure-home                                    # FALSIFY_HOME (~/.Falsify) anlegen
+falsify scope new "Mein Auftrag 1:1"                   # Scope mit HEADER = User-Input
+# Plan-Datei anlegen (z.B. plan.txt), dann:
+falsify submit --scope <scope-id> --plan-file plan.txt --root <projekt> --files "app.js,lib/auth.js"
+```
+
+- Der Submit legt den Job in die SQLite-Queue (`JOB_ID=…`) und wartet bis zum
+  Verdict (Exit 0=WRITE · 1=PLAN/RESEARCH · 3=Fehler).
+- Ein Worker verarbeitet den Job live: sichtbares Dock-Fenster über
+  `ui/start-dock.cmd` bzw. das Desktop-Icon, oder headless über
+  `node "$(npm root -g)/falsifyme/ui/worker.mjs"`.
+- Ergebnis: `=== <job-id>: DONE WRITE/PLAN/RESEARCH ===`, Befund + Findings via
+  `falsify log <job-id>`, Antwort via `falsify answer <job-id>`.
+
+### API-Key konfigurieren (falls noch keiner gesetzt ist)
+
+```bash
+falsify settings set apiBase="https://…" model="…" apiKeyName="MEIN_API_KEY"
+falsify models        # listet verfügbare Modelle des konfigurierten Endpunkts
+```
+
+Keys liegen ausschließlich in `FALSIFY_HOME/.env` (private Rechte), nie im
+Repo und nie in `config.json`.
+
+### Fehlerfälle (erwartetes Verhalten)
+
+| Situation | Ausgabe / Verhalten |
+|---|---|
+| Kein API-Key konfiguriert | `FEHLER: Kein API-Key gefunden (gesucht: …)`, Exit 2 |
+| Kein `bash` (Windows ohne Git Bash) | `FEHLER: bash wurde nicht gefunden …`, Exit 3 |
+| Node < 22.5 | npm-Warnung `EBADENGINE`; `falsify doctor` meldet die Node-Anforderung |
+| FalsifyMe/Worker nicht erreichbar | Job bleibt `QUEUED`; `falsify wait` pollt weiter (kein Fake-Verdict) |
+| Provider nicht erreichbar | HTTP-Fehler von `falsify submit`/`run`, Exit 3 |
+
+### Volle Installation (optional: Desktop-Icons, Worker-Dock, Agent-Skills)
+
+```bash
+node "$(npm root -g)/falsifyme/install.mjs"
+```
+
+Installiert die Desktop-Icons (`FalsifyMe.lnk`, `FalsifyMe-TUI-Test.lnk`),
+legt den Worker-Dock an und kopiert die Agent-Skills (`falsifyme` und
+`falsifyme-falsiflow`) nach `~/.agents/skills/`. Überspringen mit
+`--no-desktop`.
+
+---
+
 ## Installation aus GitHub / Benutzerinstallation
 
 Die empfohlene Installation legt FalsifyMe getrennt von privaten Laufzeitdaten
@@ -99,6 +189,7 @@ an:
 - Programmdateien und npm-Abhängigkeiten: `%USERPROFILE%\\.Falsify_Core`
 - SQLite, API-Keys und Logs: `%USERPROFILE%\\.Falsify_Private`
 - globale Agent-Skills: `%USERPROFILE%\\.agents\\skills\\falsifyme`
+- FalsiFlow-Session-Skill: `%USERPROFILE%\\.agents\\skills\\falsifyme-falsiflow`
 - Windows-Desktop-Icons: `FalsifyMe.lnk` (startet den Worker-Dock, echte Jobs
   live sichtbar) + `FalsifyMe-TUI-Test.lnk` (kompletter Verifikationslauf);
   Überspringbar mit `--no-desktop`
@@ -196,8 +287,12 @@ Terminal:     node ui/tui-demo.mjs                  (Intro -> WARTE AUF EINGABE)
 
 **FalsiFlow:** Der globale Skill `skills/falsifyme.md` beschreibt den
 Session-Workflow: ein Scope, User-Input unverändert als Header, read-only
-Prüfung vor Änderungen und Review im selben Scope. Die TUI bleibt reine
-Beobachtung; Skills lösen keine versteckte UI-Steuerung aus.
+Prüfung vor Änderungen und Review im selben Scope. Der Session-Skill
+`skills/falsifyme-falsiflow.md` (installiert als `falsifyme-falsiflow`)
+führt den kompletten FalsiFlow aus und nutzt dabei aufgelöste Pfade
+(`~/.Falsify_Core` — mit führendem Punkt), nie hartkodierte Benutzerpfade.
+Die TUI bleibt reine Beobachtung; Skills lösen keine versteckte UI-Steuerung
+aus.
 
 **Ehrlich bleiben:** Phase 2 ist umgesetzt und per `npm run test:phase2`
 verifiziert (siehe oben). Die sichtbare Selbsttest-Abnahme (`npm run selftest`,

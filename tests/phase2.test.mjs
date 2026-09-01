@@ -256,3 +256,31 @@ test("Skill ensure_dock_window: fehlende start-dock.cmd -> klarer Fehler (Exit 1
   assert.match(r.stdout, /ENSURE_EXIT=1/);
   assert.equal(r.cap, undefined, "kein Start ohne start-dock.cmd");
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Installierte Skills: V2_DIR-Fallback auf ~/.Falsify_Core (WIRING §6)
+// -----------------------------------------------------------------------------
+// Regression: Die installierte Kopie (~/.agents/skills/falsifyme) liegt NICHT
+// neben cli/ – die relative Aufloesung (../) war dort funktionslos. Nur der
+// Bash-Skill hatte den Fallback auf ~/.Falsify_Core; .mjs und .ps1 muessen
+// dasselbe tun, damit /falsifyme-falsiflow direkt nach `node install.mjs`
+// funktioniert (die Skripte sind nie mit hartkodierten Benutzerpfaden
+// versehen – sie loesen die Installation selbst auf).
+// -----------------------------------------------------------------------------
+test("Skill agent-skill-falsify.mjs: V2_DIR-Fallback auf ~/.Falsify_Core", async () => {
+  const home = tmpHome();
+  const fakeCore = path.join(home, ".Falsify_Core");
+  fs.mkdirSync(path.join(fakeCore, "cli"), { recursive: true });
+  fs.writeFileSync(path.join(fakeCore, "cli", "falsify.sh"), "#!/usr/bin/env bash\nexit 0\n", "utf8");
+
+  const { resolveV2Dir } = await import(pathToFileURL(path.join(ROOT, "skills", "agent-skill-falsify.mjs")).href);
+  const installedSkill = path.join(home, ".agents", "skills", "falsifyme");
+
+  // Installierte Lage: kein cli/ neben dem Skill -> Fallback auf ~/.Falsify_Core.
+  assert.equal(resolveV2Dir(installedSkill, home), fakeCore);
+  // Repo-Lage (skills/ liegt neben cli/): relative Aufloesung gewinnt.
+  assert.equal(resolveV2Dir(path.join(ROOT, "skills"), home), ROOT);
+  // Weder Repo-Lage noch .Falsify_Core: relative Aufloesung bleibt (kein Crash).
+  const emptyHome = tmpHome();
+  assert.equal(resolveV2Dir(installedSkill, emptyHome), path.join(installedSkill, ".."));
+});
