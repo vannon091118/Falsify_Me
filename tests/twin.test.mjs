@@ -216,3 +216,43 @@ test("twinEvidenceOk: BESTAETIGT ohne eigenes Lesen wird deterministisch geblock
     await env.cleanup();
   }
 });
+
+test("twinOwnFalsificationOk: NUR Nachlese der Erstprüfer-Zitate ist keine zweite Falsifikation (Befund 10)", async () => {
+  const { twinOwnFalsificationOk } = await mod("core/verdict.mjs");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-twin-own-"));
+  try {
+    fs.mkdirSync(path.join(tmp, "core"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, "core", "tools.mjs"), "export const x = 1;\nexport const y = 2;\n");
+    const opts = { root: tmp, whitelist: ["core/tools.mjs"] };
+    // 1. Parroting: Tool-Runden ja, aber NUR die Zitate des Erstprüfers
+    //    wiedergegeben — der Twin hat selbst NICHTS gegen den Code
+    //    festgestellt (keine eigene Datei:Zeile im eigenen Befund).
+    const parroting = {
+      verdict: "BESTAETIGT", toolRounds: 2,
+      befund: "Die vorgelegten Zitate sind korrekt.",
+      content: "BEFUND: Die vorgelegten Zitate sind korrekt.\nVERDICT: BESTAETIGT",
+    };
+    assert.equal(twinOwnFalsificationOk(parroting, opts), false,
+      "BESTAETIGT ohne eigene verifizierbare Datei:Zeile ist Doppel-Plausibilisierung, keine Gegenprüfung");
+    // 2. Eigene Falsifikation: eigener Befund MIT selbst gelesener,
+    //    verifizierbarer Datei:Zeile (Tool-Runden + Referenz).
+    const ownFalsification = {
+      verdict: "BESTAETIGT", toolRounds: 2,
+      befund: "Gegenprobe: core/tools.mjs:2 belegt die Behauptung auch an der zweiten Konstante.",
+      content: "BEFUND: core/tools.mjs:2 traegt die Gegenprobe.\nVERDICT: BESTAETIGT",
+    };
+    assert.equal(twinOwnFalsificationOk(ownFalsification, opts), true,
+      "eigenes Lesen + eigene verifizierte Datei:Zeile = belastbare Gegenprüfung");
+    // 3. Fantasie-Zeile im eigenen Befund zaehlt nicht (fail-closed).
+    const fakeOwn = { ...parroting, befund: "Eigene Gegenprobe: core/tools.mjs:99.", content: "core/tools.mjs:99" };
+    assert.equal(twinOwnFalsificationOk(fakeOwn, opts), false, "Fantasie-Zeile ist keine eigene Falsifikation");
+    // 4. Ohne eigenes Lesen (0 Runden) blockt es sogar MIT echter Referenz.
+    const noRead = { verdict: "BESTAETIGT", toolRounds: 0, befund: "core/tools.mjs:1.", content: "core/tools.mjs:1" };
+    assert.equal(twinOwnFalsificationOk(noRead, opts), false, "Referenz ohne eigene Tool-Runden = Nachlese");
+    // 5. WIDERSPRUCH/UNKLAR/Fehler sind nicht pruefpflichtig (verweigern/blocken ohnehin).
+    assert.equal(twinOwnFalsificationOk({ verdict: "WIDERSPRUCH", toolRounds: 0 }), true);
+    assert.equal(twinOwnFalsificationOk({ verdict: "BESTAETIGT", toolRounds: 2, error: "x" }), false);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});

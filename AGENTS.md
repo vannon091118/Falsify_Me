@@ -143,7 +143,11 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   hat — twinEvidenceOk (core/verdict.mjs): mind. 1 Tool-Runde ODER
   verifizierte Datei:Zeile-/Pfad-Referenz; 0 Runden ohne Referenz ⇒
   UNKLAR/keine Freigabe (Rig 2026-09-01, Prompt-Ebene reichte nicht);
-  WIDERSPRUCH/UNKLAR/Fehler ⇒ PLAN mit ehrlicher Warnung. Twin-Finding
+  WIDERSPRUCH/UNKLAR/Fehler ⇒ PLAN mit ehrlicher Warnung. Doppel-
+  Plausibilisierung blockt separat (UI-112, Audit-Befund 10):
+  twinOwnFalsificationOk verlangt für BESTAETIGT Tool-Runden UND eine
+  eigene verifizierbare Datei:Zeile im Twin-Befund — nur die Nachlese der
+  Erstprüfer-Zitate ist keine zweite Falsifikation. Twin-Finding
   bekommt wave='evil-twin' und trägt als LETZTES Finding das final geltende
   Urteil (Invariante 4 unverändert gültig). Zweiter enforceRateLimit-Call
   (noWait=false); TUI-State VERIFYING.

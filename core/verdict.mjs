@@ -270,6 +270,54 @@ export function twinEvidenceOk(twin, { root = null, whitelist = [] } = {}) {
   return evidenceOf(text, { root, whitelist }) !== null;
 }
 
+// Globale Variante der Datei:Zeile-Referenz für matchAll (Basis-Regex ohne /g
+// wird für Einzel-Match genutzt — hier die identische Form als globale Kopie).
+const EVIDENCE_FILE_LINE_G = new RegExp(EVIDENCE_FILE_LINE.source, "gi");
+
+/**
+ * Verifizierbare Datei:Zeile-Referenz im Text (Audit-Befund 10, 2026-09-01):
+ * true, wenn MINDESTENS EINE Datei:Zeile-Referenz im Text real existiert
+ * (Datei unter <root> auffindbar — case-insensitiv via resolveRel — UND die
+ * Zeilennummer innerhalb der Datei liegt). Fantasie-Zeilen zählen nicht.
+ */
+function hasVerifiableFileLine(text, { root, cache }) {
+  if (!root) return false;
+  for (const m of String(text || "").matchAll(EVIDENCE_FILE_LINE_G)) {
+    const file = m[1];
+    if (!EVIDENCE_FILE_EXT.test(file)) continue;
+    if (!resolveRel(root, file)) continue;
+    const lineNo = Number(m[2]);
+    const txt = cache instanceof Function ? cache(file) : fileTextCache(root, [])(file);
+    if (txt && lineNo >= 1 && lineNo <= txt.split(/\r?\n/).length) return true;
+  }
+  return false;
+}
+
+/**
+ * Eigene Falsifikation statt Doppel-Plausibilisierung (Regel 6, Audit-Befund
+ * 10, 2026-09-01): Ein Twin, der NUR die eingereichten Widerlegungen
+ * nachliest und ihnen zustimmt, teilt sich mit dem Erstprüfer denselben
+ * Blindspot — die Gegenprüfung ist dann keine ZWEITE Falsifikation. Eine
+ * belastbare BESTAETIGT braucht deshalb NACHWEISBAR beides:
+ *   1. eigenes Lesen (>= 1 Tool-Runde — read_file/list_dir/glob wirklich
+ *      ausgefuehrt), UND
+ *   2. mindestens EINE verifizierbare Datei:Zeile-Referenz im EIGENEN
+ *      Befund/Content (stärkste Evidenzform — beweist, dass der Twin etwas
+ *      eigenständig gegen den Code festgestellt hat, nicht nur zuge nickt).
+ * Fail-closed: WIDERSPRUCH/UNKLAR/Fehler sind nicht pruefpflichtig (sie
+ * verweigern die Freigabe ohnehin) bzw. blocken (twinEvidenceOk).
+ * @returns {boolean} true = Freigabe belastbar, false = fail-closed zu PLAN
+ */
+export function twinOwnFalsificationOk(twin, { root = null, whitelist = [] } = {}) {
+  if (!twin || twin.verdict !== "BESTAETIGT") return true;
+  if (twin.error) return false;
+  if (Number(twin.toolRounds) < 1) return false; // ohne eigenes Lesen keine Gegenprüfung
+  const text = `${twin.befund || ""}\n${twin.content || ""}`;
+  // Basis-Gate ( Fantasie-Referenzen blocken, >=1 Referenz-Form) bleibt:
+  if (!twinEvidenceOk(twin, { root, whitelist })) return false;
+  return hasVerifiableFileLine(text, { root, cache: fileTextCache(root, whitelist) });
+}
+
 /** Echte Finding-Severity je Verdict (info/warning/critical, UI-065-Befund 3). */
 export function findingSeverity(verdict) {
   const v = String(verdict || "").toUpperCase();

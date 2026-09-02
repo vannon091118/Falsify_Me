@@ -32,7 +32,7 @@ import { loadApiKey, keyEnvFile, keyNames } from "../core/keys.mjs";
 import { loadConfig } from "../core/config.mjs";
 import { enforceRateLimit } from "../core/ratelimit.mjs";
 import { SYSTEM_DE, SYSTEM_EN, buildUserContent } from "../core/prompt.mjs";
-import { parseVerdict, parseBefund, parseSubPrompt, enforceWriteChallenge, enforceStructuralCoherence, findingSeverity, parseScopeDivergence, enforceResearchContract, extractResearchAdditions, exitCodeOf, twinEvidenceOk } from "../core/verdict.mjs";
+import { parseVerdict, parseBefund, parseSubPrompt, enforceWriteChallenge, enforceStructuralCoherence, findingSeverity, parseScopeDivergence, enforceResearchContract, extractResearchAdditions, exitCodeOf, twinEvidenceOk, twinOwnFalsificationOk } from "../core/verdict.mjs";
 import { runTwinCheck, extractClaims } from "../core/twin.mjs";
 import { runAgent } from "../core/agent.mjs";
 import { checkFeasibility } from "../core/feasibility.mjs";
@@ -563,14 +563,16 @@ async function main() {
         uiEvt({ t: "activity", tool: info.tool, file: info.file, label: `${info.tool}(${info.file ?? ""})` });
       },
     });
-    if (twin.verdict === "BESTAETIGT" && twinEvidenceOk(twin, { root: ROOT, whitelist: FILE_WHITELIST })) {
-      console.log(green(dim("Gegenprüfung BESTÄTIGT: die Widerlegung hält unabhängiger Nachprüfung stand (eigenes Lesen nachgewiesen).")));
+    if (twin.verdict === "BESTAETIGT" && twinEvidenceOk(twin, { root: ROOT, whitelist: FILE_WHITELIST })
+        && twinOwnFalsificationOk(twin, { root: ROOT, whitelist: FILE_WHITELIST })) {
+      console.log(green(dim("Gegenprüfung BESTÄTIGT: die Widerlegung hält unabhängiger Nachprüfung stand (eigenes Lesen + eigene verifizierte Referenz nachgewiesen).")));
     } else if (twin?.verdict === "BESTAETIGT") {
-      // Regel-6-Rig (2026-09-01, Befund 2/9): „BESTAETIGT ohne eigenes Lesen"
-      // ist deterministisch erzwungen — ein Twin, der ohne Tool-Runde und
-      // ohne verifizierbare Referenz bestaetigt, gibt KEINE Freigabe.
-      const reason = twin.befund || "kein nachweisbares eigenes Lesen";
-      console.warn(yellow(`\n⚠ BESTAETIGT ohne belegtes eigenes Lesen (0 Tool-Runden, keine verifizierbare Referenz: ${reason.slice(0, 80)}) – als UNKLAR behandelt, KEINE Freigabe.`));
+      // Regel-6-Rig (Befund 2/9): „BESTAETIGT ohne eigenes Lesen“ blockt.
+      // Regel-6-Audit (Befund 10): NACHLESEN der Erstprüfer-Zitate ist keine
+      // zweite Falsifikation — ohne eigene verifizierte Datei:Zeile im
+      // Twin-Befund bleibt die Freigabe verweigert (kein geteilter Blindspot).
+      const reason = twin.befund || "kein eigenes Lesen/keine eigene verifizierte Referenz";
+      console.warn(yellow(`\n⚠ BESTAETIGT ohne belegte EIGENE Falsifikation (Tool-Runden: ${twin.toolRounds ?? 0}, eigene verifizierbare Datei:Zeile fehlt: ${reason.slice(0, 80)}) – als UNKLAR behandelt, KEINE Freigabe.`));
       verdict = "PLAN";
     } else {
       const reason = twin.befund || twin.error || "keine belastbare Bestätigung";

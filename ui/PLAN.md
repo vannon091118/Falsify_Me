@@ -1456,3 +1456,10 @@ STATUS: DONE
 DEPENDS_ON: UI-104 (Twin-Gate), UI-082 (ASK-Verdict), UI-090 (Queue)
 VERIFY: node --test tests/twin.test.mjs (twinEvidenceOk) tests/queue.test.mjs (DONE ASK -> 5 via runPing + bash-wait-Spawn, kaputte DB -> Exit 3) tests/datamodel.test.mjs (exitCodeOf); Live: Twin ohne Tool-Runden gibt keine Freigabe.
 RESULT: core/verdict.mjs twinEvidenceOk (>=1 Tool-Runde ODER verifizierte Referenz; Fantasie-Zeile zaehlt nicht); cli/run.mjs nutzt exitCodeOf fuer alle Verdict-Exits + Crash-Guard mit activeJobId (Job -> ERROR "Interner Fehler"); cli/jobs.mjs runPing zentralisiert ueber exitCodeOf (DONE ASK -> 5); cli/falsify.sh wait-DONE-ASK-Arm -> Exit 5. 102/102 Core + 114/114 UI gruen.
+
+ID: UI-112
+TASK: Eigene Falsifikation statt Doppel-Plausibilisierung (Audit-Befund 10): Ein Twin, der NUR die eingereichten Widerlegungen nachliest und ihnen zustimmt, teilt den Blindspot des Erstprüfers — die BESTAETIGT-Freigabe verlangt jetzt NACHWEISBAR eigenes Lesen (>=1 Tool-Runde) UND mindestens eine verifizierbare Datei:Zeile-Referenz im EIGENEN Befund (twinOwnFalsificationOk, fail-closed); Twin-Prompts DE/EN fordern die eigene Gegenprobe.
+STATUS: DONE
+DEPENDS_ON: UI-111 (twinEvidenceOk), UI-104 (Twin-Gate)
+VERIFY: node --test tests/twin.test.mjs (Parroting geblockt, eigene Falsifikation freigegeben, Fantasie-Zeile geblockt, 0 Runden geblockt); volle Kern-Suite gruen.
+RESULT: core/verdict.mjs twinOwnFalsificationOk (Tool-Runden UND eigene verifizierte Datei:Zeile via resolveRel/hasVerifiableFileLine; WIDERSPRUCH/UNKLAR nicht pruefpflichtig, Fehler fail-closed); cli/run.mjs Gate-Kette erweitert (twinEvidenceOk UND twinOwnFalsificationOk) mit ehrlicher Warnung; system-eviltwin-de/en.md Pflicht 4 auf eigene Gegenprobe + Eigenzitat geschaerft. 100/100 Core gruen.
