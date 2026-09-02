@@ -31,8 +31,19 @@ export function jobToRunning(db, id, windowIdx) {
 
 export function jobDone(db, id, verdict, error) {
   const status = error ? `ERROR ${error}` : `DONE ${verdict || "UNBEKANNT"}`;
+  // Finale Zustaende sind IMMUTABEL (Security-Review 2026-09-01, Pkt 4/7):
+  // Ein zweites jobDone (Crash-Guard nach dem Review-Commit, spaeter Abort,
+  // Recovery-Double) darf einen finalisierten Job nie umschreiben — sonst
+  // koennte ein nachgelagerter ERROR-Pfad ein persistiertes WRITE nach-
+  // traeglich tilgen (empirisch bestätigt: WRITE -> ERROR per 2. Aufruf).
+  // Der Guard ist ein Hook in EINER Funktion, nicht verstreute WHERE-Klauseln.
+  const final = db.prepare("SELECT status FROM jobs WHERE id = ?").get(id);
+  if (final && (final.status.startsWith("DONE") || final.status.startsWith("ERROR"))) {
+    return false; // bereits finalisiert — unveränderlich, kein Umschreiben
+  }
   db.prepare("UPDATE jobs SET status = ?, verdict = ?, error = ?, done_at = ? WHERE id = ?")
     .run(status, verdict ?? null, error ?? null, nowIso(), id);
+  return true;
 }
 
 export function listJobs(db, { status } = {}) {

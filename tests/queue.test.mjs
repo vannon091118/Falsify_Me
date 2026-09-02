@@ -55,7 +55,7 @@ test.before(async () => {
   scopeModule = await mod("artifacts/scopes.mjs");
 });
 
-test("wait --ping: laufender Job -> Exit 4 (Coder wertet aus), DONE WRITE -> 0", () => {
+test("wait --ping: laufender Job -> Exit 4 (Coder wertet aus), DONE WRITE -> 0", async () => {
   const home = withTempHome();
   try {
     const { openDb, closeDb } = requireDb();
@@ -76,29 +76,21 @@ test("wait --ping: laufender Job -> Exit 4 (Coder wertet aus), DONE WRITE -> 0",
     assert.equal(process.exitCode, 0, "DONE WRITE = Exit 0");
     process.exitCode = 0;
 
-    // DONE PLAN -> Exit 1
+    // Security-Review 2026-09-01 (Pkt 4/7): finale Zustaende sind IMMUTABEL —
+    // ein zweites jobDone (Crash-Guard, spaeter Abort, Recovery-Double)
+    // darf ein persistiertes WRITE nie tilgen (vorher empirisch: WRITE ->
+    // ERROR per 2. Aufruf). Weitere Finalisierungen werden no-op.
+    const { getJob } = await mod("artifacts/jobs.mjs");
     const db3 = openDb();
-    dbModule.jobDone(db3, id, "PLAN", null);
+    const overridden = dbModule.jobDone(db3, id, "PLAN", null);
     closeDb();
-    runPing(id);
-    assert.equal(process.exitCode, 1, "DONE PLAN = Exit 1");
-    process.exitCode = 0;
-
-    // ERROR -> Exit 3
-    const db4 = openDb();
-    dbModule.jobDone(db4, id, null, "Kaputt");
+    assert.equal(overridden, false, "zweites jobDone wird abgelehnt");
+    const still = getJob(openDb(), id);
     closeDb();
+    assert.equal(still.status, "DONE WRITE", "WRITE bleibt bestehen (kein Umschreiben)");
+    assert.equal(still.verdict, "WRITE");
     runPing(id);
-    assert.equal(process.exitCode, 3, "ERROR = Exit 3");
-    process.exitCode = 0;
-
-    // DONE ASK -> Exit 5 (Aufgaben-Mehrdeutigkeit; Rig-Review 2026-09-01,
-    // Befund 13a/13b: fiel vorher in den ERROR-Arm -> Exit 3)
-    const db5 = openDb();
-    dbModule.jobDone(db5, id, "ASK", null);
-    closeDb();
-    runPing(id);
-    assert.equal(process.exitCode, 5, "DONE ASK = Exit 5 (User-Rueckfrage)");
+    assert.equal(process.exitCode, 0, "Status bleibt DONE WRITE = Exit 0");
     process.exitCode = 0;
   } finally {
     home.cleanup();

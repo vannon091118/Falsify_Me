@@ -17,6 +17,12 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   „ERROR Worker-Abbruch (Recovery)" — fail-closed, kein Fake-Verdict.
   uiEvt ist `ui?.applyEvent` (optional chaining): ohne UI arbeitet die
   Pipeline weiter (headless-Identität).
+- Finale Job-Zustände sind IMMUTABEL (Security-Review 2026-09-01, Pkt 4/7):
+  jobDone lehnt einen zweiten Abschluss ab (Rückgabe false, empirical
+  vorher: WRITE → ERROR per Crash-Guard-2. Aufruf). Ein nachgelagerter
+  Fehlerpfad kann ein persistiertes WRITE nie tilgen — Umkehr-Risiko
+  „alter WRITE-Zustand wird überschrieben" ist geschlossen. Doppelfinale
+  im produktionscode sind damit no-op statt Konflikt.
 
 
 ## Runtime & Installation (Docs-weichen-von-Code-Fallen)

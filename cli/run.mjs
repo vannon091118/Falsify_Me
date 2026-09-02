@@ -647,6 +647,10 @@ async function main() {
     enforceQueueConsistency(db);
   } catch (e) {
     console.error(red(`✖ Persistenz-/Konsistenzfehler: ${e.message}`));
+    // Security-Review 2026-09-01 (Pkt 4/7): jobDone ist idempotent fail-closed —
+    // falls der Review-Commit bereits finalisiert hat (Write persistiert,
+    // enforceQueueConsistency warf danach), bleibt das Verdict IMMER
+    // bestehen; der Fehlerpfad schreibt keinen finalen Zustand um.
     try { jobDone(db, jobId, null, `Review nicht persistent (${String(e.message).split("\n")[0].slice(0, 120)})`); } catch { /* egal */ }
     uiEvt({ t: "state", s: "ERROR" });
     closeDb();
