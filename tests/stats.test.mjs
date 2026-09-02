@@ -219,8 +219,8 @@ test("falsify scope trace: GAP-Loop je Runde aus der Queue abgeleitet (UI-116, r
     const { createJob, jobDone } = await mod("artifacts/jobs.mjs");
     const db = openDb();
     const s = createScope(db, "Task mit Loop-Verlauf");
-    const j1 = createJob(db, { scopeId: s.id, payload: "p", wave: "scan", mode: "plan", agentIntent: "Erste Annahme: nur Header lesen" });
-    const j2 = createJob(db, { scopeId: s.id, payload: "p", wave: "plan", mode: "plan", agentIntent: "Zweite Annahme: Evidenz pruefen" });
+    createJob(db, { scopeId: s.id, payload: "p", wave: "scan", mode: "plan", agentIntent: "Erste Annahme: nur Header lesen" });
+    createJob(db, { scopeId: s.id, payload: "p", wave: "plan", mode: "plan", agentIntent: "Zweite Annahme: Evidenz pruefen" });
     const ids = db.prepare("SELECT id FROM jobs ORDER BY created_at").all().map((r) => r.id);
     jobDone(db, ids[0], "RESEARCH", null);
     jobDone(db, ids[1], "PLAN", null);
