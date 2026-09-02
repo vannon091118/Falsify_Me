@@ -1477,3 +1477,10 @@ STATUS: DONE
 DEPENDS_ON: UI-109 (EvilTwinView/Routing), UI-112 (twinOwnFalsificationOk — Legende), UI-110 (Findings-Zähler)
 VERIFY: node --test ui/tui/views/evil-twin-view.test.mjs (3 Tests: Mandat+Status+Roh-Text+Legende sichtbar, Body-Budget deckelt, Tiny-Window 8 Zeilen läuft nicht über); volle UI-Suite grün.
 RESULT: EvilTwinView erweitert — TWIN_BRIEF (6 Zeilen Mandat/Regeln inkl. Gegenprobe- und Fail-closed-Pflicht), Job-Status-Zeile (JOB/Scope/stateLabel/Phase/FINDINGS), Layout-Priorität: Balken+Status+Ergebnis-Legende fix, Mandat kappbar, Roh-Text bekommt den Rest (min. 0 — Ring im State bleibt die Wahrheit); gesamt auf rows gedeckelt, nichts läuft über. Tiny-Window-Defekt gefunden+getestet (Legende blieb vorher unsichtbar). 119/119 UI grün.
+
+ID: UI-115
+TASK: Progression-Statistik als User-Anker überall sichtbar: `falsify state` (Status-API für Agents/Skripte) bekommt die PROGRESSION-Zählerzeile (maschinenlesbar) + ANCHOR-Satz — neben der bestehenden Ableitung aus der SQLite-Queue (artifacts/stats.mjs, Regel 3) und dem PROGRESSION-Panel im Dock-Idle-Screen.
+STATUS: DONE
+DEPENDS_ON: UI-110 (collectStats/progressionStatement), UI-090 (Queue)
+VERIFY: node --test tests/stats.test.mjs (Spawn-Integrationstest: IDLE + PROGRESSION jobs=5 tasks=2 errorsCaught=3 releases=2 + ANCHOR-Satz); live gegen echte Queue (12 Jobs, 6 Fehler, 2 Tasks); Kern- + UI-Suite grün.
+RESULT: ui/worker.mjs --state-Pfad: nach IDLE/BUSY-Zeilen PROGRESSION jobs=… tasks=… errorsCaught=… releases=… modelCalls=… (maschinenlesbar) + ANCHOR <progressionStatement> (User-Wortlaut); try/catch (Statistik ist Anzeige, kein kritischer Pfad). Persistenz bleibt EINE Quelle (SQLite-Queue), kein zweites Speichersystem.

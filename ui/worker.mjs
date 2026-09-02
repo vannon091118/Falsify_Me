@@ -31,6 +31,7 @@ import {
 } from "../artifacts/jobs.mjs";
 import { enforceQueueConsistency } from "../artifacts/invariants.mjs";
 import { collectStats } from "../artifacts/stats.mjs";
+import { progressionStatement } from "../artifacts/stats.mjs";
 // ── Phase 2: Terminal-UI im Worker-Fenster ───────────────────────────────────
 import { createTui } from "./tui.mjs";
 import { createParser } from "./tui/parser.mjs";
@@ -191,11 +192,20 @@ if (process.argv.includes("--check")) {
   process.exit(0);
 }
 
-// ── --state: beschäftigt oder leer? ──────────────────────────────────────────
+// ── --state: beschäftigt oder leer? + Progression-Anker ─────────────────────
 if (process.argv.includes("--state")) {
   const busy = aliveWorkers((w) => w.runningJob);
   if (!busy.length) console.log("IDLE");
   for (const w of busy) console.log(`BUSY ${w.idx} ${w.runningJob}${w.runningScope ? ` (scope ${w.runningScope})` : ""}`);
+  // Progression-Statistik (User-Anker, UI-110): der EIN-SATZ-Anker aus der
+  // Queue — für Agents/Skripte maschinenlesbar als PROGRESSION-Zeile.
+  try {
+    const sdb = openDb();
+    const s = collectStats(sdb);
+    closeDb();
+    console.log(`PROGRESSION jobs=${s.jobsTotal} tasks=${s.scopesTotal} errorsCaught=${s.errorsCaught} releases=${s.releases} modelCalls=${s.modelCalls}`);
+    console.log(`ANCHOR ${progressionStatement(s)}`);
+  } catch { /* Statistik ist Anzeige, kein kritischer Pfad */ }
   process.exit(0);
 }
 

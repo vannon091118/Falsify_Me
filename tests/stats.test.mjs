@@ -104,6 +104,54 @@ test("collectStats: Gesamtzahlen aus der Queue abgeleitet (read-only)", async ()
   }
 });
 
+test("falsify state: PROGRESSION-Zeile + ANCHOR-Satz im --state-Output (UI-115)", async () => {
+  // Integrationstest: Der echte --state-Pfad (worker.mjs) liest die Queue
+  // und haengt die Progression-Zeilen an. Bewiesen per Spawn mit
+  // isoliertem FALSIFY_HOME + Seed-Daten (2 Tasks, 3 Fehler, 5 Jobs).
+  const h = withTempHome();
+  try {
+    const { openDb, closeDb } = await mod("artifacts/db.mjs");
+    const { createScope, addFinding } = await mod("artifacts/scopes.mjs");
+    const { createJob, jobDone, registerWorker } = await mod("artifacts/jobs.mjs");
+    const db = openDb();
+    const s1 = createScope(db, "Task A");
+    const s2 = createScope(db, "Task B");
+    const jobs = [];
+    for (const sid of [s1.id, s1.id, s1.id, s2.id, s2.id]) {
+      const j = createJob(db, { scopeId: sid, payload: "p", mode: "plan" });
+      jobs.push(j);
+    }
+    const ids = db.prepare("SELECT id FROM jobs ORDER BY created_at").all().map((r) => r.id);
+    jobDone(db, ids[0], "PLAN", null);
+    jobDone(db, ids[1], "RESEARCH", null);
+    jobDone(db, ids[2], "PLAN", null);
+    jobDone(db, ids[3], "WRITE", null);
+    jobDone(db, ids[4], "WRITE", null);
+    addFinding(db, { scopeId: s1.id, jobId: ids[0], round: 1, mode: "plan", befund: "b", content: "c", verdict: "PLAN" });
+    addFinding(db, { scopeId: s1.id, jobId: ids[1], round: 1, mode: "research", befund: "b", content: "c", verdict: "RESEARCH" });
+    addFinding(db, { scopeId: s2.id, jobId: ids[2], round: 1, mode: "plan", befund: "b", content: "c", verdict: "PLAN" });
+    // Kein Worker registriert -> --state sagt IDLE, zeigt aber den Anker.
+    closeDb();
+
+    const { spawnSync } = await import("node:child_process");
+    const r = spawnSync(process.execPath, [path.join(ROOT, "ui", "worker.mjs"), "--state"], {
+      encoding: "utf8",
+      timeout: 30000,
+      env: { ...process.env, FALSIFY_HOME: h.tmp },
+    });
+    assert.equal(r.status, 0, `--state exit 0 (stderr: ${r.stderr})`);
+    const out = String(r.stdout);
+    assert.match(out, /^IDLE$/m, "kein Worker -> IDLE");
+    // Maschinenlesbare Zeile fuer Agents/Skripte.
+    assert.match(out, /^PROGRESSION jobs=5 tasks=2 errorsCaught=3 releases=2 /m, "PROGRESSION-Zaehler maschinenlesbar");
+    // Der Ein-Satz-Anker (User-Wortlaut).
+    assert.match(out, /^ANCHOR Ohne FalsifyMe haettest du 3 Fehler in 2 Tasks /m, "ANCHOR-Satz mit echten Zahlen");
+    assert.match(out, /widerlegt/, "Anker nennt die Widerlegung");
+  } finally {
+    h.cleanup();
+  }
+});
+
 test("collectStats: UNBEKANNT wird aus dem STATUS gezaehlt (verdict NULL)", async () => {
   const h = withTempHome();
   try {
