@@ -257,6 +257,15 @@ test("Anti-Self-Check-Bias: WRITE ohne Challenge-Nachweis -> UNKNOWN (keine Frei
   // EN-Negations-Senke: englische Bestaetigungs-Phrasen zaehlen nicht als Angriff.
   assert.equal(rubber("1. Refuted, violation: no errors found in artifacts/jobs.mjs"), false, "EN-Bestaetigungs-Phrase neutralisiert die Widerlegungs-Tokens");
   assert.equal(rubber("1. Refuted, violation: nothing wrong in artifacts/jobs.mjs"), false, "EN-Phrase nothing wrong = kein Angriff");
+  // Audit-Befund 8/9 (2026-09-01): ZWEI REFUTATION-Tokens, die nur eine
+  // Bestaetigung sind ("no gap and no flaw"), waren ein Rubber-Stamp-Bypass.
+  // Die EN-Negations-Senke muss sie als reine Bestaetigung erkennen.
+  assert.equal(rubber("1. I see no gap and no flaw in core/verdict.mjs"), false, "Zwei Refutations-Woerter in reiner Bestaetigung = kein Angriff");
+  assert.equal(rubber("1. No issues detected, all good in core/verdict.mjs"), false, "EN-Phrasen no issues/all good = kein Angriff");
+  assert.equal(rubber("1. The code looks correct, no vulnerabilities in core/verdict.mjs"), false, "EN-Phrasen looks correct/no vulnerabilities = kein Angriff");
+  // Audit-Befund 2 (2026-09-01): Datei:Zeile mit falscher Gross-/Kleinschrift
+  // darf nicht verworfen werden — resolveRel loest case-insensitiv auf.
+  assert.equal(rubber("1. Widerlegt: `claimNextJob` (Artifacts/Jobs.mjs:78)"), true, "Case-insensitive Datei:Zeile wird aufgeloest");
   // Mehrzeiliges Bündel: Evidenz in der FOLGEZEILE zählt (vorher strukturell
   // blockt). Ab RunDance-Befund 7 braucht der Versuch ZWEI Widerlegungs-Token
   // (hier: Lücke + racy) – Ein-Token-Pfad-Stamps sind kein Beleg mehr.
@@ -281,6 +290,31 @@ test("Anti-Self-Check-Bias: WRITE ohne Challenge-Nachweis -> UNKNOWN (keine Frei
   assert.equal(findingSeverity("RESEARCH"), "warning");
   assert.equal(findingSeverity(null), "critical");
   assert.equal(findingSeverity("UNBEKANNT"), "critical");
+});
+
+test("Audit-Befund 1: fileTextCache wird pro hasChallengeEvidence-Call wiederverwendet (N Buendel != Nx Datei-Reads)", async () => {
+  const { hasChallengeEvidence } = await mod("core/verdict.mjs");
+  const WL = ["artifacts/jobs.mjs", "core/verdict.mjs"];
+  const opts = { root: ROOT, whitelist: WL };
+  // Instrumentiere fs.readFileSync, um zu zaehlen, wie oft dieselbe Datei
+  // gelesen wird. Vor dem Fix erzeugte jedes Bündel eine frische Map und las
+  // dieselbe Whitelist-Datei N× neu.
+  const orig = fs.readFileSync;
+  const counts = new Map();
+  fs.readFileSync = function (p, ...rest) {
+    const key = String(p).replace(/\\/g, "/");
+    if (key.endsWith("jobs.mjs") || key.endsWith("verdict.mjs")) counts.set(key, (counts.get(key) || 0) + 1);
+    return orig.call(this, p, ...rest);
+  };
+  try {
+    const twoBundles = "## Falsifikationsversuche\n1. Widerlegt: Bug (artifacts/jobs.mjs:78)\n2. Widerlegt: racy (artifacts/jobs.mjs:78)\nVERDICT: WRITE";
+    assert.equal(hasChallengeEvidence(twoBundles, opts), true, "Zwei echte Widerlegungen mit Datei:Zeile = Beleg");
+    // jobs.mjs darf nur EINMAL gelesen werden (Cache-Hoisting), nicht pro Bündel.
+    const total = [...counts.values()].reduce((a, b) => a + b, 0);
+    assert.equal(total, 1, `jobs.mjs/verdict.mjs wurden ${total}x gelesen (erwartet 1x durch Cache)`);
+  } finally {
+    fs.readFileSync = orig;
+  }
 });
 
 test("Regel 5: WRITE gegen strukturelle Blocker wird zu PLAN (kein formal grün)", async () => {

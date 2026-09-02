@@ -2,7 +2,7 @@
 // FalsifyMe · tests/invariants.test.mjs – Regel 3 (keine zweite Wahrheit)
 // -----------------------------------------------------------------------------
 // 1) STATISCH: Der Single-Writer-Anspruch als Regressionstest — ALLE
-//    schreibenden Funktionen des Zustandsmodells (jobs.mjs + scopes.mjs:
+//    benannten Schreibfunktionen des Zustandsmodells (jobs.mjs + scopes.mjs:
 //    createJob/jobToRunning/jobDone/setJobAbort/clearJobAbort/claimNextJob/
 //    reapStaleJobs/registerWorker/unregisterWorker/heartbeatWorker/
 //    setWorkerScope/createScope/updateScopeAfterReview/markScopeDone/
@@ -10,6 +10,12 @@
 //    den bekannten Orchestrierern aufgerufen werden (cli/run.mjs,
 //    ui/worker.mjs, cli/jobs.mjs [abort], cli/scope.mjs [new]). Ein neuer
 //    Schreibpfad bricht diesen Test — keine zweite Wahrheit, die still entsteht.
+//    HINWEIS (Audit-Befund 7, 2026-09-01): Der Test scannt bewusst nur die
+//    benannten Zustands-Writer, KEINEN raw db.exec/db.prepare. core/ratelimit.mjs
+//    schreibt via db.exec direkt in seine EIGENE rate_limit-Tabelle — eine
+//    dokumentierte, separate Write-Domain (Rate-Limit-Reservierungen), kein
+//    funktionaler Verstoß gegen die eine Zustands-Wahrheit (AGENTS.md: „nur
+//    core/ratelimit.mjs schreibt direkt, aber in eine eigene Tabelle“).
 // 2) DYNAMISCH: checkQueueConsistency erkennt verletzte Ableitungen
 //    (hardened mit offenen Konflikten, GAP-Verdrehung, Orphan-RUNNING,
 //    jobs- vs. findings-Verdict) und bestätigt konsistente Zustände.

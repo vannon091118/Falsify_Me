@@ -64,7 +64,12 @@ const EVIDENCE_PATH = /[\w.-]+(?:\/[\w.-]+)+\.[A-Za-z0-9]+/;
 // Fehler gefunden") sind KEIN Nachweis, auch nicht mit angehängtem Pfad.
 const REFUTATION = /widerlegt?|widerlegung|refuted|verletzt|violates?|bricht|brea?ks|umgehung|umgangen|bypass|race|racy|bug|luecke|lücke|gap|flaw|angreifbar|unsicher|unsafe|kaputt|broken|falsch|wrong|fehlt|missing|inkonsistent|inconsistent|unzureichend|insufficient|risiko|risik|gefahr|danger|crash|absturz|leak|ausbruch|escape|gegenteil|contrary|angreif|attack|schwach|weak|zuwenig|zu wenig|nicht funktioniert|fails?/i;
 // Negations-Senke: „keine Fehler/Lücken/Bugs …" ist KEINE Widerlegung.
-const NEGATION_SINK = /\b(?:kein(?:e|er|em|en)?\s+(?:fehler|gefunden|luecke|lücke|bug|problem|schwachstelle|schwaechen|risiko|anhaltspunkt|verstoss|widerspruch|gegenteil)|no errors? found|nothing wrong)\b/gi;
+// Audit-Befund 8/9 (2026-09-01): EN-Lücken — „no gap and no flaw“, „no issues
+// detected“, „all good“, „looks correct“, „no vulnerabilities“ sind REINE
+// Bestätigungen, aber ihre Wörter (gap, flaw, …) sind REFUTATION-Tokens und
+// liessen einen Rubber-Stamp durch. Die Senke neutralisiert sie, damit
+// hasRefutation keine Widerlegung mehr sieht.
+const NEGATION_SINK = /\b(?:kein(?:e|er|em|en)?\s+(?:fehler|gefunden|luecke|lücke|bug|problem|schwachstelle|schwaechen|risiko|anhaltspunkt|verstoss|widerspruch|gegenteil)|no\s+(?:errors?|issues?|problems?|bugs?|gaps?|flaws?|vulnerabilit(?:y|ies)|concerns?|defects?|lücken|luecken)\s+(?:found|detected|present|here)?|nothing\s+wrong|all\s+good|looks?\s+correct|seems?\s+(?:correct|fine|ok|okay|good|right)|\bis\s+(?:correct|fine|ok|okay|good|right))\b/gi;
 
 /**
  * Widerlegungs-Zwang (RunDance-Befund 7, 2026-09-01): EIN einzelnes
@@ -117,6 +122,34 @@ export function extractAttemptBundles(section) {
   return bundles;
 }
 
+/**
+ * Löst eine relative Pfadangabe case-insensitiv gegen <root> auf (Audit-Befund
+ * 2026-09-01): EVIDENCE_FILE_LINE matcht mit /i („Core/Verdict.mjs:23“), aber
+ * existsSync path.join(root, file) ist auf Linux case-sensitiv — ein echter
+ * Thinker-Beweis mit falscher Gross-/Kleinschreibung wurde verworfen. Erst
+ * exakt, dann case-insensitiv je Segment auflösen; nicht auflösbar → null.
+ */
+function resolveRel(root, rel) {
+  try {
+    const readFileLike = (p) => { try { if (existsSync(p)) return p; } catch { /* egal */ } return null; };
+    let p = path.isAbsolute(rel) ? rel : path.join(root, rel);
+    const exact = readFileLike(p);
+    if (exact) return exact;
+    const parts = String(rel).split(/[\/\\]/).filter(Boolean);
+    let cur = path.resolve(root);
+    for (const part of parts) {
+      let entry = null;
+      const want = part.toLowerCase();
+      for (const e of fs.readdirSync(cur, { withFileTypes: true })) {
+        if (e.name.toLowerCase() === want) { entry = e.name; break; }
+      }
+      if (!entry) return null;
+      cur = path.join(cur, entry);
+    }
+    return existsSync(cur) ? cur : null;
+  } catch { return null; }
+}
+
 /** Liest Whitelist-Dateien (Cache) für Symbol-/Zeilen-Verifikation. */
 function fileTextCache(root, whitelist) {
   const cache = new Map();
@@ -124,9 +157,9 @@ function fileTextCache(root, whitelist) {
     if (cache.has(file)) return cache.get(file);
     let txt = null;
     try {
-      const abs = path.isAbsolute(file) ? file : path.join(root, file);
-      txt = fs.readFileSync(abs, "utf8");
-      if (txt.length > 200000) txt = null; // wie read_file: nur erste 200 KB
+      const abs = resolveRel(root, file);
+      if (abs) txt = fs.readFileSync(abs, "utf8");
+      if (txt && txt.length > 200000) txt = null; // wie read_file: nur erste 200 KB
     } catch { /* nicht lesbar */ }
     cache.set(file, txt);
     return txt;
@@ -141,16 +174,20 @@ function fileTextCache(root, whitelist) {
  * NUR, wenn die Datei existiert. Ohne root ist nur die Whitelist-Referenz
  * überprüfbar. Fantasie-Symbole und Fantasie-Zeilenummern zählen nicht.
  */
-export function evidenceOf(attempt, { whitelist = [], root = null } = {}) {
-  const read = root ? fileTextCache(root, whitelist) : null;
+export function evidenceOf(attempt, { whitelist = [], root = null, cache } = {}) {
+  // Cache-Hoisting (Audit-Befund 2026-09-01): EIN Cache pro hasChallengeEvidence-
+  // Call wird weitergereicht — sonst erzeugt jedes Bündel eine frische Map und
+  // liest dieselben Dateien N× neu. Ohne mitgegebenen cache (Direct-Aufrufe) fällt
+  // evidenceOf auf einen frischen Cache zurück (Verhalten unverändert).
+  const read = root ? (cache instanceof Function ? cache : fileTextCache(root, whitelist)) : null;
   // 1. Datei:Zeile — die stärkste Referenz wird STRIKT verifiziert (Datei UND
-  //    Zeile müssen existieren). Ein Whitelist-Token im selben Bündel darf
-  //    eine Fantasie-Zeilenummer nicht „erben" (Rig-2026-09-01).
+  //    Zeile müssen existieren, case-insensitiv aufgelöst). Ein Whitelist-Token
+  //    darf eine Fantasie-Zeilenummer nicht „erben" (Rig-2026-09-01).
   const lm = attempt.match(EVIDENCE_FILE_LINE);
   if (lm && EVIDENCE_FILE_EXT.test(lm[1])) {
     if (!root) return null;
     const file = lm[1];
-    if (!existsSync(path.join(root, file))) return null;
+    if (!resolveRel(root, file)) return null;
     const lineNo = Number(lm[2]);
     const lines = read(file);
     if (!lines || lineNo < 1 || lineNo > lines.split(/\r?\n/).length) return null;
@@ -168,9 +205,9 @@ export function evidenceOf(attempt, { whitelist = [], root = null } = {}) {
       if (txt && txt.includes(sym)) return "symbol";
     }
   }
-  // 4. relative Pfadform — nur wenn die Datei existiert.
+  // 4. relative Pfadform — nur wenn die Datei existiert (case-insensitiv).
   const pm = attempt.match(EVIDENCE_PATH);
-  if (pm && EVIDENCE_FILE_EXT.test(pm[0]) && root && existsSync(path.join(root, pm[0]))) {
+  if (pm && EVIDENCE_FILE_EXT.test(pm[0]) && root && resolveRel(root, pm[0])) {
     return "pfad-existiert";
   }
   return null;
@@ -200,9 +237,12 @@ export function hasChallengeEvidence(content, opts = {}) {
   // Widerlegungen werden unsichtbar).
   const nextHeading = rest.search(/\n#{1,2}\s+\S/);
   const section = (nextHeading === -1 ? rest : rest.slice(0, nextHeading)).trim();
+  // Cache-Hoisting: EIN Cache fuer ALLE Bündel (Audit-Befund 2026-09-01 —
+  // sonst N frische Maps und N× Datei-Reads).
+  const cache = opts?.root ? fileTextCache(opts.root, opts.whitelist || []) : null;
   return extractAttemptBundles(section).some((b) => {
     if (b.text.length < 10) return false;
-    const ev = evidenceOf(b.text, opts);
+    const ev = evidenceOf(b.text, { ...opts, cache });
     return !!ev && hasRefutation(b.text, ev);
   });
 }
