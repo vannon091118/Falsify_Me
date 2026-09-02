@@ -152,22 +152,18 @@ case "$cmd" in
       esac
     done
     echo "=== $id: $line ==="
+    # Node besitzt die Verdict-/Exit-Code-Autorität; Bash reicht den
+    # terminalen Status nur weiter und formatiert keine eigene Mapping-Tabelle.
+    node "$V2_DIR/cli/main.mjs" ping "$id" >/dev/null 2>&1
+    code=$?
     case "$line" in
-      "DONE WRITE"*) exit 0 ;;
-      "DONE PLAN"*|"DONE RESEARCH"*)
-        echo "⚠️  VERDICT: ${line#DONE } – nicht freigegeben. Kritik lesen (falsify log $id), Loop fortsetzen." >&2
-        exit 1 ;;
-      "DONE ASK"*)
-        # Aufgaben-Mehrdeutigkeit: Rueckfrage an den User, KEIN Loop-Fortschritt
-        # (Exit 5 laut Vertrag — Befund 13a: fiel vorher in den ERROR-Arm, Exit 3).
-        echo "⚠️  VERDICT: ASK – Aufgabe mehrdeutig, Rueckfrage an den User noetig (Exit 5, keine Freigabe)." >&2
-        exit 5 ;;
-      "DONE UNBEKANNT"*)
-        echo "⚠️  KEIN gültiges Verdict erkannt – keine Freigabe (Exit 3)." >&2
-        exit 3 ;;
-      ERROR*) exit 3 ;;
-      *) exit 3 ;;
+      "DONE WRITE"*) ;;
+      "DONE PLAN"*|"DONE RESEARCH"*) echo "⚠️  VERDICT: ${line#DONE } – nicht freigegeben. Kritik lesen (falsify log $id), Loop fortsetzen." >&2 ;;
+      "DONE ASK"*) echo "⚠️  VERDICT: ASK – Aufgabe mehrdeutig, Rueckfrage an den User noetig (keine Freigabe)." >&2 ;;
+      "DONE UNBEKANNT"*) echo "⚠️  KEIN gültiges Verdict erkannt – keine Freigabe." >&2 ;;
+      ERROR*) ;;
     esac
+    exit "$code"
     ;;
   abort)
     id="${1:-}"

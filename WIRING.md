@@ -190,8 +190,12 @@ oder:         start "FalsifyMe-TUI" cmd /k node ui\tui-demo.mjs %*
 |---|---|
 | `tui/parser.mjs` | Chunk→Zeilen→Events (`FM-EVT:`), ANSI-Strip |
 | `core/tools.mjs` | read-only Tool-Set (list_dir/read_file/glob), Whitelist-Zwang |
+| `core/project-context.mjs` | gemeinsame Zielroot-/Allowlist-/Self-Review-Kontext-Policy |
+| `core/evidence.mjs` | Challenge-, Research-, Struktur- und allgemeine Evidenz-Gates |
+| `core/twin-evidence.mjs` | Twin-Evidenz (Regel 6): objektive Tool-Evidence (host-aufgezeichneter erfolgreicher read_file) trägt die Freigabe; wörtliche Zitat-Verankerung als Qualitäts-Gate für Zitat-Aussagen |
 | `core/prompt.mjs` | Prompt-Bau + Loader; System-Prompt-Text als DATEN in `core/prompt-text/*.md` (Root-Cause-Fix: keine Template-Literale für Text) |
 | `core/selfreview.mjs` | Self-Review-Scope-Regel: eigenes Checkout erkennen + Kern-Whitelist ergänzen (pure, read-only) |
+| `core/verdict.mjs` | Kompatibilitätsfassade für Verdict-/Befund-Parsing und bestehende Gate-Exporte |
 | `artifacts/invariants.mjs` | Zustandsmodell-Invariante: checkQueueConsistency (read-only, Regel 3) |
 | `core/twin.mjs` | Unabhängige Gegenprüfung (Evil Twin): runTwinCheck/parseTwinVerdict/extractClaims, Fail-closed (Regel 6) |
 | `core/verdict.mjs` | Loop-Anker (Regel 7, UI-107): parseScopeDivergence — Divergenz-Deklaration des Thinkers blockt WRITE (PLAN), `scopes.last_divergence` (Schema v4) |

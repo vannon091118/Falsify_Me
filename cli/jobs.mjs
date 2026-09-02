@@ -8,18 +8,14 @@ import { getJob, listJobs, setJobAbort } from "../artifacts/jobs.mjs";
 import { exitCodeOf } from "../core/verdict.mjs";
 import { fail } from "./util.mjs";
 
-// ── ping <job-id> (Wait-Auswertung für Coder/Skill) ─────────────────────────
-// `falsify wait --ping <id>` = EINE Auswertungsrunde statt blockierendem Loop.
-// Denk-/Schreibdauer ist anbieterabhängig nicht abschätzbar – deshalb gibt es
-// KEINEN festen Timeout; der Coder bewertet den Ping und entscheidet über
-// Weiterwarten oder Abbruch (falsify abort <id>).
-// Ausgabe: STATUS <zustand> <verstrichene Sekunden>
-// Exit: 0 = DONE WRITE · 1 = DONE PLAN/RESEARCH · 5 = DONE ASK ·
-//       3 = ERROR/kein Verdict · 4 = läuft noch (QUEUED/RUNNING – Coder wertet aus)
-// exitCodeOf (core/verdict.mjs) ist die EINZIGE Quelle fuer Verdict-Exits
-// (Rig-Review 2026-09-01, Befund 13a/13b: DONE ASK endete als Exit 3).
+export function terminalExitCode(status) {
+  if (String(status || "").startsWith("DONE ")) return exitCodeOf(String(status).slice(5));
+  if (String(status || "").startsWith("ERROR")) return exitCodeOf(null);
+  return 4;
+}
+
 export function runPing(id) {
-  if (!id) fail("Nutzung: falsify ping <job-id>"); // leerer id wuerde sonst als SQLite-Bind-Fehler verdeckt
+  if (!id) fail("Nutzung: falsify ping <job-id>");
   const db = openDb();
   const job = getJob(db, id);
   if (!job) fail(`Unbekannter Job: ${id}`);
@@ -27,17 +23,11 @@ export function runPing(id) {
   const elapsed = Math.max(0, Math.round((Date.now() - t0) / 1000));
   console.log(`STATUS ${job.status} ${elapsed}s`);
   closeDb();
-  if (job.status.startsWith("DONE ")) process.exitCode = exitCodeOf(job.status.slice(5));
-  else if (job.status.startsWith("ERROR")) process.exitCode = 3;
-  else process.exitCode = 4; // QUEUED/RUNNING: läuft noch – Coder wertet aus
+  process.exitCode = terminalExitCode(job.status);
 }
 
-// ── abort <job-id> (CLI-Abbruch eines Queue-Jobs) ───────────────────────────
-// Setzt das Abort-Flag in der Queue; der Worker pollt es während des laufenden
-// Kindprozesses und killt den Job echt. Kein Fake-Verdict: Der Job endet als
-// ERROR "Abgebrochen (CLI)" – keine Freigabe.
 export function runAbort(id) {
-  if (!id) fail("Nutzung: falsify abort <job-id>"); // leerer id wuerde sonst als SQLite-Bind-Fehler verdeckt
+  if (!id) fail("Nutzung: falsify abort <job-id>");
   const db = openDb();
   const job = getJob(db, id);
   if (!job) fail(`Unbekannter Job: ${id}`);
@@ -51,9 +41,8 @@ export function runAbort(id) {
   closeDb();
 }
 
-// ── status <job-id> ──────────────────────────────────────────────────────────
 export function runStatus(id) {
-  if (!id) fail("Nutzung: falsify status <job-id>"); // leerer id wuerde sonst als SQLite-Bind-Fehler verdeckt
+  if (!id) fail("Nutzung: falsify status <job-id>");
   const db = openDb();
   const job = getJob(db, id);
   if (!job) fail(`Unbekannter Job: ${id}`);
@@ -66,7 +55,6 @@ export function runStatus(id) {
   closeDb();
 }
 
-// ── jobs ─────────────────────────────────────────────────────────────────────
 export function runJobs() {
   const db = openDb();
   const all = listJobs(db);

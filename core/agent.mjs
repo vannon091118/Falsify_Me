@@ -41,7 +41,7 @@ function streamFlush() {
  *   Callback je echtem Tool-Aufruf (Phase 2 UI-Events; Default: keine Wirkung)
  * @returns {Promise<{content:string, usage:object, toolRounds:number}>}
  */
-export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBase, maxTokens = 20000, reasoningEffort = "high", maxToolRounds = 14, temperature = 0.3, timeoutMs = 180000, root, whitelist = [], onTool, retryBackoffMs = 1000, timeoutStagesMs = [5000, 30000, 60000] } = {}) {
+export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBase, maxTokens = 20000, reasoningEffort = "high", maxToolRounds = 14, temperature = 0.3, timeoutMs = 180000, root, whitelist = [], onTool, retryBackoffMs = 1000, timeoutStagesMs = [5000, 30000, 60000], fetchRound: fetchRoundOverride = null } = {}) {
   const { TOOLS, execTool } = makeTools(root, whitelist);
   const messages = [
     { role: "system", content: systemPrompt },
@@ -49,6 +49,7 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
   ];
   let toolRounds = 0;
   let emptyRetries = 0;
+  const toolEvidence = []; // objektive Laufzeit-Evidenz erfolgreicher/versuchter Tool-Aufrufe
 
   // ── Timeout-Eskalation in STUFEN (2026-09-01): ueberlastete Provider
   // (Netzwerk-/429-/5xx-Kaskaden, gehaengte Streams) sollen nicht ewig in der
@@ -70,7 +71,7 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
     return stripped || String(round?.reasoning || "").trim();
   };
 
-  const fetchRound = (body) => fetchRoundWith(body, { apiKey, apiBase, timeoutMs, deadlineMs, retryBackoffMs, timeoutStagesMs });
+  const fetchRound = fetchRoundOverride || ((body) => fetchRoundWith(body, { apiKey, apiBase, timeoutMs, deadlineMs, retryBackoffMs, timeoutStagesMs }));
 
   for (;;) {
     // reasoning_effort nur senden, wenn der Provider es unterstützt
@@ -124,7 +125,7 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
         round = await fetchRound({ ...body, tools: undefined, reasoning_effort: undefined });
         const c2 = finalizeContent(round);
         if (c2 && !/^\s*\{[\s\S]*"(tool|name|path|arguments|function)"\s*:/.test(c2)) {
-          return { content: c2, usage: round.usage || {}, toolRounds };
+          return { content: c2, usage: round.usage || {}, toolRounds, toolEvidence };
         }
       }
       continue;
@@ -142,7 +143,7 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
         round = await fetchRound({ ...body, tools: undefined, messages: [...messages, finalMsg, { role: "user", content: "Deine Antwort enthält kein VERDICT. Liefere JETZT die abschließende Falsifikations-Kritik mit BEFUND und VERDICT (PLAN | RESEARCH | WRITE) – reiner Text, genau eine VERDICT-Zeile am Ende." }] });
         content = finalizeContent(round);
       }
-      return { content, usage: round.usage || {}, toolRounds };
+      return { content, usage: round.usage || {}, toolRounds, toolEvidence };
     }
 
     if (calls.length) {
@@ -165,7 +166,19 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
         onTool?.({ tool: tc.name, file: typeof fileArg === "string" && fileArg ? fileArg : null });
         console.log(`⟳ Agent liest: ${tc.name}(${shown || ""})`);
         let result;
-        try { result = execTool(tc.name, args); } catch (e) { result = `FEHLER: ${e.message}`; }
+        let toolOk = false;
+        try { result = execTool(tc.name, args); toolOk = true; } catch (e) { result = `FEHLER: ${e.message}`; }
+        // Objektive Tool-Evidence: nur tatsächlich erfolgreiche, erlaubte
+        // Aufrufe zählen später als "eigenes Lesen" (Regel 6). Der Whitelist-
+        // /Root-Check passiert in execTool (tools.mjs) – ein throw heißt
+        // blockiert, ein Ergebnis heißt erfolgreich und erlaubt.
+        toolEvidence.push({
+          tool: String(tc.name || ""),
+          path: typeof fileArg === "string" ? fileArg : (args?.path ?? args?.pattern ?? null),
+          allowed: toolOk,
+          success: toolOk,
+          error: toolOk ? null : String(result).replace(/^FEHLER: /, "").slice(0, 200),
+        });
         const callId = tc.id || `call_${toolRounds}_${Date.now()}`;
         messages.push({ role: "assistant", content: null, tool_calls: [{ id: callId, type: "function", function: { name: tc.name, arguments: tc.arguments || "{}" } }] });
         messages.push({ role: "tool", tool_call_id: callId, content: result });
@@ -173,7 +186,7 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
       continue;
     }
 
-    return { content: finalizeContent(round), usage: round.usage || {}, toolRounds };
+    return { content: finalizeContent(round), usage: round.usage || {}, toolRounds, toolEvidence };
   }
 }
 

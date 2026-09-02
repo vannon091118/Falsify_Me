@@ -225,40 +225,52 @@ test("twinOwnFalsificationOk: NUR Nachlese der Erstprüfer-Zitate ist keine zwei
     fs.writeFileSync(path.join(tmp, "core", "tools.mjs"), "export const x = 1;\nexport const y = 2;\n");
     const opts = { root: tmp, whitelist: ["core/tools.mjs"] };
     // 1. Parroting: Tool-Runden ja, aber NUR die Zitate des Erstprüfers
-    //    wiedergegeben — der Twin hat selbst NICHTS gegen den Code
-    //    festgestellt (keine eigene wörtlich zitierte Datei:Zeile).
+    //    wiedergegeben — und KEINE eigene erfolgreiche Tool-Evidence.
+    //    (Tool-Telemetrie statt Textanalyse: Ohne host-aufgezeichneten
+    //    erfolgreichen read_file ist BESTAETIGT keine Gegenprüfung.)
     const parroting = {
-      verdict: "BESTAETIGT", toolRounds: 2,
+      verdict: "BESTAETIGT", toolRounds: 2, toolEvidence: [],
       befund: "Die vorgelegten Zitate sind korrekt.",
       content: "BEFUND: Die vorgelegten Zitate sind korrekt.\nVERDICT: BESTAETIGT",
     };
     assert.equal(twinOwnFalsificationOk(parroting, opts), false,
-      "BESTAETIGT ohne eigene wörtlich zitierte Datei:Zeile ist Doppel-Plausibilisierung, keine Gegenprüfung");
-    // 2. Eigene Falsifikation: eigener Befund MIT selbst gelesener,
-    //    WÖRTLICH zitierter Datei:Zeile (Tool-Runden + Zitat-Verankerung).
+      "BESTAETIGT ohne eigene erfolgreiche Tool-Evidence ist Doppel-Plausibilisierung, keine Gegenprüfung");
+    // 2. Eigene Falsifikation: eigener Befund + HOST-aufgezeichneter
+    //    erfolgreicher read_file des Twins (objektive Lektüre-Evidenz).
     const ownFalsification = {
       verdict: "BESTAETIGT", toolRounds: 2,
+      toolEvidence: [{ tool: "read_file", path: "core/tools.mjs", allowed: true, success: true }],
       befund: 'Gegenprobe: `core/tools.mjs:2` → "export const y = 2;" belegt die Behauptung auch an der zweiten Konstante.',
       content: "BEFUND: core/tools.mjs:2 traegt die Gegenprobe.\nVERDICT: BESTAETIGT",
     };
     assert.equal(twinOwnFalsificationOk(ownFalsification, opts), true,
-      "eigenes Lesen + wörtlich zitierte eigene Datei:Zeile = belastbare Gegenprüfung");
+      "eigenes Lesen (Tool-Evidence) + wörtlich zitierte Datei:Zeile = belastbare Gegenprüfung");
     // 2b. Audit Pkt 8: GÜLTIGE Zeilennummer mit FALSCHEM Zitat blockt —
-    //     Existenz-Verifikation ist nur syntaktisch, das Zitat verankert
-    //     die Semantik (der Twin muss die Zeile wirklich gelesen haben).
+    //     auch mit Tool-Evidence bleibt das halluzinierte Zitat ein Befund-
+    //     Qualitätsmangel (Diagnose), das Freigabe-Gate trägt die Evidence.
     const wrongQuote = {
       verdict: "BESTAETIGT", toolRounds: 2,
+      toolEvidence: [{ tool: "read_file", path: "core/tools.mjs", allowed: true, success: true }],
       befund: 'Gegenprobe: `core/tools.mjs:2` → "export const Z = 3;" (Zeile existiert, Zitat ist halluziniert).',
       content: "core/tools.mjs:2",
     };
     assert.equal(twinOwnFalsificationOk(wrongQuote, opts), false,
-      "erratene/gültige Zeile mit halluziniertem Zitat ist keine eigene Falsifikation");
+      "erratene/halluziniertes Zitat mit Tool-Evidence ist trotzdem keine belastbare eigene Falsifikation");
     // 3. Fantasie-Zeile im eigenen Befund zaehlt nicht (fail-closed).
     const fakeOwn = { ...parroting, befund: 'Eigene Gegenprobe: `core/tools.mjs:99` → "whatever".', content: "core/tools.mjs:99" };
     assert.equal(twinOwnFalsificationOk(fakeOwn, opts), false, "Fantasie-Zeile ist keine eigene Falsifikation");
     // 4. Ohne eigenes Lesen (0 Runden) blockt es sogar MIT echter Referenz.
     const noRead = { verdict: "BESTAETIGT", toolRounds: 0, befund: 'core/tools.mjs:1 → "export const x = 1;"', content: 'core/tools.mjs:1 → "export const x = 1;"' };
     assert.equal(twinOwnFalsificationOk(noRead, opts), false, "Referenz ohne eigene Tool-Runden = Nachlese");
+    // 4b. Tool-Evidence allein ohne Zitat trägt die Freigabe (objektive Wahrheit).
+    const evidenceOnly = {
+      verdict: "BESTAETIGT", toolRounds: 1,
+      toolEvidence: [{ tool: "read_file", path: "core/tools.mjs", allowed: true, success: true }],
+      befund: "Eigene Prüfung bestätigt.",
+      content: "BEFUND: Eigene Prüfung bestätigt.\nVERDICT: BESTAETIGT",
+    };
+    assert.equal(twinOwnFalsificationOk(evidenceOnly, opts), true,
+      "erfolgreicher erlaubter read_file ist der objektive Lektüre-Nachweis");
     // 5. WIDERSPRUCH/UNKLAR/Fehler sind nicht pruefpflichtig (verweigern/blocken ohnehin).
     assert.equal(twinOwnFalsificationOk({ verdict: "WIDERSPRUCH", toolRounds: 0 }), true);
     assert.equal(twinOwnFalsificationOk({ verdict: "BESTAETIGT", toolRounds: 2, error: "x" }), false);

@@ -36,7 +36,7 @@ import { parseVerdict, parseBefund, parseSubPrompt, enforceWriteChallenge, enfor
 import { runTwinCheck, extractClaims } from "../core/twin.mjs";
 import { runAgent } from "../core/agent.mjs";
 import { checkFeasibility } from "../core/feasibility.mjs";
-import { ensureSelfReviewWhitelist } from "../core/selfreview.mjs";
+import { resolveProjectContext, validateProjectFiles } from "../core/project-context.mjs";
 
 // ── Umsetzbarkeits-Puffer (Intent → Execution, UI-078, revidiert) ───────────
 // Deterministischer read-only Pre-Check VOR dem API-Call. Er erteilt KEIN
@@ -87,7 +87,7 @@ Optionen:
                        Divergenz zum HEADER wird eigener Prüfpunkt)
   --affected <liste>   Betroffene Daten, kommagetrennt (optional)
   --root <dir>         Arbeitsverzeichnis für den Agent-Datenzugriff (Default: cwd)
-  --files <liste>      Zugriffs-Whitelist (kommagetrennt, relativ zu --root) – PFLICHT bei --submit
+  --files <liste>      Zugriffs-Whitelist (kommagetrennt, relativ zu --root) – PFLICHT bei --submit und fremdem --root
   --scope <id>         Scope-ID (HEADER = User-Input 1:1 aus dem Scope-Artefakt)
   --model <id>         Modell-ID (Default: ${CFG.model})
   --lang de|en         Sprache der Kritik (Default: ${CFG.lang})
@@ -183,7 +183,13 @@ if (submitMode) {
     closeDb();
     process.exit(2);
   }
-  const root = path.resolve(rootArg || process.cwd());
+  const context = resolveProjectContext(rootArg, filesArg);
+  const root = context.root;
+  if (context.requiresFiles) {
+    console.error(red(`FEHLER: Fremdprojekt ohne --files: Zugriff ist leer. --files ist für fremde --root-Projekte erforderlich.`));
+    closeDb();
+    process.exit(2);
+  }
   let scope = null;
   if (scopeArg) {
     scope = getScope(db, scopeArg);
@@ -193,7 +199,7 @@ if (submitMode) {
       process.exit(2);
     }
   }
-  let filesList = (filesArg || "").split(",").map((s) => s.trim()).filter(Boolean);
+  let filesList = context.files;
   // ── UI-094: Whitelist-Nachforderung (RESEARCH) automatisch mergen ───────
   // VOR dem --files-Pflicht-Check: Dateien, die der Thinker in der letzten
   // RESEARCH-Runde zur Falsifikation nachgefordert hat (scopes.
@@ -236,8 +242,8 @@ if (submitMode) {
   // Self-Review-Regel (core/selfreview.mjs): kein blinder Bereich bei
   // Selbstprüfung – Kern-Komponenten automatisch ergänzen (nur existierende,
   // nur wenn <root> ein eigenes Checkout ist).
-  const selfReview = ensureSelfReviewWhitelist(root, filesList);
-  filesList = selfReview.files;
+  filesList = validateProjectFiles(root, filesList);
+  const selfReview = { added: [] };
   if (selfReview.added.length) {
     console.log(dim(`Selbstprüfung erkannt: ${selfReview.added.length} Kern-Komponenten automatisch im Prüf-Scope`));
   }
@@ -276,12 +282,18 @@ if (submitMode) {
 }
 
 // ── Arbeitsverzeichnis + Zugriffs-Whitelist ─────────────────────────────────
-let ROOT = path.resolve(rootArg || process.cwd());
+let ROOT = resolveProjectContext(rootArg, filesArg).root;
 // Self-Review-Regel (UI-097): bei erkannter Selbstprüfung werden die
 // Prüf-Kernkomponenten automatisch ergänzt – an JEDER Stelle, die von hier
 // aus startet (Direkt-Run, --job-id, --submit nutzt den gleichen Pfad vor
 // createJob; rig-Review 2026-09-01: der Direkt-Run übersprang die Ergänzung).
-let FILE_WHITELIST = ensureSelfReviewWhitelist(ROOT, (filesArg || "").split(",").map((s) => s.trim()).filter(Boolean)).files;
+let FILE_WHITELIST = resolveProjectContext(rootArg, filesArg).files;
+if (rootArg != null && !resolveProjectContext(rootArg, filesArg).selfReview && !FILE_WHITELIST.length) {
+  console.error(red("FEHLER: Fremdprojekt ohne --files: Zugriff ist leer. --files ist für fremde --root-Projekte erforderlich."));
+  closeDb();
+  process.exit(2);
+}
+FILE_WHITELIST = validateProjectFiles(ROOT, FILE_WHITELIST);
 let job = null;
 let scope = null;
 
@@ -321,7 +333,8 @@ if (jobId) {
   // Self-Review-Regel auf dem JOB-Root (nicht dem lokalen --root): deckt
   // Bestands-Jobs ab, die mit unvollständiger Whitelist erstellt wurden
   // (idempotent; die Initialisierung oben lief gegen den lokalen root).
-  FILE_WHITELIST = ensureSelfReviewWhitelist(ROOT, jobFilesList(job)).files;
+  FILE_WHITELIST = jobFilesList(job);
+  FILE_WHITELIST = validateProjectFiles(ROOT, FILE_WHITELIST);
 } else {
   if (!planText) {
     console.error(red("FEHLER: Kein Plan übergeben. Nutze ein Argument, --plan-file oder stdin."));
@@ -402,7 +415,7 @@ async function main() {
   console.log(dim(`  Modell : ${model}`));
   console.log(dim(`  Provider: ${CFG.provider} (${CFG.apiBase})`));
   console.log(dim(`  Root   : ${ROOT}  (Agent-Datenzugriff)`));
-  if (!submitMode && FILE_WHITELIST.length === 0) {
+  if (FILE_WHITELIST.length === 0) {
     // Direkt-Run ohne --files (auch --job-id-Lauf mit leerer Whitelist auf
     // Fremd-Root): Zugriffsrahmen ist der ganze Root — KEIN Whitelist-
     // Vertrag (Regel 4 gilt nur, wenn es eine Whitelist gibt). Self-Review-

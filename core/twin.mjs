@@ -74,7 +74,7 @@ export function parseTwinVerdict(content) {
  * @param {string[]} [o.whitelist]
  * @param {(info: {tool:string, file: string|null}) => void} [o.onTool]
  * @param {Function} [o.runner]   injizierbar für Tests (Default: runAgent)
- * @returns {Promise<{verdict:string, befund:string, content:string, toolRounds:number, usage:object|null, error:string|null}>}
+ * @returns {Promise<{verdict:string, befund:string, content:string, toolRounds:number, toolEvidence:Array, usage:object|null, error:string|null}>}
  */
 export async function runTwinCheck({ header, planText, befund, claims, lang = "de", model, apiKey, apiBase, opts = {}, root, whitelist = [], onTool, runner = runAgent } = {}) {
   const systemPrompt = lang === "en" ? SYSTEM_EVILTWIN_EN : SYSTEM_EVILTWIN_DE;
@@ -109,6 +109,7 @@ export async function runTwinCheck({ header, planText, befund, claims, lang = "d
       befund: content.match(/BEFUND\s*:\s*([^\n]+)/i)?.[1]?.trim() || "",
       content,
       toolRounds: result?.toolRounds ?? 0,
+      toolEvidence: Array.isArray(result?.toolEvidence) ? result.toolEvidence : [],
       usage: result?.usage ?? null,
       error: null,
     };
@@ -118,6 +119,7 @@ export async function runTwinCheck({ header, planText, befund, claims, lang = "d
       befund: "",
       content: "",
       toolRounds: 0,
+      toolEvidence: [],
       usage: null,
       error: String(e?.message || e),
     };
