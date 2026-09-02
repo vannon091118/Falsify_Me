@@ -193,10 +193,13 @@ test("TTY-Views: App rendert Boot/Live/Reasoning/Verdict via Ink (fake stdout)",
   let inst = mount(snap); // Boot-Ansicht
   inst.unmount();
 
-  // Evil-Twin-Ansicht (Regel 6, UI-109): Rot/Schwarz-Kontrast-Bildschirm mit
-  // dem Roh-Text des Gegenpruefers (VERIFYING) - rendert fehlerfrei.
+  // Evil-Twin-Ansicht (Regel 6, UI-109/UI-114): Rot/Schwarz-Kontrast-Bildschirm
+  // mit Twin-Prompt-Mandat, Job-Status und dem Roh-Text des Gegenpruefers
+  // (VERIFYING) - rendert fehlerfrei, auch bei TINY-Size (Body-Budget).
   inst = mount({ ...snap, globalIdle: false, state: "VERIFYING", stateLabel: "VERIFYING", stateColor: "red", twinActive: true, boot: { mode: "live", chars: 9, block: 3, t: 1 }, output: ["Ich pruefe: datei.js:12", "BESTAETIGT? Warten ..."] });
   inst.unmount();
+  inst = mount({ ...snap, globalIdle: false, state: "VERIFYING", stateLabel: "VERIFYING", stateColor: "red", twinActive: true, dims: { cols: 20, rows: 8 }, boot: { mode: "live", chars: 9, block: 3, t: 1 }, output: ["x".repeat(100)] });
+  inst.unmount(); // Tiny-Size: kein Overflow, Body bleibt funktionsfaehig
 
   snap = snap && { ...snap, boot: { mode: "live", chars: 9, block: 3, t: 1 } };
   inst = mount(snap); // Live (Partikel) Ansicht

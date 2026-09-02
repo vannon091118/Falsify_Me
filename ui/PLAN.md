@@ -1470,3 +1470,10 @@ STATUS: DONE
 DEPENDS_ON: UI-108 (Output-Ring), Phase-2-Parser (tui/parser.mjs)
 VERIFY: node --test ui/tui/parser.test.mjs (2 neue OOM-B10-Regressionstests); Soak vor/nach: 7,8 MB ohne \n gefuettert -> Peak-Heap 141 MB -> 51 MB nach Fix; volle UI-Suite 116/116 + Kern-Suite gruen.
 RESULT: parser.mjs MAX_PARTIAL=1MB (Teilzeilenpuffer: Anfang verworfen, Ende bleibt — FM-EVT:-Marker stehen am Zeilenanfang echter Konsolenzeilen, eine >1-MB-Zeile ist Garbage) + MAX_LINE=8KB auf dem onLine-Pfad (Ring ist zaehlbegrenzt — eine Megabyte-Zeile reteniert 200x; Events werden auf der vollen Zeile geparst, grosse legitime Payloads bleiben intakt, per Test bewiesen).
+
+ID: UI-114
+TASK: Evil-Twin-Kontrastbildschirm vervollständigen: Beim VERIFYING-Prozess Rot/Schwarz-Layout MIT sichtbarem Twin-Prompt-Text (Mandat/Ton/Regeln) und Job-Status (JOB/Scope/Phase/Findings) — ohne die Output-Anzeige zu zerstören (Body-Budget, overflow-sicher, Legende immer sichtbar).
+STATUS: DONE
+DEPENDS_ON: UI-109 (EvilTwinView/Routing), UI-112 (twinOwnFalsificationOk — Legende), UI-110 (Findings-Zähler)
+VERIFY: node --test ui/tui/views/evil-twin-view.test.mjs (3 Tests: Mandat+Status+Roh-Text+Legende sichtbar, Body-Budget deckelt, Tiny-Window 8 Zeilen läuft nicht über); volle UI-Suite grün.
+RESULT: EvilTwinView erweitert — TWIN_BRIEF (6 Zeilen Mandat/Regeln inkl. Gegenprobe- und Fail-closed-Pflicht), Job-Status-Zeile (JOB/Scope/stateLabel/Phase/FINDINGS), Layout-Priorität: Balken+Status+Ergebnis-Legende fix, Mandat kappbar, Roh-Text bekommt den Rest (min. 0 — Ring im State bleibt die Wahrheit); gesamt auf rows gedeckelt, nichts läuft über. Tiny-Window-Defekt gefunden+getestet (Legende blieb vorher unsichtbar). 119/119 UI grün.
