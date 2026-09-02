@@ -73,6 +73,51 @@ test("Stufenleiter: Timeout waechst pro Versuch (5s->30s->60s-Modell), letzte St
   }
 });
 
+test("F-3: 4xx im ersten Round → Retry OHNE reasoning_effort, Tools bleiben erhalten (Twin-Gate)", async () => {
+  const { runAgent } = await mod("../core/agent.mjs");
+  const bodies = [];
+  let calls = 0;
+  const override = async (body) => {
+    bodies.push(body);
+    calls += 1;
+    if (calls === 1) throw new Error("HTTP 400: `reasoning_effort` must be one of `none` or `default`");
+    return { content: "BEFUND: haelt. VERDICT: WRITE", toolCalls: [], finish: "stop", usage: {} };
+  };
+  await runAgent({
+    systemPrompt: "p", userContent: "c", model: "m", apiKey: "k",
+    apiBase: "http://127.0.0.1:1", reasoningEffort: "high",
+    timeoutStagesMs: [100, 200], retryBackoffMs: 1, maxToolRounds: 1,
+    root: ROOT, whitelist: [],
+    fetchRound: override,
+  });
+  assert.equal(calls, 2, "genau ein Retry nach dem 400");
+  assert.equal(bodies[1].reasoning_effort, undefined, "Retry sendet reasoning_effort nicht mehr");
+  assert.ok(Array.isArray(bodies[1].tools) && bodies[1].tools.length > 0, "Retry BEHAELT die Tools (Twin-Evidenz-Gate braucht sie)");
+  assert.equal(bodies[1].messages[0].role, "system");
+});
+
+test("F-3: 4xx bleibt 4xx auch ohne effort → alter Rettungsweg ohne Tools", async () => {
+  const { runAgent } = await mod("../core/agent.mjs");
+  const bodies = [];
+  let calls = 0;
+  const override = async (body) => {
+    bodies.push(body);
+    calls += 1;
+    if (calls <= 2) throw new Error("HTTP 400: tools not supported");
+    return { content: "BEFUND: x", toolCalls: [], finish: "stop", usage: {} };
+  };
+  await runAgent({
+    systemPrompt: "p", userContent: "c", model: "m", apiKey: "k",
+    apiBase: "http://127.0.0.1:1", reasoningEffort: "off",
+    timeoutStagesMs: [100, 200], retryBackoffMs: 1, maxToolRounds: 1,
+    root: ROOT, whitelist: [],
+    fetchRound: override,
+  });
+  assert.equal(calls, 3, "zwei Retry-Stufen (ohne effort, dann ohne Tools)");
+  assert.equal(bodies[1].reasoning_effort, undefined);
+  assert.equal(bodies[2].tools, undefined, "zweite Stufe: Tools entfernt wie zuvor dokumentiert");
+});
+
 test("Deadline-Budget: runAgent rechnet ein Gesamt-Zeitbudget ein (Eskalations-Anker)", async () => {
   const { runAgent } = await mod("../core/agent.mjs");
   const realFetch = globalThis.fetch;

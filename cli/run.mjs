@@ -593,7 +593,9 @@ async function main() {
       apiBase: CFG.twinApiBase,
       opts: {
         maxTokens: CFG.maxTokens,
-        reasoningEffort: CFG.reasoningEffort,
+        // F-3-Fix (2026-09-02): eigener Twin-Effort (Fallback = Primaerwert) -
+        // vorher erbte der Twin CFG.reasoningEffort; Groq lehnt high mit 400 ab.
+        reasoningEffort: CFG.twinReasoningEffort,
         maxToolRounds: CFG.maxToolRounds,
         temperature: CFG.temperature,
         timeoutMs: CFG.timeoutMs,

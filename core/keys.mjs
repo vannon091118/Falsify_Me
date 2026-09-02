@@ -17,11 +17,18 @@ function readKeyFromEnvFile(file, names) {
     const env = fs.readFileSync(file, "utf8");
     const lines = env.split(/\r?\n/);
     for (const name of names) {
-      const line = lines.find((l) => l.startsWith(`${name}=`));
-      if (line) {
-        const v = line.slice(name.length + 1).trim().replace(/^["']|["']$/g, "");
-        if (v) return v;
+      // Duplikat-Schatten-Falle (Live-E2E 2026-09-02, F-1): .find() waehlte
+      // die ERSTE passende Zeile - eine leere Vorlagen-Zeile (ensureFalsifyHome)
+      // schattete eine spaeter befuellte Duplikat-Zeile. Jetzt gewinnt die
+      // LETZTE Zeile mit nicht-leerem Wert (letzte Definition zaehlt, wie bei
+      // .env-Semantik); leere Vorlagen-/Duplikat-Zeilen zaehlen nie als Wert.
+      let lastFilled = null;
+      for (const l of lines) {
+        if (!l.startsWith(`${name}=`)) continue;
+        const v = l.slice(name.length + 1).trim().replace(/^["']|["']$/g, "");
+        if (v) lastFilled = v;
       }
+      if (lastFilled !== null) return lastFilled;
     }
   } catch { /* Datei fehlt */ }
   return null;

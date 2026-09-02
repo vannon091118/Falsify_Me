@@ -6,9 +6,15 @@ import path from "node:path";
 import { falsifyHome } from "../artifacts/db.mjs";
 import { loadConfig } from "./config.mjs";
 
+// F-2/F-3-Fix (Live-E2E 2026-09-02): Die Evil-Twin-Diversität (config.mjs liest
+// twinModel/twinApiBase/twinApiKeyEnv seit Security-Review Pkt 3/10, dazu seit
+// F-3 twinReasoningEffort) war per CLI nicht konfigurierbar - `settings set
+// twin*` warf „Unbekannte Runtime-Einstellung". Jetzt Teil der Runtime-
+// Einstellungen, inkl. Enum-Validierung fuer twinReasoningEffort.
 const CONFIG_KEYS = Object.freeze([
   "provider", "apiBase", "model", "apiKeyEnv", "maxTokens", "reasoningEffort",
   "maxToolRounds", "maxRpm", "lang", "temperature", "timeoutMs", "pricing",
+  "twinModel", "twinApiBase", "twinApiKeyEnv", "twinReasoningEffort",
 ]);
 
 const cloneJson = (value) => JSON.parse(JSON.stringify(value));
@@ -94,10 +100,10 @@ function validateSettings(patch) {
     if (!CONFIG_KEYS.includes(key) && key !== "apiKey" && key !== "apiKeyName") {
       throw new Error(`Unbekannte Runtime-Einstellung: ${key}`);
     }
-    if (["provider", "model", "apiKeyEnv", "apiKeyName"].includes(key)) out[key] = validateString(value, key);
-    else if (key === "apiBase") {
+    if (["provider", "model", "apiKeyEnv", "apiKeyName", "twinModel", "twinApiKeyEnv"].includes(key)) out[key] = validateString(value, key);
+    else if (key === "apiBase" || key === "twinApiBase") {
       const v = validateString(value, key).replace(/\/+$/, "");
-      if (!/^https?:\/\//i.test(v)) throw new Error("apiBase muss mit http:// oder https:// beginnen");
+      if (!/^https?:\/\//i.test(v)) throw new Error(`${key} muss mit http:// oder https:// beginnen`);
       out[key] = v;
     } else if (key === "pricing") {
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("pricing muss ein Objekt sein");
@@ -106,7 +112,13 @@ function validateSettings(patch) {
       const n = Number(value);
       if (!Number.isFinite(n)) throw new Error(`${key} muss eine Zahl sein`);
       out[key] = n;
-    } else if (key === "reasoningEffort" || key === "lang") {
+    } else if (key === "reasoningEffort" || key === "twinReasoningEffort") {
+      const v = validateString(value, key).toLowerCase();
+      if (!["high", "medium", "low", "auto", "off"].includes(v)) {
+        throw new Error(`${key} muss eines von high|medium|low|auto|off sein`);
+      }
+      out[key] = v;
+    } else if (key === "lang") {
       out[key] = validateString(value, key);
     } else {
       out[key] = value;
@@ -123,6 +135,7 @@ export function getRuntimeSettings() {
   const cfg = loadConfig();
   const file = readJson(configPath());
   const keyName = String(file.apiKeyName || file.apiKeyEnv || process.env.FALSIFY_API_KEY_ENV || "FALSIFY_API_KEY").split(",")[0].trim();
+  const twinKeyName = String(file.twinApiKeyEnv || process.env.FALSIFY_TWIN_API_KEY_ENV || "").split(",")[0].trim() || null;
   const result = {
     provider: file.provider || cfg.provider,
     apiBase: cfg.apiBase,
@@ -131,6 +144,17 @@ export function getRuntimeSettings() {
     keyConfigured: Boolean(process.env[keyName]?.trim()) || hasEnvKey(envPath(), keyName),
     configFile: configPath(),
     envFile: envPath(),
+  };
+  // Evil-Twin-Diversität (F-2/F-3-Fix 2026-09-02): Twin-Modell/-Basis/-Key-Name
+  // /-Reasoning-Effort in settings show sichtbar (Werte maskiert; Namen sind
+  // keine Secrets). twinReasoningEffort ist der aufgeloeste Wert (Fallback
+  // = Primaer-Effort) - die Sichtbarkeit macht die Erbschaft ehrlich.
+  result.twin = {
+    model: cfg.twinModel,
+    apiBase: cfg.twinApiBase,
+    apiKeyEnv: twinKeyName,
+    reasoningEffort: cfg.twinReasoningEffort,
+    diversity: cfg.twinDiversity,
   };
   if (file.pricing !== undefined) result.pricing = redact(file.pricing);
   for (const key of ["maxTokens", "reasoningEffort", "maxToolRounds", "maxRpm", "lang", "temperature", "timeoutMs"]) {

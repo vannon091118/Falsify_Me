@@ -68,3 +68,59 @@ test("Models-Endpunkt liefert freie IDs und nur vorhandenes Pricing", async () =
 test("ungültige API-Basis wird vor Netzwerkzugriff abgewiesen", async () => {
   await assert.rejects(() => settings.fetchAvailableModels({ apiBase: "not-a-url" }), /apiBase/);
 });
+
+test("F-2: settings set akzeptiert Twin-Einstellungen (twinModel/twinApiBase/twinApiKeyEnv)", () => {
+  const result = settings.updateRuntimeSettings({
+    twinModel: "qwen/qwen3.6-27b",
+    twinApiBase: "https://api.groq.com/openai/v1",
+    twinApiKeyEnv: "OPENAI_API_KEY",
+  });
+  assert.equal(result.twin.model, "qwen/qwen3.6-27b");
+  assert.equal(result.twin.apiBase, "https://api.groq.com/openai/v1");
+  assert.equal(result.twin.apiKeyEnv, "OPENAI_API_KEY");
+  assert.equal(result.twin.diversity, true);
+  const stored = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
+  assert.equal(stored.twinModel, "qwen/qwen3.6-27b");
+  assert.equal(stored.twinApiBase, "https://api.groq.com/openai/v1");
+  assert.equal(stored.twinApiKeyEnv, "OPENAI_API_KEY");
+  // Twin-Keys sind Konfiguration, keine Secrets: .env bleibt von diesem Aufruf unberührt.
+  const envText = fs.readFileSync(path.join(home, ".env"), "utf8");
+  assert.doesNotMatch(envText, /qwen\/qwen3\.6-27b/);
+});
+
+test("F-2: settings show enthält die Twin-Sicht ohne Secret-Werte", () => {
+  const shown = settings.getRuntimeSettings();
+  assert.equal(shown.twin.model, "qwen/qwen3.6-27b");
+  assert.equal(shown.twin.apiKeyEnv, "OPENAI_API_KEY");
+  assert.equal(typeof shown.twin.diversity, "boolean");
+  assert.doesNotMatch(JSON.stringify(shown), /openai_api_key=\w+/i);
+});
+
+test("F-2: ungültige twinApiBase wird vor Netzwerkzugriff abgewiesen", () => {
+  assert.throws(
+    () => settings.updateRuntimeSettings({ twinApiBase: "api.groq.com/openai/v1" }),
+    /twinApiBase muss mit https?:\/\//,
+  );
+  assert.throws(() => settings.updateRuntimeSettings({ twinModel: "" }), /twinModel muss ein nichtleerer Text sein/);
+  assert.throws(() => settings.updateRuntimeSettings({ twinApiKeyEnv: "  " }), /twinApiKeyEnv muss ein nichtleerer Text sein/);
+});
+
+test("F-3: twinReasoningEffort wird akzeptiert, enumsvalidiert und von loadConfig geladen", async () => {
+  const { loadConfig } = await import("../core/config.mjs");
+  assert.equal(loadConfig().twinReasoningEffort, "high", "Fallback: ohne Setzen erbt der Twin den Primaer-Effort");
+  const result = settings.updateRuntimeSettings({ twinReasoningEffort: "off" });
+  assert.equal(result.twin.reasoningEffort, "off");
+  const stored = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
+  assert.equal(stored.twinReasoningEffort, "off");
+  assert.equal(loadConfig().twinReasoningEffort, "off");
+  // Enum-Validierung (high|medium|low|auto|off), auch gemischt-gross (normalisiert).
+  const lower = settings.updateRuntimeSettings({ twinReasoningEffort: "HIGH" });
+  assert.equal(lower.twin.reasoningEffort, "high");
+  assert.throws(() => settings.updateRuntimeSettings({ twinReasoningEffort: "ultra" }), /twinReasoningEffort muss eines von high\|medium\|low\|auto\|off sein/);
+  // config.json-Direkt-Eingriffe (Hand-Edit) werden beim Laden ehrlich abgewiesen.
+  const before = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
+  fs.writeFileSync(path.join(home, "config.json"), JSON.stringify({ ...before, twinReasoningEffort: "ultra" }), "utf8");
+  assert.throws(() => loadConfig(), /twinReasoningEffort/);
+  fs.writeFileSync(path.join(home, "config.json"), JSON.stringify(before), "utf8");
+  assert.equal(loadConfig().twinReasoningEffort, "high", "Restore: valid erneut ladbar");
+});

@@ -113,8 +113,21 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
       round = await fetchRound(body);
     } catch (e) {
       if (/HTTP 4\d\d/.test(String(e.message)) && toolRounds === 0) {
-        process.stderr.write(`⚠️ ${e.message} – Retry ohne Tools/reasoning_effort …\n`);
-        round = await fetchRound({ ...body, tools: undefined, reasoning_effort: undefined });
+        // F-3-Fix (Live-E2E 2026-09-02): Erst Retry NUR ohne reasoning_effort,
+        // Tools bleiben — Groq lehnt `reasoning_effort=high` mit 400 ab und der
+        // Twin BRAUCHT die Tools (twinEvidenceOk). Erst wenn das erneut 4xx ist
+        // (Modell ohne Tool-Unterstützung), der alte Rettungsweg ohne Tools.
+        process.stderr.write(`⚠️ ${e.message} – Retry ohne reasoning_effort (Tools bleiben) …\n`);
+        try {
+          round = await fetchRound({ ...body, reasoning_effort: undefined });
+        } catch (e2) {
+          if (/HTTP 4\d\d/.test(String(e2.message))) {
+            process.stderr.write(`⚠️ ${e2.message} – Retry ohne Tools/reasoning_effort …\n`);
+            round = await fetchRound({ ...body, tools: undefined, reasoning_effort: undefined });
+          } else {
+            throw e2;
+          }
+        }
       } else {
         throw e;
       }

@@ -105,6 +105,16 @@ export function loadConfig() {
     throw new Error(`Ungültige Konfiguration: FALSIFY_TWIN_API_BASE/twinApiBase = "${twinApiBase}" (muss mit http:// oder https:// beginnen)`);
   }
   const twinApiKeyEnv = String(pick("FALSIFY_TWIN_API_KEY_ENV", data, "twinApiKeyEnv", "")).trim();
+  // F-3-Fix (Live-E2E 2026-09-02): Der Twin erbte den reasoningEffort des
+  // Primaermodells - Groq lehnt `reasoning_effort=high` mit HTTP 400 ab
+  // (live belegt), damit war eine Twin-Freigabe (BESTAETIGT) mit Groq-Twin
+  // bei high strukturell unmoeglich. Jetzt eigener Wert twinReasoningEffort
+  // (FALSIFY_TWIN_REASONING_EFFORT / config.json twinReasoningEffort),
+  // gleiche Enum-Validierung wie beim Primaerwert, Fallback = Primaerwert.
+  const twinReasoningEffort = String(pick("FALSIFY_TWIN_REASONING_EFFORT", data, "twinReasoningEffort", "")).toLowerCase();
+  if (twinReasoningEffort && !["high", "medium", "low", "auto", "off"].includes(twinReasoningEffort)) {
+    throw new Error(`Ungueltige Konfiguration: FALSIFY_TWIN_REASONING_EFFORT/twinReasoningEffort = "${twinReasoningEffort}" (erlaubt: high, medium, low, auto, off)`);
+  }
   return {
     model,
     apiBase,
@@ -131,6 +141,9 @@ export function loadConfig() {
     // Twin: Fallback = Primärmodell (ehrlich: dann gibt es KEINE Modell-Diversität).
     twinModel: twinModel || model,
     twinApiBase: twinApiBase || apiBase,
+    // F-3: eigener Twin-Effort; bewusst NICHT auf „high" zurueckfallen, sondern
+    // auf den konfigurierten Primaerwert (Nutzerentscheidung bleibt sichtbar).
+    twinReasoningEffort: twinReasoningEffort || reasoningEffort,
     twinApiKeyEnv: twinApiKeyEnv ? [twinApiKeyEnv, ...(() => {
       const base = String(pick("FALSIFY_API_KEY_ENV", data, "apiKeyEnv", DEFAULTS.apiKeyEnv))
         .split(",").map((s) => s.trim()).filter(Boolean);
