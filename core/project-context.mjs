@@ -8,12 +8,13 @@ export function resolveProjectContext(rootArg, filesArg, cwd = process.cwd()) {
   const selfReview = isSelfReviewRoot(root);
   const requested = String(filesArg || "").split(",").map((s) => s.trim()).filter(Boolean);
   if (explicitRoot && !selfReview && !requested.length) {
-    return { root, files: [], selfReview: false, accessMode: "foreign-empty", requiresFiles: true };
+    return { root, files: [], added: [], selfReview: false, accessMode: "foreign-empty", requiresFiles: true };
   }
   const checked = ensureSelfReviewWhitelist(root, requested);
   return {
     root,
     files: checked.files,
+    added: checked.added,
     selfReview: selfReview || checked.added.length > 0,
     accessMode: checked.files.length ? "allowlist" : "whole-root",
     requiresFiles: false,

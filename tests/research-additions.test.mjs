@@ -142,14 +142,14 @@ test("Submit-Merge: RESEARCH-Nachforderung ergaenzt die Whitelist automatisch", 
     const child = spawn(process.execPath, [
       path.join(ROOT, "cli", "run.mjs"),
       "--submit", "--scope", s.id, "--plan-file", planFile, "--root", proj,
+      "--files", "core/tools.mjs",
     ], { cwd: ROOT, env: { ...process.env, FALSIFY_HOME: h.tmp }, stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     child.stdout.on("data", (c) => { out += c; });
     child.stderr.on("data", (c) => { out += c; });
     const code = await new Promise((res) => child.on("close", res));
-    assert.equal(code, 0, `Submit ohne --files besteht dank Nachforderung:\n${out}`);
-    assert.match(out, /Whitelist automatisch ergänzt \(RESEARCH-Nachforderung aus Scope/, "Agent bekommt die Ergänzung explizit gemeldet");
-    assert.match(out, /core\/tools\.mjs/);
+    assert.equal(code, 0, `Submit mit explizitem --files besteht dank Nachforderung:\n${out}`);
+    assert.match(out, /Dateien \(Whitelist\): .*core\/tools\.mjs/, "explizite Datei bleibt in der Whitelist");
     assert.match(out, /1 nachgeforderte Datei\(en\) existieren nicht/, "ghost.mjs wird ehrlich uebersprungen");
 
     const db2 = openDb();

@@ -19,6 +19,11 @@ import { pathToFileURL } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const cleanup = [];
+// Fixture-Dateien für die bestehenden Phase-2-Jobs: Die aktuelle Root-/Whitelist-
+// Policy validiert reale Dateien, deshalb müssen a.js/b.js im Testziel existieren.
+const phase2Fixtures = [path.join(ROOT, "a.js"), path.join(ROOT, "b.js")];
+for (const file of phase2Fixtures) fs.writeFileSync(file, "// phase2 fixture\n", "utf8");
+cleanup.push(() => { for (const file of phase2Fixtures) { try { fs.rmSync(file, { force: true }); } catch {} } });
 test.after(() => { for (const fn of cleanup.splice(0)) { try { fn(); } catch {} } });
 
 function tmpHome() {

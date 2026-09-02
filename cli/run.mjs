@@ -243,7 +243,7 @@ if (submitMode) {
   // Selbstprüfung – Kern-Komponenten automatisch ergänzen (nur existierende,
   // nur wenn <root> ein eigenes Checkout ist).
   filesList = validateProjectFiles(root, filesList);
-  const selfReview = { added: [] };
+  const selfReview = { added: context.added ?? [] };
   if (selfReview.added.length) {
     console.log(dim(`Selbstprüfung erkannt: ${selfReview.added.length} Kern-Komponenten automatisch im Prüf-Scope`));
   }
@@ -333,8 +333,13 @@ if (jobId) {
   // Self-Review-Regel auf dem JOB-Root (nicht dem lokalen --root): deckt
   // Bestands-Jobs ab, die mit unvollständiger Whitelist erstellt wurden
   // (idempotent; die Initialisierung oben lief gegen den lokalen root).
-  FILE_WHITELIST = jobFilesList(job);
-  FILE_WHITELIST = validateProjectFiles(ROOT, FILE_WHITELIST);
+  const jobContext = resolveProjectContext(ROOT, jobFilesList(job).join(","));
+  if (jobContext.requiresFiles) {
+    console.error(red("FEHLER: Fremdprojekt ohne --files: Zugriff ist leer. --files ist für fremde --root-Projekte erforderlich."));
+    closeDb();
+    process.exit(2);
+  }
+  FILE_WHITELIST = validateProjectFiles(ROOT, jobContext.files);
 } else {
   if (!planText) {
     console.error(red("FEHLER: Kein Plan übergeben. Nutze ein Argument, --plan-file oder stdin."));
