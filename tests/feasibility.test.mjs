@@ -118,6 +118,19 @@ test("Intent-Drift: Plan ohne signifikante Header-Begriffe -> Warnung", () => {
   } finally { t.cleanup(); }
 });
 
+test("Determinismus: gleiche Eingabe -> identisches Ergebnis; checkFeasibility schreibt nie (pure/read-only)", () => {
+  const t = withFiles({ "app.js": "const x = 1;\n", "lib/y.js": "export const y = 2;\n" });
+  try {
+    const before = fs.readdirSync(t.root).sort().join(",");
+    const args = { header: "Migration der Task-Logik", planText: "Aendere app.js und lib/y.js gemaess Auftrag: Migration der Task-Logik.", root: t.root, whitelist: ["app.js", "lib/y.js"] };
+    const r1 = checkFeasibility(args);
+    const r2 = checkFeasibility(args);
+    assert.deepEqual(r1, r2, "zwei identische Laeufe -> identisches Ergebnis (deterministisch)");
+    assert.equal(fs.readdirSync(t.root).sort().join(","), before, "checkFeasibility legt/schreibt keine Dateien");
+    assert.ok(r1.feasible, "saner Lauf bleibt feasible");
+  } finally { t.cleanup(); }
+});
+
 test("Intent-Passung: Plan zitiert Header-Begriffe -> keine Drift-Warnung; voller Lauf bleibt feasible", () => {
   const t = withFiles({ "app.js": "x", "lib/auth.js": "y" });
   try {

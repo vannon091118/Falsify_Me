@@ -44,6 +44,27 @@ if [[ "$_SRC" != */* ]]; then
   _FOUND="$(command -v "$_SRC" 2>/dev/null || true)"
   [ -n "$_FOUND" ] && _SRC="$_FOUND"
 fi
+
+# ── Node-Version-Guard (PRÜFUNG 2026-09-01): node:sqlite braucht >= 22.5 —
+# ohne diesen Guard crasht der erste db-Import mit kryptischem
+# ERR_UNKNOWN_BUILTIN_MODULE/SyntaxError statt klarer Meldung. Die Prüfung
+# läuft VOR jedem node-Aufruf der CLI; falsify doctor prüft die Version
+# zusätzlich im Detail (package.json engines vs. Runtime).
+_need_major=22
+_need_minor=5
+if ! command -v node >/dev/null 2>&1; then
+  echo "FEHLER: node wurde nicht gefunden. Node.js >= ${_need_major}.${_need_minor} installieren (https://nodejs.org)." >&2
+  exit 3
+fi
+_node_ver="$(node -p 'process.versions.node' 2>/dev/null || echo '0.0.0')"
+_node_major="${_node_ver%%.*}"
+_node_minor="$(node -p 'process.versions.node.split(".")[1]' 2>/dev/null || echo 0)"
+if [ "${_node_major:-0}" -lt "$_need_major" ] || { [ "${_node_major:-0}" -eq "$_need_major" ] && [ "${_node_minor:-0}" -lt "$_need_minor" ]; }; then
+  echo "FEHLER: Node ${_node_ver} ist zu alt. FalsifyMe braucht node:sqlite (Node >= ${_need_major}.${_need_minor})." >&2
+  echo "  Aktuelle Version: ${_node_ver} — Node.js aktualisieren (https://nodejs.org), dann erneut versuchen." >&2
+  exit 3
+fi
+
 V2_DIR="$(cd "$(dirname "$_SRC")/.." >/dev/null 2>&1 && pwd)"
 
 cmd="${1:-help}"
@@ -222,7 +243,7 @@ case "$cmd" in
   uninstall)
     node "$V2_DIR/uninstall.mjs" "$@"
     ;;
-  -h|--help)
+  help|-h|--help)
     sed -n '2,34p' "$0"
     ;;
   *)
