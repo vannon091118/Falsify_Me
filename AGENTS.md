@@ -3,6 +3,22 @@
 Ergänzt README/WIRING/PLAN um nicht-offensichtliche, empirisch bestätigte
 Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
 
+## Prozess-/Fehlertrennung (architektonische Abgrenzung)
+
+- OOM im Dock (TUI) trifft NUR die Bedien-/Darstellungsschicht — die
+  Falsifikationslogik (Thinker → Evidence → Verdict → Evil Twin → Gate)
+  läuft strukturell GETRENNT: run.mjs ist ein EIGENER Kindprozess
+  (worker.mjs:389), importiert nie die TUI, persistiert sein Verdict SELBST
+  (jobDone in run.mjs, eine Transaktion) und core/verdict.mjs + core/twin.mjs
+  sind pure (importieren nur fs/path/agent). Ein Dock-Crash kann kein WRITE
+  durchs Gate rücken und keine Evidence fälschen.
+- Stirbt der Worker mitten im Job, bleibt der Job nie hängen: Orphan-Recovery
+  (reapStaleJobs beim nächsten Worker-Start) schließt RUNNING-Waisen als
+  „ERROR Worker-Abbruch (Recovery)" — fail-closed, kein Fake-Verdict.
+  uiEvt ist `ui?.applyEvent` (optional chaining): ohne UI arbeitet die
+  Pipeline weiter (headless-Identität).
+
+
 ## Runtime & Installation (Docs-weichen-von-Code-Fallen)
 
 - `FALSIFY_HOME` = `~/.Falsify_Private` (`falsifyHome()` in
