@@ -70,6 +70,42 @@ function scopeShow(rest) {
 // Der GAP-Loop auf einen Blick: je Runde die Einreichung (Welle, Intent), der
 // finale Verdict, die Findings und das Loop-Ergebnis. Rein abgeleitet aus der
 // Queue (Regel 3: eine Wahrheit) – read-only, keine zweite Persistenz.
+function scopeTraceRationale(job, finding) {
+  const verdict = job?.verdict || (job?.status?.startsWith("DONE ") ? job.status.slice(5) : null);
+  const detail = finding?.befund || job?.error;
+  const suffix = detail ? ` (${truncate(detail, 140)})` : "";
+  if (job?.status?.startsWith("ERROR")) return `→ diese Runde endete mit einem Fehler; ein Verdict ist nicht belastbar${suffix}`;
+  if (!finding) return "→ diese Runde hat keine eindeutige Begründung in den gespeicherten Daten";
+  if (verdict === "RESEARCH") return `→ diese Runde blieb bei RESEARCH, weil weitere Daten oder Dateien benötigt werden${suffix}`;
+  if (verdict === "PLAN") return `→ diese Runde blieb bei PLAN, weil die Umsetzung noch nicht freigegeben ist${suffix}`;
+  if (verdict === "ASK") return `→ diese Runde blieb bei ASK, weil die Aufgabe noch mehrdeutig ist${suffix}`;
+  if (verdict === "WRITE") return "→ diese Runde erreichte WRITE, weil die gespeicherte Prüfung die Freigabe trägt";
+  return "→ diese Runde hat keine eindeutige Begründung in den gespeicherten Daten";
+}
+
+function scopeTraceClosing(scope, jobs, findings) {
+  if (scope.status === "hardened" || scope.status === "done") {
+    return `Loop-Ausgang: GESCHLOSSEN — der Scope ist gehärtet; Nächster Schritt: die freigegebene Änderung umsetzen.`;
+  }
+  if (scope.last_divergence) {
+    return `Loop-Ausgang: OFFEN — die Scope-Divergenz hält den Loop offen; Nächster Schritt: den Divergenz-Anker präzisieren und erneut einreichen.`;
+  }
+  const lastFinding = findings.at(-1);
+  const lastVerdict = lastFinding?.verdict || scope.phase?.toUpperCase();
+  if (lastVerdict === "RESEARCH") {
+    return "Loop-Ausgang: OFFEN — die letzte Runde verlangt weitere Daten; Nächster Schritt: die fehlenden Dateien oder Informationen beschaffen und erneut einreichen.";
+  }
+  if (lastVerdict === "PLAN") {
+    const why = lastFinding?.befund ? ` Grund: ${truncate(lastFinding.befund, 140)}.` : " Der genaue Grund ist aus den gespeicherten Daten nicht eindeutig ableitbar.";
+    return `Loop-Ausgang: OFFEN — die letzte Planung ist nicht freigegeben.${why} Nächster Schritt: Plan und Evidenz überarbeiten und erneut einreichen.`;
+  }
+  if (lastVerdict === "ASK") {
+    return "Loop-Ausgang: OFFEN — die Aufgabe ist mehrdeutig; Nächster Schritt: Rückfrage klären und denselben Scope erneut einreichen.";
+  }
+  const finished = jobs.filter((j) => /^(DONE|ERROR)/.test(j.status)).length;
+  return `Loop-Ausgang: OFFEN — die Ursache ist aus den gespeicherten Daten nicht eindeutig ableitbar; Nächster Schritt: den letzten Befund prüfen und den Scope erneut einreichen (${finished}/${jobs.length} Jobs abgeschlossen).`;
+}
+
 function scopeTrace(rest) {
   const id = rest[0];
   if (!id) fail("Verwendung: falsify scope trace <scope-id>");
@@ -102,17 +138,11 @@ function scopeTrace(rest) {
     if (j.agent_intent) console.log(`  Intent: ${truncate(j.agent_intent, 120)}`);
     if (f?.befund) console.log(`  Befund: ${truncate(f.befund, 160)}`);
     if (j.error) console.log(`  Fehler: ${truncate(j.error, 160)}`);
+    console.log(`  ${scopeTraceRationale(j, f)}`);
   }
 
-  // Loop-Ausgang: was der Verdict-Verlauf über den Gap sagt.
   console.log("");
-  if (scope.status === "hardened" || scope.status === "done") {
-    console.log(`Loop-Ausgang: GESCHLOSSEN — ${scope.hardened_at ? `gehaertet ${scope.hardened_at}` : "abgeschlossen"} (WRITE nach bestandener Falsifikation).`);
-  } else if (scope.last_divergence) {
-    console.log("Loop-Ausgang: OFFEN — Divergenz-Anker gesetzt; naechster Submit muss --agent-intent tragen und den Scope praezisieren.");
-  } else {
-    console.log(`Loop-Ausgang: OFFEN — Phase ${scope.phase}, ${finished}/${jobs.length} Jobs abgeschlossen; naechste Iteration einreichen (falsify run --submit).`);
-  }
+  console.log(scopeTraceClosing(scope, jobs, findings));
   closeDb();
 }
 

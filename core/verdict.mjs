@@ -294,6 +294,42 @@ function hasVerifiableFileLine(text, { root, cache }) {
 }
 
 /**
+ * Zitiert die Zeile wörtlich aus einer realen Datei (Audit Pkt 8, 2026-09-01):
+ * EVIDENCE_FILE_LINE verifiziert nur EXISTENZ (Datei + Zeilennummer im
+ * Bereich) — ein halluzinierender Twin kann jede gültige Nummer angeben,
+ * ohne die Zeile je gelesen zu haben. Die ZITAT-Verankerung schließt das:
+ * eine Referenz „file:line" gilt nur als SEMANTISCH verankert, wenn der
+ * Twin den Zeileninhalt als wörtliches Zitat trägt. Markierungsform
+ * (eindeutig, nicht mit normalem Prosa-Syntax kollidierend):
+ *   `file:line` → „exakter Zeilentext“
+ * (Backtick-Referenz + Backtick-Zitat; das Zitat muss nach Whitespace-
+ * Normalisierung dem echten Zeilentext entsprechen — kein
+ * Copy-Rounding über mehrere Zeilen, keine Phantasie).
+ * @returns {string|null} die verankerte Referenz „file:line" oder null
+ */
+export function anchoredFileLine(text, { root, whitelist = [], cache } = {}) {
+  if (!root) return null;
+  const read = cache instanceof Function ? cache : fileTextCache(root, whitelist);
+  const t = String(text || "");
+  // Zitat-Marker: `file:line` → „…“  (Backticks; Anführungszeichen DE/EN).
+  const MARKER = /`([\w./-]+\.(?:jsx?|mjs|cjs|tsx?|py|json|md|sh|ps1|go|rs|java)):(\d+)(?:-\d+)?`\s*(?:→|->|:)?\s*(?:"([^"“”]{1,400})"|“([^”]{1,400})”|„([^“]{1,400})“|'([^'’]{1,400})'|’([^’]{1,400})’)/g;
+  for (const m of t.matchAll(MARKER)) {
+    const file = m[1];
+    const lineNo = Number(m[2]);
+    const quote = (m[3] ?? m[4] ?? m[5] ?? m[6] ?? m[7] ?? "").replace(/\s+/g, " ").trim();
+    if (!quote) continue;
+    if (!resolveRel(root, file)) continue; // Datei muss real sein
+    const txt = read(file);
+    if (!txt) continue;
+    const lines = txt.split(/\r?\n/);
+    if (lineNo < 1 || lineNo > lines.length) continue;
+    const actual = lines[lineNo - 1].replace(/\s+/g, " ").trim();
+    if (actual && actual === quote) return `${file}:${lineNo}`;
+  }
+  return null;
+}
+
+/**
  * Eigene Falsifikation statt Doppel-Plausibilisierung (Regel 6, Audit-Befund
  * 10, 2026-09-01): Ein Twin, der NUR die eingereichten Widerlegungen
  * nachliest und ihnen zustimmt, teilt sich mit dem Erstprüfer denselben
@@ -301,9 +337,12 @@ function hasVerifiableFileLine(text, { root, cache }) {
  * belastbare BESTAETIGT braucht deshalb NACHWEISBAR beides:
  *   1. eigenes Lesen (>= 1 Tool-Runde — read_file/list_dir/glob wirklich
  *      ausgefuehrt), UND
- *   2. mindestens EINE verifizierbare Datei:Zeile-Referenz im EIGENEN
- *      Befund/Content (stärkste Evidenzform — beweist, dass der Twin etwas
- *      eigenständig gegen den Code festgestellt hat, nicht nur zuge nickt).
+ *   2. mindestens EINE SEMANTISCH verankerte Referenz im EIGENEN
+ *      Befund/Content: die Zeile wird wörtlich zitiert („`file:line` →
+ *      „Zeilentext““) und das Zitat stimmt mit der REALen Datei überein
+ *      (anchoredFileLine). Beweist, dass der Twin die Zeile tatsächlich
+ *      gelesen hat — eine gültige Zeilennummer zu erraten reicht nicht
+ *      mehr (Audit Pkt 8: Existenz-Verifikation ist nur syntaktisch).
  * Fail-closed: WIDERSPRUCH/UNKLAR/Fehler sind nicht pruefpflichtig (sie
  * verweigern die Freigabe ohnehin) bzw. blocken (twinEvidenceOk).
  * @returns {boolean} true = Freigabe belastbar, false = fail-closed zu PLAN
@@ -313,9 +352,11 @@ export function twinOwnFalsificationOk(twin, { root = null, whitelist = [] } = {
   if (twin.error) return false;
   if (Number(twin.toolRounds) < 1) return false; // ohne eigenes Lesen keine Gegenprüfung
   const text = `${twin.befund || ""}\n${twin.content || ""}`;
-  // Basis-Gate ( Fantasie-Referenzen blocken, >=1 Referenz-Form) bleibt:
+  const cache = fileTextCache(root, whitelist);
+  // Basis-Gate (Fantasie-Referenzen blocken, >=1 Referenz-Form) bleibt:
   if (!twinEvidenceOk(twin, { root, whitelist })) return false;
-  return hasVerifiableFileLine(text, { root, cache: fileTextCache(root, whitelist) });
+  // Semantische Verankerung (Pkt 8): die Zeile muss wörtlich ZITIERT sein.
+  return anchoredFileLine(text, { root, whitelist, cache }) !== null;
 }
 
 /** Echte Finding-Severity je Verdict (info/warning/critical, UI-065-Befund 3). */

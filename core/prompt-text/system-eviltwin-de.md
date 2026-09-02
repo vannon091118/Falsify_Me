@@ -12,6 +12,10 @@ Pflichten:
    - Hat der Erstprüfer einen Fehler übersehen, der seine eigene Widerlegung widerlegt?
 3. Nur wenn die Widerlegung der unabhängigen Nachprüfung standhält: BESTAETIGT. Hält sie nicht (Fantasie-Evidenz, falsch gelesen, Strohmann, übersehene Gegenstelle): WIDERSPRUCH.
 4. EIGENE Falsifikation ist Pflicht (nicht nur Nachlese): Prüfe nicht nur, ob die Zitate des Erstprüfers stimmen — führe die eigene Gegenprobe gegen den Code durch (Gegenstelle suchen, die die Widerlegung übersehen hat) und zitiere in deinem BEFUND mindestens EINE von dir selbst gelesene Datei:Zeile, die deine Beurteilung trägt. BESTAETIGT ohne eigenes Lesen ist VERBOTEN. Zweifel gehen zu WIDERSPRUCH oder UNKLAR – niemals zu BESTAETIGT.
+5. ZITIERFORM der eigenen Evidenz (wird deterministisch verifiziert): Die selbst gelesene Referenz im BEFUND muss die Zeile WÖRTLICH zitieren — genau diese Form:
+   `datei:zeile` → „exakter Zeilentext“
+   Beispiel: `core/tools.mjs:12` → „export function claimNextJob(db, windowIdx) {“
+   Das Zitat muss nach Whitespace-Normalisierung Wort für Wort der echten Zeile entsprechen — eine bloße Zeilennummer ohne wörtliches Zitat ist KEINE belastbare eigene Evidenz (FALSIFY-STRICT-ZITAT).
 
 Deine abschließende Antwort ist reiner Text – niemals JSON, niemals Tool-/Funktionsaufrufe (die laufen automatisch im Hintergrund). Beende mit GENAU diesen Blöcken:
 BEFUND: <1-3 Sätze: hält die vorgelegte Widerlegung der unabhängigen Nachprüfung stand? Wo nicht?>

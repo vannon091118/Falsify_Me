@@ -91,8 +91,22 @@ export function loadConfig() {
   if (!["de", "en"].includes(lang)) {
     throw new Error(`Ungültige Konfiguration: FALSIFY_LANG/lang = "${lang}" (erlaubt: de, en)`);
   }
+  // Twin-Diversität (Security-Review Pkt 3/10): Der Evil Twin kann ein EIGENES
+  // Modell/eigene API-Base bekommen (FALSIFY_TWIN_MODEL / FALSIFY_TWIN_API_BASE /
+  // FALSIFY_TWIN_API_KEY_ENV bzw. config.json twinModel/twinApiBase/twinApiKeyEnv).
+  // Ohne Konfiguration läuft er mit dem Primärmodell — dann ist BESTAETIGT eine
+  // Prüfung des Falls, keine unabhängige Wahrheit (gleiche Modellfamilie,
+  // gleiche Biases). Die Konfiguration macht die Diversität WÄHLBAR, die
+  // Warnung macht ihren Verzicht SICHTBAR — nie still.
+  const model = String(pick("FALSIFY_MODEL", data, "model", DEFAULTS.model)).trim();
+  const twinModel = String(pick("FALSIFY_TWIN_MODEL", data, "twinModel", "")).trim();
+  const twinApiBase = String(pick("FALSIFY_TWIN_API_BASE", data, "twinApiBase", "")).replace(/\/+$/, "");
+  if (twinApiBase && !/^https?:\/\//.test(twinApiBase)) {
+    throw new Error(`Ungültige Konfiguration: FALSIFY_TWIN_API_BASE/twinApiBase = "${twinApiBase}" (muss mit http:// oder https:// beginnen)`);
+  }
+  const twinApiKeyEnv = String(pick("FALSIFY_TWIN_API_KEY_ENV", data, "twinApiKeyEnv", "")).trim();
   return {
-    model: String(pick("FALSIFY_MODEL", data, "model", DEFAULTS.model)).trim(),
+    model,
     apiBase,
     provider: String(pick("FALSIFY_PROVIDER", data, "provider", providerLabel(apiBase))).trim(),
     keyEnvNames: (() => {
@@ -114,6 +128,18 @@ export function loadConfig() {
     lang,
     temperature: pickNum("FALSIFY_TEMPERATURE", data, "temperature", DEFAULTS.temperature, { min: 0, max: 2 }),
     timeoutMs: pickNum("FALSIFY_TIMEOUT_MS", data, "timeoutMs", DEFAULTS.timeoutMs, { min: 1000, max: 3_600_000 }),
+    // Twin: Fallback = Primärmodell (ehrlich: dann gibt es KEINE Modell-Diversität).
+    twinModel: twinModel || model,
+    twinApiBase: twinApiBase || apiBase,
+    twinApiKeyEnv: twinApiKeyEnv ? [twinApiKeyEnv, ...(() => {
+      const base = String(pick("FALSIFY_API_KEY_ENV", data, "apiKeyEnv", DEFAULTS.apiKeyEnv))
+        .split(",").map((s) => s.trim()).filter(Boolean);
+      const named = typeof data.apiKeyName === "string" && data.apiKeyName.trim()
+        ? data.apiKeyName.trim()
+        : null;
+      return named ? [named, ...base.filter((n) => n !== named)] : base;
+    })()] : undefined,
+    twinDiversity: Boolean(twinModel) && twinModel !== model,
     configFile: file,
   };
 }

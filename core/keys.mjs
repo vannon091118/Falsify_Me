@@ -46,3 +46,24 @@ export function loadApiKey() {
   }
   return null;
 }
+
+/**
+ * Twin-Key (Security-Review Pkt 3/10): Wenn der Evil Twin ein eigenes
+ * Modell/eigene API-Base konfiguriert hat, kann er auch einen eigenen
+ * API-Key-Namen bekommen (twinApiKeyEnv / FALSIFY_TWIN_API_KEY_ENV).
+ * Lädt den Key nur aus diesem Namen — fällt NICHT still auf den Primärkey
+ * zurück (ein falscher Endpunkt mit dem falschen Key würde nur kryptische
+ * 401s erzeugen; fail-closed ist hier ehrlicher). Fällt der Aufrufer auf
+ * den Primärkey zurück, muss er das selbst entscheiden (run.mjs warnt).
+ */
+export function loadApiKeyForNames(names) {
+  const list = Array.isArray(names) ? names.filter(Boolean) : (names ? [names] : []);
+  if (!list.length) return null;
+  const fromFile = readKeyFromEnvFile(keyEnvFile(), list);
+  if (fromFile) return fromFile;
+  for (const name of list) {
+    const v = process.env[name];
+    if (v && v.trim()) return v.trim();
+  }
+  return null;
+}

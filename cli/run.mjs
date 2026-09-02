@@ -28,7 +28,7 @@ import { openDb, closeDb, falsifyHome } from "../artifacts/db.mjs";
 import { createJob, getJob, jobFilesList, jobDone, jobToRunning, registerWorker, heartbeatWorker, reapStaleJobs } from "../artifacts/jobs.mjs";
 import { enforceQueueConsistency } from "../artifacts/invariants.mjs";
 import { getScope, updateScopeAfterReview, addFinding, getFindings, nextRound } from "../artifacts/scopes.mjs";
-import { loadApiKey, keyEnvFile, keyNames } from "../core/keys.mjs";
+import { loadApiKey, loadApiKeyForNames, keyEnvFile, keyNames } from "../core/keys.mjs";
 import { loadConfig } from "../core/config.mjs";
 import { enforceRateLimit } from "../core/ratelimit.mjs";
 import { SYSTEM_DE, SYSTEM_EN, buildUserContent } from "../core/prompt.mjs";
@@ -549,15 +549,26 @@ async function main() {
     uiEvt({ t: "state", s: "VERIFYING" });
     enforceRateLimit(maxRpm, false); // zweiter Call: Budget teilen, nie wegen Budget failen
     console.log(dim("Gegenprüfung (Evil Twin – unabhängige Konversation) läuft …"));
+    // Twin-Diversität (Pkt 3/10): eigenes Modell/eigene API-Base/ eigener Key
+    // sind WÄHLBAR (FALSIFY_TWIN_*). Ohne Diversität ehrlich warnen — der
+    // gemeinsame Blindspot (gleiche Modellfamilie/Biases) ist dann eine
+    // bekannte, dokumentierte Grenze, kein stiller Mangel.
+    const twinKey = CFG.twinApiKeyEnv ? loadApiKeyForNames(CFG.twinApiKeyEnv) : apiKey;
+    if (CFG.twinApiKeyEnv && !twinKey) {
+      throw new Error(`Twin-API-Key nicht gefunden (${CFG.twinApiKeyEnv.join(", ")}) – in ${keyEnvFile()} setzen oder FALSIFY_TWIN_API_KEY_ENV entfernen.`);
+    }
+    if (!CFG.twinDiversity) {
+      console.warn(yellow("⚠ Gegenprüfung läuft mit dem PRIMÄRMODELL (keine Modell-Diversität konfiguriert: FALSIFY_TWIN_MODEL/FALSIFY_TWIN_API_BASE). BESTAETIGT heißt dann: der Fall hält Nachprüfung durch dieselbe Modellfamilie stand – ein geteilter Bias/Blindspot ist nicht ausgeschlossen."));
+    }
     twin = await runTwinCheck({
       header: scope ? scope.header : null,
       planText,
       befund,
       claims: extractClaims(result.content),
       lang,
-      model,
-      apiKey,
-      apiBase: CFG.apiBase,
+      model: CFG.twinModel,
+      apiKey: twinKey,
+      apiBase: CFG.twinApiBase,
       opts: {
         maxTokens: CFG.maxTokens,
         reasoningEffort: CFG.reasoningEffort,
@@ -578,10 +589,12 @@ async function main() {
     } else if (twin?.verdict === "BESTAETIGT") {
       // Regel-6-Rig (Befund 2/9): „BESTAETIGT ohne eigenes Lesen“ blockt.
       // Regel-6-Audit (Befund 10): NACHLESEN der Erstprüfer-Zitate ist keine
-      // zweite Falsifikation — ohne eigene verifizierte Datei:Zeile im
-      // Twin-Befund bleibt die Freigabe verweigert (kein geteilter Blindspot).
-      const reason = twin.befund || "kein eigenes Lesen/keine eigene verifizierte Referenz";
-      console.warn(yellow(`\n⚠ BESTAETIGT ohne belegte EIGENE Falsifikation (Tool-Runden: ${twin.toolRounds ?? 0}, eigene verifizierbare Datei:Zeile fehlt: ${reason.slice(0, 80)}) – als UNKLAR behandelt, KEINE Freigabe.`));
+      // zweite Falsifikation. Audit Pkt 8: Existenz-Verifikation ist nur
+      // syntaktisch — die eigene Datei:Zeile muss die Zeile jetzt WÖRTLICH
+      // zitieren (anchoredFileLine), sonst ist die Evidenz nicht semantisch
+      // verankert und die Freigabe bleibt verweigert.
+      const reason = twin.befund || "kein eigenes Lesen/keine wörtlich zitierte eigene Referenz";
+      console.warn(yellow(`\n⚠ BESTAETIGT ohne belegte EIGENE Falsifikation (Tool-Runden: ${twin.toolRounds ?? 0}, wörtlich zitierte eigene Datei:Zeile fehlt: ${reason.slice(0, 80)}) – als UNKLAR behandelt, KEINE Freigabe.`));
       verdict = "PLAN";
     } else {
       const reason = twin.befund || twin.error || "keine belastbare Bestätigung";

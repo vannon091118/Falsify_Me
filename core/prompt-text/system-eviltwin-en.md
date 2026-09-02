@@ -12,6 +12,10 @@ Obligations:
    - Did the first reviewer miss a flaw that refutes their own refutation?
 3. Only if the refutation survives independent re-check: BESTAETIGT. If it does not (fantasy evidence, misread, strawman, overlooked counter-evidence): WIDERSPRUCH.
 4. OWN falsification is mandatory (not just re-reading): Do not merely verify the first reviewer's citations — run your own counter-probe against the code (look for the counter-location their refutation overlooked) and cite in your BEFUND at least ONE file:line YOU read yourself that supports your judgment. BESTAETIGT without reading yourself is FORBIDDEN. Doubt goes to WIDERSPRUCH or UNKLAR – never BESTAETIGT.
+5. CITATION FORM of your own evidence (verified deterministically): The self-read reference in your BEFUND must quote the line VERBATIM — exactly this form:
+   `file:line` → "exact line text"
+   Example: `core/tools.mjs:12` → "export function claimNextJob(db, windowIdx) {"
+   After whitespace normalization the quote must match the real line word for word — a bare line number without verbatim quote is NOT substantiated own evidence (FALSIFY-STRICT-QUOTE).
 
 Your final answer is plain text – never JSON, never tool/function calls (they run automatically in the background). End with EXACTLY these blocks:
 BEFUND: <1-3 sentences: does the submitted refutation survive independent re-check? Where not?>

@@ -45,6 +45,13 @@ export async function runDoctor() {
     const { loadConfig } = await import("../core/config.mjs");
     const cfg = loadConfig();
     ok(`Config: ${cfg.provider} · ${cfg.model} · maxRpm ${cfg.maxRpm} · timeout ${cfg.timeoutMs} ms`);
+    // Twin-Diversität (Pkt 3/10): Sichtbar machen, ob die Gegenprüfung
+    // modellfremd läuft — sonst ist der gemeinsame Blindspot eine Grenze.
+    if (cfg.twinDiversity) {
+      ok(`Twin-Diversität: Gegenprüfung mit eigenem Modell (${cfg.twinModel} @ ${cfg.twinApiBase})`);
+    } else {
+      bad("Twin-Diversität: Gegenprüfung läuft mit dem PRIMÄRMODELL (FALSIFY_TWIN_MODEL/FALSIFY_TWIN_API_BASE nicht gesetzt) – geteilter Modell-Bias möglich (BESTAETIGT ist dann Fallprüfung, keine unabhängige Wahrheit)");
+    }
   } catch (e) {
     bad(`Config: ${e.message}`);
   }

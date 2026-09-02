@@ -226,33 +226,116 @@ test("twinOwnFalsificationOk: NUR Nachlese der Erstprüfer-Zitate ist keine zwei
     const opts = { root: tmp, whitelist: ["core/tools.mjs"] };
     // 1. Parroting: Tool-Runden ja, aber NUR die Zitate des Erstprüfers
     //    wiedergegeben — der Twin hat selbst NICHTS gegen den Code
-    //    festgestellt (keine eigene Datei:Zeile im eigenen Befund).
+    //    festgestellt (keine eigene wörtlich zitierte Datei:Zeile).
     const parroting = {
       verdict: "BESTAETIGT", toolRounds: 2,
       befund: "Die vorgelegten Zitate sind korrekt.",
       content: "BEFUND: Die vorgelegten Zitate sind korrekt.\nVERDICT: BESTAETIGT",
     };
     assert.equal(twinOwnFalsificationOk(parroting, opts), false,
-      "BESTAETIGT ohne eigene verifizierbare Datei:Zeile ist Doppel-Plausibilisierung, keine Gegenprüfung");
+      "BESTAETIGT ohne eigene wörtlich zitierte Datei:Zeile ist Doppel-Plausibilisierung, keine Gegenprüfung");
     // 2. Eigene Falsifikation: eigener Befund MIT selbst gelesener,
-    //    verifizierbarer Datei:Zeile (Tool-Runden + Referenz).
+    //    WÖRTLICH zitierter Datei:Zeile (Tool-Runden + Zitat-Verankerung).
     const ownFalsification = {
       verdict: "BESTAETIGT", toolRounds: 2,
-      befund: "Gegenprobe: core/tools.mjs:2 belegt die Behauptung auch an der zweiten Konstante.",
+      befund: 'Gegenprobe: `core/tools.mjs:2` → "export const y = 2;" belegt die Behauptung auch an der zweiten Konstante.',
       content: "BEFUND: core/tools.mjs:2 traegt die Gegenprobe.\nVERDICT: BESTAETIGT",
     };
     assert.equal(twinOwnFalsificationOk(ownFalsification, opts), true,
-      "eigenes Lesen + eigene verifizierte Datei:Zeile = belastbare Gegenprüfung");
+      "eigenes Lesen + wörtlich zitierte eigene Datei:Zeile = belastbare Gegenprüfung");
+    // 2b. Audit Pkt 8: GÜLTIGE Zeilennummer mit FALSCHEM Zitat blockt —
+    //     Existenz-Verifikation ist nur syntaktisch, das Zitat verankert
+    //     die Semantik (der Twin muss die Zeile wirklich gelesen haben).
+    const wrongQuote = {
+      verdict: "BESTAETIGT", toolRounds: 2,
+      befund: 'Gegenprobe: `core/tools.mjs:2` → "export const Z = 3;" (Zeile existiert, Zitat ist halluziniert).',
+      content: "core/tools.mjs:2",
+    };
+    assert.equal(twinOwnFalsificationOk(wrongQuote, opts), false,
+      "erratene/gültige Zeile mit halluziniertem Zitat ist keine eigene Falsifikation");
     // 3. Fantasie-Zeile im eigenen Befund zaehlt nicht (fail-closed).
-    const fakeOwn = { ...parroting, befund: "Eigene Gegenprobe: core/tools.mjs:99.", content: "core/tools.mjs:99" };
+    const fakeOwn = { ...parroting, befund: 'Eigene Gegenprobe: `core/tools.mjs:99` → "whatever".', content: "core/tools.mjs:99" };
     assert.equal(twinOwnFalsificationOk(fakeOwn, opts), false, "Fantasie-Zeile ist keine eigene Falsifikation");
     // 4. Ohne eigenes Lesen (0 Runden) blockt es sogar MIT echter Referenz.
-    const noRead = { verdict: "BESTAETIGT", toolRounds: 0, befund: "core/tools.mjs:1.", content: "core/tools.mjs:1" };
+    const noRead = { verdict: "BESTAETIGT", toolRounds: 0, befund: 'core/tools.mjs:1 → "export const x = 1;"', content: 'core/tools.mjs:1 → "export const x = 1;"' };
     assert.equal(twinOwnFalsificationOk(noRead, opts), false, "Referenz ohne eigene Tool-Runden = Nachlese");
     // 5. WIDERSPRUCH/UNKLAR/Fehler sind nicht pruefpflichtig (verweigern/blocken ohnehin).
     assert.equal(twinOwnFalsificationOk({ verdict: "WIDERSPRUCH", toolRounds: 0 }), true);
     assert.equal(twinOwnFalsificationOk({ verdict: "BESTAETIGT", toolRounds: 2, error: "x" }), false);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+test("anchoredFileLine: Zitat-Verankerung (Pkt 8) — echtes Zittestимент trifft, falsches/halluziniertes nicht", async () => {
+  const { anchoredFileLine } = await mod("core/verdict.mjs");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-anchor-"));
+  try {
+    fs.mkdirSync(path.join(tmp, "core"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, "core", "a.mjs"), "const alpha = 1;\n  const beta = 2;  // getrimmter Whitespace\nconst gamma = 3;\n");
+    const opts = { root: tmp, whitelist: ["core/a.mjs"] };
+    // 1. Echtes Zitat (inkl. Whitespace-Normalisierung der Einrückung) -> verankert.
+    assert.equal(anchoredFileLine('Gegenprobe: `core/a.mjs:2` → "const beta = 2; // getrimmter Whitespace"', opts), "core/a.mjs:2");
+    // 2. EN-Form mit -> und einfachen Anführungszeichen.
+    assert.equal(anchoredFileLine("Probe: `core/a.mjs:1` -> \"const alpha = 1;\"", opts), "core/a.mjs:1");
+    // 3. Gültige Zeilennummer, halluziniertes Zitat -> null (Pkt 8-Kern).
+    assert.equal(anchoredFileLine('`core/a.mjs:1` → "const zzz = 9;"', opts), null);
+    // 4. Zeilennummer außerhalb der Datei -> null.
+    assert.equal(anchoredFileLine('`core/a.mjs:99` → "const alpha = 1;"', opts), null);
+    // 5. Fantasie-Datei -> null.
+    assert.equal(anchoredFileLine('`core/nope.mjs:1` → "const alpha = 1;"', opts), null);
+    // 6. Ohne Zitat (nackte Referenz) -> null (das ist der Pkt-8-Fix).
+    assert.equal(anchoredFileLine("Gegenprobe an core/a.mjs:1", opts), null);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
+test("Twin-Diversität konfigurierbar (Pkt 3/10): twinModel/twinApiBase/twinDiversity, Fail-closed bei Twin-Key-Pflicht", async () => {
+  const env = withTempHome();
+  try {
+    // 1. Ohne Twin-Env: Fallback aufs Primärmodell, twinDiversity=false (ehrlich).
+    const { loadConfig } = await mod("core/config.mjs");
+    const cfg = loadConfig();
+    assert.equal(cfg.twinModel, cfg.model, "kein Twin-Modell -> Fallback aufs Primärmodell");
+    assert.equal(cfg.twinDiversity, false, "ohne Konfiguration ist die Diversität OFFEN ehrlich false");
+    // 2. Mit Twin-Env: eigenes Modell, Diversität true, eigener Key-Name auflösbar.
+    process.env.FALSIFY_TWIN_MODEL = "openai/gpt-test";
+    process.env.FALSIFY_TWIN_API_KEY_ENV = "TWIN_TEST_KEY";
+    process.env.TWIN_TEST_KEY = "sk-twin-secret";
+    const cfg2 = loadConfig();
+    assert.equal(cfg2.twinModel, "openai/gpt-test");
+    assert.equal(cfg2.twinDiversity, true);
+    assert.deepEqual(cfg2.twinApiKeyEnv, ["TWIN_TEST_KEY", ...cfg2.keyEnvNames]);
+    const { loadApiKeyForNames } = await mod("core/keys.mjs");
+    assert.equal(loadApiKeyForNames(cfg2.twinApiKeyEnv), "sk-twin-secret", "Twin-Key wird aus seinem eigenen Namen geladen");
+    // 3. Ungültige Twin-ApiBase wird abgewiesen (gleiche Validierung wie Primär).
+    process.env.FALSIFY_TWIN_API_BASE = "ftp://nope";
+    assert.throws(() => loadConfig(), /FALSIFY_TWIN_API_BASE/);
+  } finally {
+    delete process.env.FALSIFY_TWIN_MODEL;
+    delete process.env.FALSIFY_TWIN_API_KEY_ENV;
+    delete process.env.TWIN_TEST_KEY;
+    delete process.env.FALSIFY_TWIN_API_BASE;
+    await env.cleanup();
+  }
+});
+
+test("aufgezeichneter Twin-Output: anchoredFileLine bestätigt echtes Zitat und verwirft Halluzination", async () => {
+  const { anchoredFileLine } = await mod("core/verdict.mjs");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-twin-fixture-"));
+  try {
+    fs.mkdirSync(path.join(root, "core"), { recursive: true });
+    fs.writeFileSync(path.join(root, "core", "target.mjs"), "export const verdict = 'WRITE';\nreturn verdict;\n", "utf8");
+    const opts = { root, whitelist: ["core/target.mjs"] };
+    const recordedTwinOutput = [
+      "BEFUND: Die Gegenprobe wurde eigenständig ausgeführt.",
+      "Eigene Evidenz: `core/target.mjs:1` → \"export const verdict = 'WRITE';\"",
+      "VERDICT: BESTAETIGT",
+    ].join("\n");
+    assert.equal(anchoredFileLine(recordedTwinOutput, opts), "core/target.mjs:1");
+    const hallucinatedTwinOutput = recordedTwinOutput.replace("export const verdict = 'WRITE';", "export const verdict = 'PLAN';");
+    assert.equal(anchoredFileLine(hallucinatedTwinOutput, opts), null);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
