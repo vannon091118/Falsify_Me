@@ -77,7 +77,15 @@ export function buildUserContent({ header, phase, lastBefund, findings = [], sub
   if (feasibilityNotes.length) {
     parts.push(`## Validierungs-Hinweise (deterministischer Pre-Check, read-only)\n\nDiese Hinweise sind KEIN Verdict – falsifiziere die eingereichte Iteration selbst und pruefe die genannten Punkte gegen die echten Dateien:\n${feasibilityNotes.map((n) => `- ${n}`).join("\n")}`);
   }
-  parts.push(`## Diese Iteration\n${planText}`);
+  if (phase === "plan") {
+    // F-5-Fix (E2E 2026-09-02): Der Plan ist ein ENTWURF - dass die beschriebenen
+    // Aenderungen noch nicht im Arbeitsbaum stehen, ist KEIN Befund (PLAN-Falle:
+    // das Modell las den Plan als Implementierungs-Behauptung). Der Frame macht
+    // die Phasen-Semantik deterministisch sichtbar - unabhaengig vom Modell.
+    parts.push(`## Diese Iteration (ENTWURF/Plan – Phase plan)\n\nDie folgende Iteration ist ein PLAN: Die beschriebenen Änderungen existieren NOCH NICHT im Arbeitsbaum und sind KEINE Umsetzungs-Behauptung. Bewerte den ENTWURF (Lücken, Widersprüche, Umsetzbarkeit, Intentionstreue) – nicht sein Fehlen im Code.\n\n${planText}`);
+  } else {
+    parts.push(`## Diese Iteration\n${planText}`);
+  }
   if (affected?.length) {
     parts.push(`## Betroffene Daten (vom Agenten benannt)\n${affected.join(", ")}`);
   }

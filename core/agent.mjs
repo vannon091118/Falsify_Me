@@ -217,6 +217,24 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
       continue;
     }
 
+    // F-4-Fix (Live-E2E 2026-09-02): Eine nicht-leere Text-Antwort OHNE
+    // VERDICT und OHNE Tool-Calls galt als final -> parseVerdict null ->
+    // UNBEKANNT (Run 2: Antwort brach mit „Let's read it." ab, code=3).
+    // Jetzt: begrenzt Nachbohren (bounded 2, ohne Tools) mit dem bewaehrten
+    // BEFUND/VERDICT-Muster; erst die letzte (ggf. weiterhin verdict-lose)
+    // Antwort wird ehrlich zurueckgegeben - fail-closed bleibt unantastbar.
+    if (!calls.length && c && !hasVerdict) {
+      const probe = { role: "user", content: "Deine Antwort enthält kein VERDICT. Liefere JETZT die abschließende Falsifikations-Kritik mit BEFUND und VERDICT (PLAN | RESEARCH | WRITE) – reiner Text, genau eine VERDICT-Zeile am Ende." };
+      let content = c;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        process.stderr.write(`⚠️ Antwort ohne VERDICT (finish=${round.finish || "?"}) – Nachbohren ${attempt}/2 …\n`);
+        round = await fetchRound({ ...body, tools: undefined, reasoning_effort: undefined, messages: [...messages, probe] });
+        content = finalizeContent(round);
+        if (content && /VERDICT\s*:\s*\S+/i.test(content)) break;
+      }
+      return { content: content || c, usage: round.usage || {}, toolRounds, toolEvidence };
+    }
+
     return { content: finalizeContent(round), usage: round.usage || {}, toolRounds, toolEvidence };
   }
 }

@@ -9,10 +9,11 @@ Befehle siehe unten; kein Netz-Zwang (Models-Tests nutzen lokale Fake-Provider).
 
 | Suite | Befehl | Tests | Pass | Fail | Dauer |
 |---|---|---:|---:|---:|---:|
-| Gesamt `tests/` (23 Dateien, Stand nach F-1..F-3-Fix) | `node --test tests/*.test.mjs` | 145 | 145 | 0 | ~32 s |
+| Gesamt `tests/` (23 Dateien, Stand nach F-1..F-5+F-11-Fix) | `node --test tests/*.test.mjs` | 150 | 150 | 0 | ~69 s |
 | davon Kernsuite lt. AGENTS.md (14 Dateien, Stand 2026-09-01) | s. u. | 106 | 106 | 0 | ~47 s |
 | Settings-Suite (9 Tests inkl. F-2/F-3) | `node --test tests/settings.test.mjs` | 9 | 9 | 0 | <1 s |
-| Agent-Suite (5 Tests inkl. F-3-Retry) | `node --test tests/agent.test.mjs` | 5 | 5 | 0 | <1 s |
+| Agent-Suite (7 Tests inkl. F-3-Retry + F-4-Nachbohren) | `node --test tests/agent.test.mjs` | 7 | 7 | 0 | <1 s |
+| Prompt-Suite (7 Tests inkl. F-5-Phasensemantik) | `node --test tests/prompt.test.mjs` | 7 | 7 | 0 | <1 s |
 | UI-Suite (Terminal-UI) | `node --test --test-force-exit --test-concurrency=1 "ui/tui/*.test.mjs" ui/tui.test.mjs ui/demo-agent.test.mjs` | 125 | 125 | 0 | ~28 s |
 
 **Fazit: 133/133 Headless-Tests grün (inclusiv aller in AGENTS.md genannten
@@ -38,7 +39,8 @@ Teilsuiten) + 125/125 UI-Tests grün. Kein Fehlschlag, kein Skip, kein Todo.**
 | `research-additions.test.mjs` | RESEARCH-Whitelist-Nachforderung, Security-Filter, Persistenz |
 | `keys.test.mjs` (NEU, F-1-Fix) | Duplikat-Schatten-Falle beim Key-Laden (letzte befüllte Zeile gewinnt; leere Vorlagen zählen nie) |
 | `settings.test.mjs` (erweitert, F-2+F-3-Fix) | zusätzlich: Twin-Einstellungen via settings set akzeptiert, Twin-Sicht in settings show (inkl. reasoningEffort), twinApiBase-Validierung, twinReasoningEffort-Akzeptanz/Enum/loadConfig-Fallback/Direkt-Edit-Abweisung |
-| `agent.test.mjs` (erweitert, F-3-Fix) | zusätzlich: 400 im ersten Round → Retry ohne reasoning_effort MIT Tools; zweiter 4xx → Rettungsweg ohne Tools |
+| `agent.test.mjs` (erweitert, F-3+F-4-Fix) | zusätzlich: 400 im ersten Round → Retry ohne reasoning_effort MIT Tools; zweiter 4xx → Rettungsweg ohne Tools; verdict-lose Abschluss-Antwort → Nachbohren (2× bounded), ehrliche letzte Antwort |
+| `prompt.test.mjs` (erweitert, F-5-Fix) | zusätzlich: PHASEN-SEMANTIK-Regel in DE/EN-System-Prompt, Alt-Formulierung „fehlende Umsetzung"/„missing implementation" entfernt, buildUserContent-ENTWURF-Frame bei Phase plan (write unverändert) |
 | `exit-code-authority.test.mjs` | Exit-Code-Hoheit in exitCodeOf (0/1/3/5) |
 | `foreign-project.test.mjs` | Fremdprojekt-Policy (--files-Pflicht, kein stiller Sondermodus) |
 | `tool-evidence.test.mjs` | Objektive Tool-Evidence (Regel 6): nur erfolgreiche, erlaubte reads zählen |

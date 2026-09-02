@@ -592,7 +592,10 @@ async function main() {
       apiKey: twinKey,
       apiBase: CFG.twinApiBase,
       opts: {
-        maxTokens: CFG.maxTokens,
+        // F-11-Fix (2026-09-02): eigenes Twin-Token-Budget - der Primaerwert
+        // (bis 1e6) reisst Groq (> 16384 = 400) und OpenRouter-Free-Tier
+        // (402) auf. Default min(Primaer, 16384), per CLI setzbar.
+        maxTokens: CFG.twinMaxTokens,
         // F-3-Fix (2026-09-02): eigener Twin-Effort (Fallback = Primaerwert) -
         // vorher erbte der Twin CFG.reasoningEffort; Groq lehnt high mit 400 ab.
         reasoningEffort: CFG.twinReasoningEffort,

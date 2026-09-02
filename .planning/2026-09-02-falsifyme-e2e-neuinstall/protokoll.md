@@ -100,6 +100,18 @@ Nutzer übermittelte Screenshots aus Lauf 1–3 (OCR via `ocr.py`):
 - Korrektur eigener Frühannahme: `t:Text`/`t:Status` im Banner ist KEIN Label-Leak,
   sondern die [T]-Toggle-Selbsterklärung (Header.mjs).
 
+## 7b. Speed-Lauf (Lightning 30B A3B + Qwen-Twin) — Rotation Teil 2
+
+| Job | Modell | Ergebnis | Dauer | Kern-Erkenntnis |
+|---|---|---|---|---|
+| job-…kdqywn (Speed, It. 1) | Lightning 30B A3B | **PLAN** (Modell: WRITE!) | ~250s | Lightning verifizierte alle drei Befunde als behoben (reale Datei:Zeile) und gab VERDICT: WRITE — aber der TWIN (qwen@Groq) scheiterte mit HTTP 400 `max_tokens <= 16384` → fail-closed PLAN. **Erste echte Twin-Ausführung des E2E → Befund F-11.** |
+| job-…bjserq (Speed, It. 2) | Lightning + qwen@**OpenRouter** | abgebrochen | >14 min RUNNING | Twin-Transit per Ersatz-Key auf OpenRouter umgestellt (F-11-Fix implementiert, doctor 8/8; twinMaxTokens=3000). Job lief > 14 min ohne Verdict → per `falsify abort` beendet (fail-closed `ERROR Abgebrochen (CLI)`). Ursache offen (Transit-Latenz? hängender Twin-Call?) — Plan-Notiz, kein Live-Fix. |
+
+Rotations-Fazit qualitativ (soweit belastbar):
+- **Super 120B (Qualität):** tiefe Kritik, fand echten Plan-Widerspruch (It. 1); anfällig für F-4/F-5 (behoben: Prompt-Sanierung).
+- **Lightning 30B (Speed):** schnell & präzise beim Abgleich realer Datei:Zeilen, ehrliches WRITE — transparent vom Twin-Gate geblockt (Infrastruktur, nicht Urteil).
+- **Twin qwen@Groq:** nie belastbar (F-3 high-400, F-11 max_tokens-400). **Twin qwen@OpenRouter:** erster Versuch lief > 14 min ohne Abschluss — Latenz/Stabilität offen.
+
 ## 8. Aufräumen (Nutzer-Vorgabe: lokale Daten weg, nur Worktree bleibt)
 
 `node uninstall.mjs` → erneut vollständig entfernt (Worker/`--check`, Core, Private,
@@ -111,9 +123,41 @@ Ende dieses Protokolls. ✅
 
 Siehe `tests-audit.md` im selben Ordner.
 
+## 10. Speed-Audit (Nutzer-Auftrag: Task schneller als 90 s)
+
+Ergebnis dokumentiert in `speed-audit.md` (Messprotokoll + Maßnahmen-Plan):
+- **Kernmessung:** Groq qwen3.6-27b TTFT 0,22 s / 489 tok/s; OpenRouter qwen
+  TTFT 25 s; NVIDIA lightning aktuell 400 „DEGRADED function" (provider-seitig),
+  nano 410 Gone.
+- **Hauptlatenzquelle:** Tool-Runden × Transit-TTFT (bis 14 Runden je >20 s).
+- Plan (kein Code): Twin zurück auf Groq (Vorbedingung F-3/F-11 sind FIXT),
+  maxToolRounds für Speed-Profil senken, Preflight-TTFT-Check, UI-Phase-Bar +
+  Fortschritts-/Delta-Anzeige + Reasoning-Ticker (F-9/F-12-Umsetzung).
+- Akzeptanzziel: E2E-Job < 90 s im Speed-Modus (aktuell ~225–400 s).
+
+## Session-Regel (Nutzer-Vorgabe, ab sofort)
+
+- **Workshop-Regel:** F-1..F-5 sind FIXT; F-11-Fix liegt UNCOMMITTED im
+  Worktree (core/config.mjs, core/settings.mjs, cli/run.mjs, cli/doctor.mjs,
+  tests/settings.test.mjs; 150/150 PASS). Nutzer pusht eigene Anpassungen —
+  NICHT committen/pushen ohne ausdrückliches Votum.
+- **Betriebsregel:** vor JEDEM Testlauf alle Orphans beenden (hängende node-
+  Test-/CLI-Prozesse, tote Worker-Registrierungen) — d. h. `node --test` nur
+  nach `taskkill` der Alt-Prozesse / Leerung der meta-Registrierung, sonst
+  SQLite-BUSY und Duplikat-Guard-Blockaden (live erlebt: stale PID 11164
+  blockierte Dock-Starts trotz totem Prozess → erst nach meta-Leerung ging
+  Fenster 1 wieder an).
+- **Plan-Modus ab jetzt:** keine Live-Jobs/Fixes mehr ohne Votum; nur
+  auditieren/dokumentieren.
+
 ## Offen / nächste Schritte (nach Freigabe durch den Nutzer)
 
-1. F-1..F-5 angehen (Fixes), siehe Befunde.md — erst nach BLOCK/PASS-Votum.
-2. Speed-Modus-Lauf (Lightning 30B A3B, gleicher Plan) für den qualitativen
-   Rotationsvergleich.
-3. Prompt-/SUBPROMPT-Disambiguierung (PLAN-Phase ≠ Implementierung).
+1. F-11-Fix committen (Worktree-Änderungen, 150/150) — in Nutzers Bump-Push
+   integrieren oder separat nach Votum.
+2. F-12: [T]-Toggle entkernen ODER real verdrahten (erst nach F-9-Fix
+   sichtbar).
+3. Job-bjserq-Ursache (Speed-Lauf 2) untersuchen: OpenRouter-Latenz vs.
+   hängender Twin-Call — `--ping`-Protokoll beim nächsten Live-Lauf.
+4. Version-Drift beheben (0.7.0-beta vs. 2.0, ein Vokabular).
+5. F-9/F-10 (Dock-Sichtbarkeit/RAM) erst mit Repro-Zahlen angehen
+   (AGENTS.md: --expose-gc-Soak).

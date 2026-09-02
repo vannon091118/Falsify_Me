@@ -15,6 +15,7 @@ const CONFIG_KEYS = Object.freeze([
   "provider", "apiBase", "model", "apiKeyEnv", "maxTokens", "reasoningEffort",
   "maxToolRounds", "maxRpm", "lang", "temperature", "timeoutMs", "pricing",
   "twinModel", "twinApiBase", "twinApiKeyEnv", "twinReasoningEffort",
+  "twinMaxTokens",
 ]);
 
 const cloneJson = (value) => JSON.parse(JSON.stringify(value));
@@ -112,6 +113,11 @@ function validateSettings(patch) {
       const n = Number(value);
       if (!Number.isFinite(n)) throw new Error(`${key} muss eine Zahl sein`);
       out[key] = n;
+    } else if (key === "twinMaxTokens") {
+      const n = Number(value);
+      if (!Number.isFinite(n)) throw new Error(`${key} muss eine Zahl sein`);
+      if (n < 256 || n > 1_000_000) throw new Error(`${key} muss zwischen 256 und 1000000 sein`);
+      out[key] = n;
     } else if (key === "reasoningEffort" || key === "twinReasoningEffort") {
       const v = validateString(value, key).toLowerCase();
       if (!["high", "medium", "low", "auto", "off"].includes(v)) {
@@ -154,6 +160,9 @@ export function getRuntimeSettings() {
     apiBase: cfg.twinApiBase,
     apiKeyEnv: twinKeyName,
     reasoningEffort: cfg.twinReasoningEffort,
+    // F-11: eigenes Twin-Token-Budget (Default min(Primaer,16384) — sichtbar,
+    // damit die Groq-/OpenRouter-Begrenzung nicht still greift).
+    maxTokens: cfg.twinMaxTokens,
     diversity: cfg.twinDiversity,
   };
   if (file.pricing !== undefined) result.pricing = redact(file.pricing);

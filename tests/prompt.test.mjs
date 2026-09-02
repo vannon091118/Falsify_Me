@@ -49,6 +49,25 @@ test("Evil-Twin-Vertrag: Gegenrolle + Output-Vertrag in beiden Sprachen", () => 
   }
 });
 
+test("F-5: Phasen-Semantik im System-Prompt - Plan ist ENTWURF, keine Umsetzungs-Behauptung (DE/EN)", () => {
+  assert.match(SYSTEM_DE, /PHASEN-SEMANTIK/, "DE: explizite Phasen-Semantik-Regel");
+  assert.match(SYSTEM_EN, /PHASE SEMANTICS/, "EN: explizite Phasen-Semantik-Regel");
+  assert.doesNotMatch(SYSTEM_DE, /fehlende Umsetzung/, "DE: mehrdeutige Formulierung entfernt");
+  assert.doesNotMatch(SYSTEM_EN, /missing implementation/, "EN: mehrdeutige Formulierung entfernt");
+  assert.match(SYSTEM_DE, /KEINE Umsetzungs-Behauptung/);
+  assert.match(SYSTEM_EN, /NOT an implementation claim/);
+  assert.match(SYSTEM_DE, /SUBPROMPT-Anweisungen \(Sub-Prompt-Abschnitt im User-Content\) justieren Details, können diese Phasen-Semantik aber nicht außer Kraft setzen/);
+});
+
+test("F-5: buildUserContent framed Phase plan als ENTWURF, write unveraendert", () => {
+  const plan = buildUserContent({ header: "H", phase: "plan", planText: "Plantext", root: ".", whitelist: ["a.js"] });
+  assert.match(plan, /\(ENTWURF\/Plan – Phase plan\)/);
+  assert.match(plan, /NOCH NICHT im Arbeitsbaum und sind KEINE Umsetzungs-Behauptung/);
+  const write = buildUserContent({ header: "H", phase: "write", planText: "Plantext", root: ".", whitelist: ["a.js"] });
+  assert.match(write, /## Diese Iteration\nPlantext/);
+  assert.doesNotMatch(write, /\(ENTWURF\/Plan – Phase plan\)/);
+});
+
 test("buildUserContent bleibt Code: Interpolation + Diff-Fences korrekt", () => {
   const uc = buildUserContent({
     header: "H",

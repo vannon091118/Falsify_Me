@@ -124,3 +124,23 @@ test("F-3: twinReasoningEffort wird akzeptiert, enumsvalidiert und von loadConfi
   fs.writeFileSync(path.join(home, "config.json"), JSON.stringify(before), "utf8");
   assert.equal(loadConfig().twinReasoningEffort, "high", "Restore: valid erneut ladbar");
 });
+
+test("F-11: twinMaxTokens wird akzeptiert, validiert und von loadConfig geladen", async () => {
+  const { loadConfig } = await import("../core/config.mjs");
+  // Fallback: min(Primaer, 16384) — Groq-Limit, nicht der ungekappte Primaerwert.
+  assert.equal(loadConfig().twinMaxTokens, 16384, "Fallback klammert auf Groq-Limit");
+  const result = settings.updateRuntimeSettings({ twinMaxTokens: 3000 });
+  assert.equal(result.twin.maxTokens, 3000);
+  const stored = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
+  assert.equal(stored.twinMaxTokens, 3000);
+  assert.equal(loadConfig().twinMaxTokens, 3000);
+  // Numerische Validierung (Grenzen wie maxTokens).
+  assert.throws(() => settings.updateRuntimeSettings({ twinMaxTokens: 100 }), /zwischen 256 und 1000000/);
+  assert.throws(() => settings.updateRuntimeSettings({ twinMaxTokens: "viel" }), /muss eine Zahl sein/);
+  // config.json-Direkt-Eingriff (Hand-Edit) wird beim Laden ehrlich abgewiesen.
+  const before = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
+  fs.writeFileSync(path.join(home, "config.json"), JSON.stringify({ ...before, twinMaxTokens: 99 }), "utf8");
+  assert.throws(() => loadConfig(), /twinMaxTokens/);
+  fs.writeFileSync(path.join(home, "config.json"), JSON.stringify(before), "utf8");
+  assert.equal(loadConfig().twinMaxTokens, 3000, "Restore: valid erneut ladbar");
+});

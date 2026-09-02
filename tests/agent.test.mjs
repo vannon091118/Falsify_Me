@@ -104,7 +104,8 @@ test("F-3: 4xx bleibt 4xx auch ohne effort → alter Rettungsweg ohne Tools", as
     bodies.push(body);
     calls += 1;
     if (calls <= 2) throw new Error("HTTP 400: tools not supported");
-    return { content: "BEFUND: x", toolCalls: [], finish: "stop", usage: {} };
+    // Verdict enthalten (F-4: verdict-lose Abschlussantworten bohren jetzt nach).
+    return { content: "BEFUND: x. VERDICT: PLAN", toolCalls: [], finish: "stop", usage: {} };
   };
   await runAgent({
     systemPrompt: "p", userContent: "c", model: "m", apiKey: "k",
@@ -116,6 +117,47 @@ test("F-3: 4xx bleibt 4xx auch ohne effort → alter Rettungsweg ohne Tools", as
   assert.equal(calls, 3, "zwei Retry-Stufen (ohne effort, dann ohne Tools)");
   assert.equal(bodies[1].reasoning_effort, undefined);
   assert.equal(bodies[2].tools, undefined, "zweite Stufe: Tools entfernt wie zuvor dokumentiert");
+});
+
+test("F-4: fertige Textantwort OHNE VERDICT -> Nachbohren, Verdict wird geholt", async () => {
+  const { runAgent } = await mod("../core/agent.mjs");
+  const bodies = [];
+  let calls = 0;
+  const override = async (body) => {
+    bodies.push(body);
+    calls += 1;
+    if (calls === 1) return { content: "We need to evaluate the plan. Let's read it.", toolCalls: [], finish: "stop", usage: {} };
+    return { content: "BEFUND: haelt. VERDICT: WRITE", toolCalls: [], finish: "stop", usage: {} };
+  };
+  const out = await runAgent({
+    systemPrompt: "p", userContent: "c", model: "m", apiKey: "k",
+    apiBase: "http://127.0.0.1:1", reasoningEffort: "high",
+    timeoutStagesMs: [100, 200], retryBackoffMs: 1, maxToolRounds: 1,
+    root: ROOT, whitelist: [],
+    fetchRound: override,
+  });
+  assert.equal(calls, 2, "genau ein Nachbohren bis Verdict da ist");
+  assert.match(out.content, /VERDICT: WRITE/);
+  assert.equal(bodies[1].tools, undefined, "Nachbohren ohne Tools (Abschluss-Zwang)");
+  assert.ok(/VERDICT/.test(bodies[1].messages[bodies[1].messages.length - 1].content), "Nachbohr-Prompt fordert VERDICT");
+});
+
+test("F-4: Nachbohren ist bounded (max. 2), verdict-lose letzte Antwort wird ehrlich geliefert", async () => {
+  const { runAgent } = await mod("../core/agent.mjs");
+  let calls = 0;
+  const override = async () => {
+    calls += 1;
+    return { content: "BEFUND: unvollstaendige Antwort ohne Abschluss.", toolCalls: [], finish: "stop", usage: {} };
+  };
+  const out = await runAgent({
+    systemPrompt: "p", userContent: "c", model: "m", apiKey: "k",
+    apiBase: "http://127.0.0.1:1", reasoningEffort: "off",
+    timeoutStagesMs: [100, 200], retryBackoffMs: 1, maxToolRounds: 1,
+    root: ROOT, whitelist: [],
+    fetchRound: override,
+  });
+  assert.equal(calls, 3, "Original + 2 Nachbohr-Versuche (bounded)");
+  assert.doesNotMatch(out.content, /VERDICT\s*:/, "kein erfundenes Verdict - UNBEKANNT bleibt downstream moeglich");
 });
 
 test("Deadline-Budget: runAgent rechnet ein Gesamt-Zeitbudget ein (Eskalations-Anker)", async () => {

@@ -21,6 +21,7 @@ const DEFAULTS = {
   model: "nvidia/nemotron-3-ultra-550b-a55b",
   apiKeyEnv: "NVIDIA_API_KEY,OPENAI_API_KEY,FALSIFY_API_KEY",
   maxTokens: 20000,
+  twinMaxTokens: 16384, // F-11: Twin-Default, siehe loadConfig
   reasoningEffort: "high",        // high | medium | low | auto | off
   maxToolRounds: 14,
   maxRpm: 40,
@@ -111,6 +112,7 @@ export function loadConfig() {
   // bei high strukturell unmoeglich. Jetzt eigener Wert twinReasoningEffort
   // (FALSIFY_TWIN_REASONING_EFFORT / config.json twinReasoningEffort),
   // gleiche Enum-Validierung wie beim Primaerwert, Fallback = Primaerwert.
+  const maxTokens = pickNum("FALSIFY_MAX_TOKENS", data, "maxTokens", DEFAULTS.maxTokens, { min: 256, max: 1_000_000 });
   const twinReasoningEffort = String(pick("FALSIFY_TWIN_REASONING_EFFORT", data, "twinReasoningEffort", "")).toLowerCase();
   if (twinReasoningEffort && !["high", "medium", "low", "auto", "off"].includes(twinReasoningEffort)) {
     throw new Error(`Ungueltige Konfiguration: FALSIFY_TWIN_REASONING_EFFORT/twinReasoningEffort = "${twinReasoningEffort}" (erlaubt: high, medium, low, auto, off)`);
@@ -131,7 +133,7 @@ export function loadConfig() {
         : null;
       return named ? [named, ...base.filter((n) => n !== named)] : base;
     })(),
-    maxTokens: pickNum("FALSIFY_MAX_TOKENS", data, "maxTokens", DEFAULTS.maxTokens, { min: 256, max: 1_000_000 }),
+    maxTokens: maxTokens,
     reasoningEffort,
     maxToolRounds: pickNum("FALSIFY_MAX_TOOL_ROUNDS", data, "maxToolRounds", DEFAULTS.maxToolRounds, { min: 1, max: 20 }),
     maxRpm: pickNum("FALSIFY_MAX_RPM", data, "maxRpm", DEFAULTS.maxRpm, { min: 1, max: 1000 }),
@@ -144,6 +146,11 @@ export function loadConfig() {
     // F-3: eigener Twin-Effort; bewusst NICHT auf „high" zurueckfallen, sondern
     // auf den konfigurierten Primaerwert (Nutzerentscheidung bleibt sichtbar).
     twinReasoningEffort: twinReasoningEffort || reasoningEffort,
+    // F-11: eigener Twin-Token-Budget. Default = min(Primaerwert, 16384),
+    // weil Groq (qwen/qwen3.6-27b) > 16384 mit 400 ablehnt — der geerbte
+    // Primaerwert (bis 1e6) wuerde jede Groq-Twin-Freigabe unmöglich machen.
+    // (OpenRouter-Free-Tier liegt teils noch niedriger — dann per CLI setzen.)
+    twinMaxTokens: pickNum("FALSIFY_TWIN_MAX_TOKENS", data, "twinMaxTokens", Math.min(maxTokens, 16384), { min: 256, max: 1_000_000 }),
     twinApiKeyEnv: twinApiKeyEnv ? [twinApiKeyEnv, ...(() => {
       const base = String(pick("FALSIFY_API_KEY_ENV", data, "apiKeyEnv", DEFAULTS.apiKeyEnv))
         .split(",").map((s) => s.trim()).filter(Boolean);

@@ -114,7 +114,17 @@ Regressionstests in `tests/settings.test.mjs` + `tests/agent.test.mjs`.
 
 ---
 
-## F-4 🟠 Abschluss-Antwort ohne `VERDICT:` ohne Tool-Call wird als final akzeptiert → UNBEKANNT (vermeidbarer Loop-Verlust)
+## F-4 🟠 Abschluss-Antwort ohne `VERDICT:` ohne Tool-Call wird als final akzeptiert → UNBEKANNT (vermeidbarer Loop-Verlust) — ✅ FIXT (2026-09-02)
+
+**Status: behoben.** `core/agent.mjs`: Der normale Abschluss-Pfad bohrt jetzt bei
+nicht-leerer, verdict-loser Text-Antwort OHNE Tool-Calls begrenzt nach (bounded 2,
+ohne Tools, bewährtes BEFUND/VERDICT-Muster wie im maxToolRounds-Pfad); erst die
+letzte (ggf. weiterhin verdict-lose) Antwort wird ehrlich zurückgegeben —
+fail-closed bleibt. Der bisherige Guard deckte nur Leer-/Stub-/Tool-JSON-Fälle ab
+(Run 2: „Let's read it."-Abbruch → UNBEKANNT, code=3). Regressionstests in
+`tests/agent.test.mjs` (Nachbohren bis Verdict, Bounded-2 + ehrliche letzte
+Antwort). Zusammenspiel mit F-3-Retry-Tests angepasst (dort jetzt Verdict im
+Abschluss-Content). Gesamtsuite danach: 147/147 PASS. (Historie behalten.)
 
 **Beleg (live):** job-…rxbpmf (Super 120B, It. 2): Die Antwort endete als normaler
 Text („…Let's read it."), `finish`-bedingt ohne Tool-Call und ohne `VERDICT:` →
@@ -128,14 +138,27 @@ Guards und wird als finale Antwort zurückgegeben. Der `maxToolRounds`-Pfad
 Versuche) — der normale Abschluss-Pfad nicht. Kommentar in `agent.mjs:154-159`
 dokumentiert exakt diesen NIM-Fall für Stubs, aber nicht für reine Text-Truncation.
 
-**Fix-Richtung:** Im normalen Abschluss-Pfad: fehlt ein `VERDICT:` und es gab
-keine Tool-Calls in der letzten Runde → mit dem bewährten „Antworte JETZT mit
-BEFUND/VERDICT"-Retry (bounded, ohne Tools) nachbohren, erst dann ehrlich UNBEKANNT.
-Fail-closed bleibt dabei unangetastet.
+**Fix-Richtung (umgesetzt):** Im normalen Abschluss-Pfad: fehlt ein `VERDICT:` und
+es gab keine Tool-Calls in der letzten Runde → mit dem bewährten „Antworte JETZT
+mit BEFUND/VERDICT"-Retry (bounded 2, ohne Tools) nachbohren, erst dann ehrlich
+UNBEKANNT. Fail-closed bleibt dabei unangetastet. Tests in `tests/agent.test.mjs`.
 
 ---
 
-## F-5 🟠 SUBPROMPT-Persistenz kann den Thinker in eine PLAN-Falle treiben (Plan ≠ Implementierung)
+## F-5 🟠 SUBPROMPT-Persistenz kann den Thinker in eine PLAN-Falle treiben (Plan ≠ Implementierung) — ✅ FIXT (2026-09-02)
+
+**Status: behoben (Prompt/Kontrakt-Ebene).** (1) `core/prompt-text/system-de.md`
++ `system-en.md`: neue Regel PHASEN-SEMANTIK — in Phase `plan` ist die Iteration
+ein ENTWURF; dass der Code die Änderungen noch nicht enthält, ist KEIN Befund;
+erst mit Diff (Phase `write`) wird die Umsetzung geprüft; SUBPROMPT-Anweisungen
+können die Phasen-Semantik nicht außer Kraft setzen. Die mehrdeutige Formulierung
+„fehlende Umsetzung"/„missing implementation" wurde zu „fehlende Plan-Substanz"
+präzisiert. (2) `core/prompt.mjs` `buildUserContent`: bei Phase `plan` wird die
+Iteration deterministisch als ENTWURF geframet („Diese Iteration (ENTWURF/Plan –
+Phase plan)… KEINE Umsetzungs-Behauptung") — unabhängig vom Modell sichtbar.
+Regressionstests in `tests/prompt.test.mjs` (DE/EN-Regel, Alt-Formulierung
+entfernt, plan-Frame vs. write-Frame). Gesamtsuite 149/149 PASS. (Historie
+behalten.)
 
 **Live belegt:** Iteration 1 (Super 120B) prüfte den Plan KORREKT als Entwurf und
 fand einen echten Widerspruch (SCOPE-DIVERGENZ, SUBPROMPT persistiert). Iteration 3
@@ -156,11 +179,121 @@ den Zielzustand nach Freigabe).
 **Gegenmittel im E2E:** Ist/Soll-Tabelle + „Phase: plan, nichts ist implementiert"
 in den Plan eingebaut (Iteration 3, vom Nutzer gestoppt, nicht mehr gelaufen).
 
-**Fix-Richtung (Projekt):** Phasen-Semantik in `core/prompt-text/system-de.md`
-explizit machen (PLAN-Phase: eingereichte Iteration IST der Entwurf; fehlende
-Umsetzung im Arbeitsbaum ist bei Phase `plan` KEIN Befund) und dokumentieren,
-dass SUBPROMPTs die Bewertung über Iterationen beeinflussen (Reset/Anpassung
-nach Adressierung erwägen).
+**Fix-Richtung (umgesetzt):** Phasen-Semantik in `core/prompt-text/system-de.md`/
+`system-en.md` explizit gemacht (PLAN-Phase: eingereichte Iteration IST der
+Entwurf; fehlende Umsetzung im Arbeitsbaum ist bei Phase `plan` KEIN Befund)
++ deterministischer ENTWURF-Frame in `buildUserContent` (Phase `plan`);
+SUBPROMPT-Grenze geregelt (justieren ja, Phasen-Semantik außer Kraft setzen
+nein). Zusätzlich im E2E erprobtes Gegenmittel bleibt bestehen: Ist/Soll-Tabelle
+im Plan (Doku, nicht Code).
+
+---
+
+## F-11 🔴 Twin erbt das Primär-`maxTokens` → Groq-400 (>16384) & OpenRouter-402 (Free-Tier ≤ 5028) — Fix implementiert, NICHT committet
+
+**Live belegt (Speed-Lauf 1, job-…kdqywn):** Das Twin-Finding trug
+`GEGENPRÜFUNG UNKLAR (HTTP 400: …max_tokens must be less than or equal to
+16384…)` — der Twin (qwen/qwen3.6-27b @ Groq) bekam `max_tokens` vom
+Primärlauf (Default 20000, bis 1e6 möglich) und lehnte ab → BESTAETIGT
+unmöglich → fail-closed PLAN, aus dem falschen Grund (kein Modell-Urteil).
+Das ist die **erste echte Twin-Ausführung im ganzen E2E**: alle bisherigen
+Läufe endeten vor dem Twin-Gate (PLAN vor der Gegenprüfung).
+
+**Zweiter Beleg:** Ersatz-Transit OpenRouter (sk-or-v1-…) → 402 „can only
+afford 5028" bei `max_tokens: 20000`; ≤ 5028 geht. Gleiche Ursache: Twin
+hat kein eigenes Token-Budget.
+
+**Root-Cause:** `cli/run.mjs:595` übergab `CFG.maxTokens` (Primärwert) an
+`runTwinCheck`; `core/twin.mjs:97` Default 20000. Kein twin-eigener Pfad,
+keine Provider-Begrenzung. Spiegelbild von F-3 (Optionen des Primärlaufs
+leaken in den Twin).
+
+**Fix (implementiert, getestet 150/150, WORKTREE — nicht committet):**
+- `core/config.mjs`: `twinMaxTokens` (FALSIFY_TWIN_MAX_TOKENS / config.json),
+  Default `Math.min(maxTokens, 16384)` (Groq-Limit), Range 256..1e6,
+  Validierung beim Laden.
+- `core/settings.mjs`: CLI-Key `twinMaxTokens` (Nummern-Validierung),
+  `settings show` zeigt `twin.maxTokens` (aufgelöst, Erbschaft sichtbar).
+- `cli/run.mjs`: `maxTokens: CFG.twinMaxTokens` an die Twin-Optionen.
+- `cli/doctor.mjs`: Twin-Zeile zeigt `maxTokens <n>`.
+- Tests: `tests/settings.test.mjs` (Akzeptanz/Validierung/Show/Fallback/
+  Hand-Edit-Abweisung).
+
+**Live-Konfiguration (bereits so gesetzt, ~/.Falsify_Private):** Twin =
+`qwen/qwen3.6-27b` @ `https://openrouter.ai/api/v1`, `twinApiKeyEnv=
+OPENROUTER_API_KEY`, `twinReasoningEffort=off`, `twinMaxTokens=3000`
+(OpenRouter-Free-Tier-Grenze). doctor 8/8 ✅ danach.
+
+**Offen (Plan-Modus, kein Fix ohne Votum):** job-…bjserq (Speed-Lauf 2,
+Lightning + Qwen/OpenRouter) lief > 14 min RUNNING ohne Verdict → per CLI
+abgebrochen (fail-closed, kein Fake-Verdict). Ursache offen: OpenRouter-
+Transit-Latenz (Streaming/TTFT) oder hängender Twin-Call — beim nächsten
+Live-Lauf mit `--ping`-Protokoll + Timeout-Beobachtung untersuchen.
+
+---
+
+## F-12 🟠 Nutzer-Befund: [T]-Toggle fühlt sich tot an — Modus-Schalter hat keinen sichtbaren Effekt
+
+**Nutzer (live):** „T klick switched zwischen info/modus (und THINKING/
+REASONING) — aber keine Option hat einen spürbaren Unterschied, fühlt sich
+'tot' an."
+
+**Code-Befund:** `ui/tui.mjs:107` `let mode = "thinking"`; `ui/tui.mjs:261`
+`emit("toggle")` schaltet `thinking ↔ reasoning`. Konsumenten des Werts:
+- `ui/tui/views/Header.mjs:16` → Label `t:Text` (thinking) vs `t:Status`
+  (reasoning) im Banner.
+- `ui/tui/views/Footer.mjs:27-32` → THINKING|REASONING-Hervorhebung
+  (Cyan/fett des aktiven Worts).
+
+**Root-Cause:** Der Modus beeinflusst NUR Darstellungs-Labels; kein View,
+keine Datenauswahl, kein Panel wechselt (kein Konsument über Header/Footer
+hinaus — `snap.mode` wird in keinem weiteren View abgefragt). Zusätzlich
+verwirrend: Header nennt die Modi „Text/Status", Footer „THINKING/
+REASONING" — zwei Vokabulare für denselben Schalter. Bei fehlendem
+Reasoning-Output (F-9: Panes bleiben leer) ist der Schalter doppelt
+wirkungslos.
+
+**Fix-Richtung (nach Votum):** entweder (a) Modus entfernen (ein Vokabular,
+kein toter Schalter) oder (b) Modus real verdrahten: thinking ⇒ Reasoning-Pane
+zeigt Reasoning-Trace, reasoning ⇒ Status-Pane zeigt Phasen/Activity — erst
+wenn F-9 (Marker kommen an) gefixt ist, ist (b) überhaupt sichtbar.
+
+---
+
+## F-13 🔵 Audit-Klärung: „✕ API KEY fehlt" + „SELFTEST PASS" ist DESIGN, kein Bug
+
+Frühere Hypothese („Selftest-Fail hält den Boot im Fehlerzustand") war
+falsch. `ui/worker.mjs:157-172`: `criticalFail` zählt NUR RUNTIME/DATABASE/
+CONFIG/QUEUE/WORKER/READ-ONLY; ein fehlender API-Key ist explizit KEIN
+kritischer Schritt („der Worker kann ohne Key idlen — Jobs schlagen dann
+vor"). Screenshot-Beweis: ✕ API KEY + „SELFTEST PASS" gleichzeitig. Der
+Boot-/STARTING-Stau (F-9) ist damit NICHT selftest-bedingt.
+
+---
+
+## Audit-Notiz: Version-Drift
+
+`package.json` sagt `0.7.0-beta`, CLI/Help-Köpfe sagen „FalsifyMe 2.0"
+(cli/help.mjs:2, core/config.mjs:2). Vor einem globalen Versions-Bump:
+Quellen abgleichen (ein Vokabular), sonst driftet die Doku wie F-12.
+
+---
+
+## F-14 🔵 Audit: Provider-Landschaft zeigt zwei neue Limitierungen (2026-09-02, Live-Bench)
+
+- **NVIDIA `nemotron-3.5-lightning-30b-a3b`: HTTP 400 „Function … DEGRADED“**
+  (Provider-Backend-Degradierung, nicht Konfiguration!) — Grund, warum
+  Speed-Lauf 2 (job-…bjserq) >14 min ohne Verdict hing und abgebrochen wurde.
+  Der Speed-Lauf 1 (kdqywn) lief noch: Zustand ist transient/provider-seitig.
+  **Maßnahme:** Preflight-TTFT-Check vor Job-Start (Speed-Audit §3B/2), damit
+  Degradierung sofort sichtbar ist statt stummer 14-min-Hang.
+- **NVIDIA `nemotron-3-nano-30b-a3b`: HTTP 410 Gone** — Modell eingestellt,
+  als Kandidat streichen (nano-Reasoning lebt nur noch auf OpenRouter als
+  `:free` weiter, dort aber 32 s TTFT).
+- **OpenRouter-Gesamtbild: TTFT 25 s (qwen), 1,4 s (deepseek-flash) aber 2
+  tok/s, 32 s (:free nano)** — als Twin-Transit unbrauchbar; Groq bleibt mit
+  0,2 s TTFT / 489 tok/s der klare Sieger. Komplette Tabelle + Maßnahmen:
+  `speed-audit.md`.
 
 ---
 
@@ -270,5 +403,10 @@ im optional-Modus).
   aber anfällig für die PLAN-Falle (F-5) und für Verdict-lose Textabschlüsse (F-4).
   Laufzeiten: ~225s (PLAN) / ~63s (Abbruch-artig) / ~270s (PLAN).
 - **Qwen 3.6 27B (Groq, Twin)**: nie gelaufen (kein WRITE-Kandidat erreicht).
-- **Nemotron 3.5 Lightning 30B A3B (Speed)**: Smokes 200 OK (6s TTFT) — voller
-  Lauf OFFEN (Rotation vom Nutzer gestoppt).
+- **Nemotron 3.5 Lightning 30B A3B (Speed)**: Speed-Lauf 1 (kdqywn, ~400 s):
+  verifizierte alle Befunde real (Datei:Zeile) → **VERDICT: WRITE** — vom
+  Twin-Gate (F-11, max_tokens-400) auf PLAN gestuft; Provider-Backend danach
+  transient degradiert (F-14). Schnelles Urteil, gutes Preis/Leistungsverhältnis.
+- **Qwen 3.6 27B als Twin**: @Groq 0,2 s TTFT / 489 tok/s (Live-Bench) —
+  @OpenRouter 25 s TTFT (unbrauchbar, F-14); nie belastbar gelaufen (F-3/F-11
+  blockten bis zum Fix).
