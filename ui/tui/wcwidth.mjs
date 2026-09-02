@@ -41,6 +41,12 @@ export const strWidth = (str) => {
   return w;
 };
 
+export const padStart = (str, width) => {
+  const s = String(str ?? "");
+  const w = width - strWidth(s);
+  return (w > 0 ? " ".repeat(w) : "") + s;
+};
+
 export const padEnd = (str, width) => {
   const pad = width - strWidth(str);
   return pad > 0 ? str + " ".repeat(pad) : str;

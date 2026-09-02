@@ -53,7 +53,11 @@ export default function App({ getSnapshot, subscribe, emit }) {
     main = h(IdleView, { snap, cols, rows: mainH });
   } else if (snap.state === "VERDICT" && snap.verdict) {
     main = h(VerdictView, { snap, cols, rows: mainH });
-  } else if (snap.boot && snap.boot.mode !== "live") {
+  } else if (snap.jobsStarted === 0 && snap.boot && snap.boot.mode !== "live") {
+    // Vollbild-Label NUR beim Start waehrend der Selftests. Sobald ein Job
+    // belegt ist (jobsStarted > 0), zeigen wir NIE wieder den Bootscreen -
+    // nicht mal waehrend STARTING (E2E-Befund 2026-09-02: das Bild hing
+    // waehrend laufender Jobs im Boot-Intro).
     main = h(BootView, { snap, cols, rows: mainH });
   } else if (snap.twinActive) {
     // Evil-Twin-Gegenpruefung (Regel 6, UI-109): das Bild WECHSELT in den

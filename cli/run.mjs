@@ -31,7 +31,7 @@ import { getScope, updateScopeAfterReview, addFinding, getFindings, nextRound } 
 import { loadApiKey, loadApiKeyForNames, keyEnvFile, keyNames } from "../core/keys.mjs";
 import { loadConfig } from "../core/config.mjs";
 import { enforceRateLimit } from "../core/ratelimit.mjs";
-import { SYSTEM_DE, SYSTEM_EN, buildUserContent } from "../core/prompt.mjs";
+import { SYSTEM_DE_FULL, SYSTEM_EN_FULL, buildUserContent } from "../core/prompt.mjs";
 import { parseVerdict, parseBefund, parseSubPrompt, enforceWriteChallenge, enforceStructuralCoherence, findingSeverity, parseScopeDivergence, enforceResearchContract, extractResearchAdditions, exitCodeOf, twinEvidenceOk, twinOwnFalsificationOk } from "../core/verdict.mjs";
 import { runTwinCheck, extractClaims } from "../core/twin.mjs";
 import { runAgent } from "../core/agent.mjs";
@@ -437,7 +437,7 @@ async function main() {
   console.log(dim("  Streaming: Reasoning · Kritik · ⟳ = Agent liest Dateien"));
   console.log("");
 
-  const systemPrompt = lang === "en" ? SYSTEM_EN : SYSTEM_DE;
+  const systemPrompt = lang === "en" ? SYSTEM_EN_FULL : SYSTEM_DE_FULL;
   // UI-Traceability (E2E-Befund): die UI muss SEHEN, wer denkt und mit welchem
   // Modell - sonst ist die Gegenpruefung von der Erstpruefung nicht unterscheidbar.
   uiEvt({ t: "model", thinker: model, twin: CFG.twinModel, who: "thinker" });

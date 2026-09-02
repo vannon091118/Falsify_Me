@@ -108,3 +108,21 @@ erster Content-Chunk, Durchsatz = Chunks nach TTFT.
 - F-12 ([T]-Toggle tot) — Teilziel C (Modus real verdrahten oder entfernen).
 - Befund »NVIDIA lightning 400 DEGRADED« + »nano 410 Gone« als neue
   Audit-Notizen (Provider-Landschaft, s. findings.md F-14).
+## Live-Bestätigung durch E2E-User-Test (2026-09-02, DOKI-Projekt)
+
+Zwei Gate-Einreichungen des Nutzers (Plan-Only, WRITE-Ziel) endeten
+fail-closed mit UNBEKANNT/Exit 3 — Modell bestätigte, Evidenz-Vertrag griff.
+Konsequenzen für die Speed-/UX-Planung:
+
+- **Ablehnungsgrund fehlt in der UI:** Dock zeigt nur „KEIN gültiges
+  Verdict". Erste Maßnahme im UI-Paket: Gate-Grund (fehlender
+  Falsifikationsversuch / Evidenz-Triade / Coverage) als eine Zeile im
+  Verdict-Panel + im CLI-Exit-Hinweis — spart dem Nutzer den Log-Lookup
+  (das ist der eigentliche „tot"-Eindruck bei Start-abgelehnten Jobs).
+- **Per-Tier-Modellwahl ist der nächste Speed-Hebel:** Die env-Overrides
+  (`FALSIFY_MODEL`/`FALSIFY_API_BASE`/`FALSIFY_API_KEY_ENV`) sind einzeln
+  vorhanden, aber nicht gebündelt wählbar (kein Matrix-Mechanismus). Der
+  Nutzer plant einen projekt-lokalen Wrapper (falsify-check.sh +
+  falsifyme-matrix.json) — FalsifyMe bleibt read-only. Sobald der
+  Mechanismus existiert, lässt sich das Speed-Profil (Lightning + Groq-Twin)
+  pro Aufgabe aus der Cycle-Zeit drücken: Akzeptanzziel < 90 s bleibt.

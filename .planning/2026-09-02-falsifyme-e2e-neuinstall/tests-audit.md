@@ -9,7 +9,7 @@ Befehle siehe unten; kein Netz-Zwang (Models-Tests nutzen lokale Fake-Provider).
 
 | Suite | Befehl | Tests | Pass | Fail | Dauer |
 |---|---|---:|---:|---:|---:|
-| Gesamt `tests/` (23 Dateien, Stand nach F-1..F-5+F-11-Fix) | `node --test tests/*.test.mjs` | 150 | 150 | 0 | ~69 s |
+| Gesamt `tests/` (24 Dateien, Stand nach F-1..F-5+F-8+F-9+F-9-Boot+F-11) | `node --test tests/*.test.mjs` | 161 | 161 | 0 | ~40 s |
 | davon Kernsuite lt. AGENTS.md (14 Dateien, Stand 2026-09-01) | s. u. | 106 | 106 | 0 | ~47 s |
 | Settings-Suite (9 Tests inkl. F-2/F-3) | `node --test tests/settings.test.mjs` | 9 | 9 | 0 | <1 s |
 | Agent-Suite (7 Tests inkl. F-3-Retry + F-4-Nachbohren) | `node --test tests/agent.test.mjs` | 7 | 7 | 0 | <1 s |

@@ -100,7 +100,10 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
   apply(state, { t: "boot" }, Date.now());
   const seed = options.seed ?? 7;
   // Ein Partikelfeld PRO Slot: parallele Fenster animieren unabhaengig.
+  // F-9: cells-Cache pro Feld (letzter Render) - nicht-animierte Felder
+  // rendern pro Frame NICHTS mehr (vorher: 4 renderField je Frame).
   const fields = [null, createField({ seed }), createField({ seed: seed + 11 }), createField({ seed: seed + 23 })];
+  for (const f of fields) if (f) { f.cells = null; f.cellCols = 0; f.cellRows = 0; }
   const dims = DEFAULT_DIMS();
   const isTty = Boolean(process.stdout.isTTY);
 
@@ -144,19 +147,42 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
       const f = fields[slot.idx];
       f.cols = dims.cols;
       f.rows = fieldRowsFor(mainRows, busy, slot);
+      // F-9 (E2E 2026-09-02): Partikel NUR bei frischer Aktivitaet schritten/
+      // neu gerendert - sonst gibts das letzte Zellen-Bild zurueck (Cache).
+      // Vorher: 4 Felder pro Frame bei dauerhaft 6-15 FPS gerendert =>
+      // Einzelframes >1 s auf der Windows-Konsole => FM-EVT-Pipe-Puffer
+      // wuchs und Slots froren visuell in STARTING (Event-Loop-Starvation).
       const animated = ANIMATED.has(slot.state) && now - slot.lastActivityAt < ACTIVITY_STALE_MS;
-      step(f, Math.min(250, Math.max(0, dt)), { active: animated });
+      const needsRender = animated || f.cells === null || f.cols !== f.cellCols || f.rows !== f.cellRows;
+      if (needsRender) {
+        step(f, Math.min(250, Math.max(0, dt)), { active: animated });
+        f.cells = renderField(f);
+        f.cellCols = f.cols;
+        f.cellRows = f.rows;
+      }
     }
 
     const activeNow =
       !idleNow && ANIMATED.has(focused.state) && now - focused.lastActivityAt < ACTIVITY_STALE_MS;
 
     const bootStage = boot.stage(state, now);
-    const startupIntro = bootStage.mode !== "live";
+    // Vollbild-Label nur beim Start: Sobald ein Job da ist, gelten die
+    // SLOT-Labels (STARTING etc.) - nie wieder das Boot-Intro (E2E-Befund
+    // 2026-09-02: Banner + Bootscreen hingen waehrend Jobs in STARTING).
+    const startupIntro = bootStage.mode !== "live" && state.jobsStarted === 0;
+    const bootFailed = startupIntro && state.testResult === "fail";
     snap = {
       state: state.state,
-      stateLabel: startupIntro ? "STARTING" : idleNow ? "WARTE AUF EINGABE" : slotLabel(focused),
-      stateColor: startupIntro ? STATE_COLOR.STARTING : idleNow ? "gray" : STATE_COLOR[focused.state],
+      // F-9 (E2E 2026-09-02): ehrliches Boot-Fehler-Label statt "STARTING".
+      // Selftest-Fail (echter Fehler) => INIT-FEHLER in rot; KEY-Fehler ist
+      // bewusst KEIN Fail (F-13: API-Key ist kein kritischer Schritt).
+      stateLabel: bootFailed ? "INIT-FEHLER"
+        : startupIntro ? "STARTING"
+        : idleNow ? "WARTE AUF EINGABE" : slotLabel(focused),
+      stateColor: bootFailed ? "red"
+        : startupIntro ? STATE_COLOR.STARTING
+        : idleNow ? "gray" : STATE_COLOR[focused.state],
+      intro: startupIntro,
       active: activeNow,
       jobId: state.jobId,
       scopeId: state.scopeId,
@@ -198,7 +224,7 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
         filesList: s.filesList,
         model: s.model,
         output: s.output.toArray().slice(-40), // lesbarer Verlauf (Multi-Window-Sichtbarkeit, E2E 2026-09-02)
-        particles: renderField(fields[s.idx]),
+        particles: fields[s.idx].cells ?? renderField(fields[s.idx]),
       })),
       boot: bootStage,
       // Progression-Statistik (User-Anker, stats-Event des Workers) –
@@ -214,7 +240,7 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
       dims: { cols: dims.cols, rows: dims.rows },
       now,
       dt,
-      particles: { cells: renderField(fields[focused.idx]) },
+      particles: { cells: fields[focused.idx].cells ?? renderField(fields[focused.idx]) },
       findings: findings.countersView(focused, now),
       phases: progress.phasesView(focused),
       activePhase: progress.activePhase(focused),
@@ -318,10 +344,15 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
     idleFps: 1,
     onFrame: (f) => {
       const s = buildSnap(f);
-      // FPS-Regime: 15 FPS bei Arbeit, 6 FPS Warte-Screen (sanfte Animation),
-      // 1 FPS nur bei komplett statischen Momenten.
-      sched.setRates({ activeFps: s.globalIdle ? 6 : 15 });
-      sched.setActive(true);
+      // F-9 (E2E 2026-09-02): FPS-Regime an ECHTE Aktivitaet koppeln -
+      // vorher lief der Scheduler dauerhaft mit 6-15 FPS (setActive(true)
+      // unbedingt), auch wenn seit Minuten kein Event kam => Event-Loop-
+      // Starvation, FM-EVT-Marker lagen im Pipe-Puffer, Slots froren in
+      // STARTING. Jetzt: 15 FPS nur bei frischer Aktivitaet (oder Intro-),
+      // sonst 1 FPS Idle (scheduler-Idle-Regime). Events triggern
+      // requestNow() -> sofortiger Frame bleibt erhalten (Anzeige reagiert
+      // trotzdem live, ohne Dauer-Render-Last).
+      sched.setActive(s.active || s.intro);
       const interval = s.now - lastFrameAt;
       lastFrameAt = s.now;
       metrics.noteFrame(interval);
