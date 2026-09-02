@@ -223,6 +223,13 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
 - Der Dock-Start zeigt einen echten „Falsify lädt"-Boot (F A L S I F Y _ M E)
   mit Selftest-Fortschritt; die echten Selftest-Schritte landen zusätzlich in
   `FALSIFY_HOME/logs/selftest.log` (kein Mock, kein Demo-Screen).
+- OOM-B10-Gelände (UI-113): TUI-State-Ringe (80/200) sind NICHT die Leak-
+  Quelle — Plain- und TTY-Soak beides heap-flach (−2 bis −3 MB/min). Die
+  Quelle war der Parser-Teilzeilenpuffer (Streams ohne \n wachsen ungebunden,
+  7,8 MB Input → 133 MB Heap). Lektion: bei Heap-Wachstumsverdacht erst
+  Wegwerf-Soak mit heapUsed-Sampling (`node --expose-gc`, Trend MB/min)
+  statt Code-Lesen — der TTY-Zweig von createTui wird headless via
+  `process.stdout.isTTY = true` + columns/rows erzwingbar.
 - OCR für Screenshots (2026-09-01, Screenshot-Verifikation): `python ocr.py
   <png>…` im Repo-Root (pytesseract+PIL; Tesseract unter `C:\Program Files\
   Tesseract-OCR` mit NUR eng-Paket — UI-Text/ASCII/Zahlen liest es zuverlässig,

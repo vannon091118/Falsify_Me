@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createParser, stripAnsi, MARKER } from "./parser.mjs";
+import { createParser, stripAnsi, MARKER, MAX_PARTIAL, MAX_LINE } from "./parser.mjs";
 
 test("parser: Marker-Zeilen -> Events, Rest -> Roh-Zeilen", () => {
   const events = [];
@@ -50,4 +50,36 @@ test("parser: Marker mitten in Zeile wird erkannt", () => {
   const p = createParser({ onEvent: (e) => events.push(e) });
   p.feed(`\x1b[36m${MARKER} {"t":"finding","severity":"warning"}\x1b[0m\n`);
   assert.deepEqual(events, [{ t: "finding", severity: "warning" }]);
+});
+
+test("OOM-B10: Teilzeilen-Puffer ist byte-begrenzt (Stream ohne \\n wächst unendlich)", () => {
+  // Ein LLM-Reasoning-Stream kann Minutenlang Fliesstext OHNE Newline
+  // liefern — vorher wuchs `partial` ungebunden (empirisch: 7,8 MB Input
+  // -> 133 MB Heap). Mit der Kappe bleibt der Puffer auf MAX_PARTIAL/2
+  // gedeckelt und das Ende (die livedaten) bleibt erhalten.
+  const lines = [];
+  const p = createParser({ onLine: (l) => lines.push(l) });
+  const chunk = "x".repeat(4096);
+  for (let i = 0; i < 2000; i++) p.feed(chunk); // ~7,8 MB ohne ein einziges \n
+  p.flush();
+  // Flush verarbeitet den Rest als EINE Zeile, aber auf MAX_LINE gekürzt.
+  assert.equal(lines.length, 1);
+  assert.ok(lines[0].length <= MAX_LINE, `Zeile auf ${MAX_LINE} gekürzt, war aber ${lines[0].length}`);
+});
+
+test("OOM-B10: Anzeige-Zeilen über MAX_LINE werden gekürzt, Events bleiben intakt", () => {
+  const lines = [];
+  const events = [];
+  const p = createParser({ onEvent: (e) => events.push(e), onLine: (l) => lines.push(l) });
+  // Riesige Roh-Zeile (kein Marker) -> onLine gekürzt.
+  p.feed("y".repeat(MAX_LINE + 50_000) + "\n");
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].length, MAX_LINE, "Anzeige-Zeile auf MAX_LINE gekürzt");
+  // Grosses, aber LEGITIMES Event-Payload (> MAX_LINE) bleibt intakt —
+  // die Kappe greift nur auf dem onLine-Pfad, nie auf dem Event-Pfad.
+  const bigPayload = JSON.stringify({ t: "files", n: 3, list: ["a".repeat(20_000), "b", "c"] });
+  p.feed(`${MARKER} ${bigPayload}\n`);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].t, "files");
+  assert.equal(events[0].list[0].length, 20_000, "Event-Payload unverändert");
 });

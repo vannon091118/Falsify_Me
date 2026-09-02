@@ -1463,3 +1463,10 @@ STATUS: DONE
 DEPENDS_ON: UI-111 (twinEvidenceOk), UI-104 (Twin-Gate)
 VERIFY: node --test tests/twin.test.mjs (Parroting geblockt, eigene Falsifikation freigegeben, Fantasie-Zeile geblockt, 0 Runden geblockt); volle Kern-Suite gruen.
 RESULT: core/verdict.mjs twinOwnFalsificationOk (Tool-Runden UND eigene verifizierte Datei:Zeile via resolveRel/hasVerifiableFileLine; WIDERSPRUCH/UNKLAR nicht pruefpflichtig, Fehler fail-closed); cli/run.mjs Gate-Kette erweitert (twinEvidenceOk UND twinOwnFalsificationOk) mit ehrlicher Warnung; system-eviltwin-de/en.md Pflicht 4 auf eigene Gegenprobe + Eigenzitat geschaerft. 100/100 Core gruen.
+
+ID: UI-113
+TASK: OOM-B10 root-causen (Dock-Worker crasht nach ~30 min mit V8 "JavaScript heap out of memory"): State-Ringe empirisch entlastet (Plain- + TTY-Soak beide heap-flach), Ursache in der Worker-Event-Pipeline gefunden — Parser-Teilzeilenpuffer waechst UNBEgrenzt bei Streams ohne Newline (LLM-Reasoning-Fliesstext), Output-Ring ist nur zaehl-, nicht byte-begrenzt.
+STATUS: DONE
+DEPENDS_ON: UI-108 (Output-Ring), Phase-2-Parser (tui/parser.mjs)
+VERIFY: node --test ui/tui/parser.test.mjs (2 neue OOM-B10-Regressionstests); Soak vor/nach: 7,8 MB ohne \n gefuettert -> Peak-Heap 141 MB -> 51 MB nach Fix; volle UI-Suite 116/116 + Kern-Suite gruen.
+RESULT: parser.mjs MAX_PARTIAL=1MB (Teilzeilenpuffer: Anfang verworfen, Ende bleibt — FM-EVT:-Marker stehen am Zeilenanfang echter Konsolenzeilen, eine >1-MB-Zeile ist Garbage) + MAX_LINE=8KB auf dem onLine-Pfad (Ring ist zaehlbegrenzt — eine Megabyte-Zeile reteniert 200x; Events werden auf der vollen Zeile geparst, grosse legitime Payloads bleiben intakt, per Test bewiesen).
