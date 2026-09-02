@@ -404,6 +404,14 @@ test("Loop-Anker: parseScopeDivergence + Persistenz-Semantik (UI-107)", async ()
 
     // Downgrade-Bedingung (die run.mjs-Integration koppelt exakt daran).
     assert.equal((parseVerdict(div) === "WRITE" && parseScopeDivergence(div).divergence ? "PLAN" : "WRITE"), "PLAN", "WRITE + Divergenz => PLAN");
+    // Sichtbarkeit (UI-107-Prüfung 2026-09-01): die offene Divergenz ist im
+    // Artefakt sichtbar — der Punkt, an dem Coder- und Thinker-Vorschläge
+    // auseinanderliegen, muss vor dem nächsten Submit auflösbar bleiben.
+    const { artifactView } = await mod("artifacts/scopes.mjs");
+    updateScopeAfterReview(db, sid, "PLAN", "Befund3", null, "Zieldatei laut Intent ist lib/x.js, Umsetzung zielt auf src/y.js");
+    const view = artifactView(getScope(db, sid), []);
+    assert.ok(view.includes("Offene Scope-Divergenz"), "artifactView zeigt den offenen Loop-Anker");
+    assert.ok(view.includes("Zieldatei laut Intent"), "Divergenz-Text wird wörtlich gezeigt");
   } finally {
     try { requireDb().closeDb(); } catch { /* Windows-Statement-Timing */ }
     home.cleanup();

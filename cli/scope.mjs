@@ -45,6 +45,10 @@ function scopeShow(rest) {
   if (scope.sub_prompt) console.log(`Sub-Prompt (Modell-Update, Fallback gegen Drift):\n${scope.sub_prompt}`);
   // UI-094: offene Whitelist-Nachforderung sichtbar (was beim naechsten Submit automatisch ergaenzt wird).
   if (scope.research_additions) console.log(`Whitelist-Nachforderung (RESEARCH, beim naechsten Submit automatisch ergaenzt): ${scope.research_additions}`);
+  // Loop-Anker (UI-107): offene Scope-Divergenz sichtbar (der Punkt, an dem
+  // Coder- und Thinker-Vorschlaege auseinanderliegen — vor dem naechsten
+  // Submit durch Scope-Praezisierung aufzuloesen).
+  if (scope.last_divergence) console.log(`Offene Scope-Divergenz (Loop-Anker, Thinker vs. Coder-Intent — vor dem naechsten Submit praezisieren): ${scope.last_divergence}`);
   console.log(`Angelegt: ${scope.created_at}`);
   if (scope.done_at) console.log(`Abgeschlossen: ${scope.done_at}`);
   const findings = getFindings(db, scope.id);

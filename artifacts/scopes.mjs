@@ -131,6 +131,12 @@ export function artifactView(scope, findings) {
   if (scope.research_additions) {
     lines.push(`- Whitelist-Nachforderung (RESEARCH, beim nächsten Submit automatisch ergänzt): ${scope.research_additions}`);
   }
+  // Loop-Anker (UI-107): eine offene SCOPE-DIVERGENZ ist der Punkt, an dem
+  // Coder- und Thinker-Vorschläge auseinanderliegen — sie muss im Artefakt
+  // sichtbar sein (der Submit muss sie durch Scope-Präzisierung auflösen).
+  if (scope.last_divergence) {
+    lines.push(`- Offene Scope-Divergenz (Loop-Anker, Thinker vs. Coder-Intent — vor dem nächsten Submit präzisieren): ${scope.last_divergence}`);
+  }
   if (findings?.length) {
     lines.push(`- Alle Befunde (${findings.length}):`);
     for (const f of findings) {

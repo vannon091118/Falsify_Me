@@ -219,6 +219,15 @@ if (submitMode) {
   if (skippedAdditions > 0) {
     console.log(dim(`${skippedAdditions} nachgeforderte Datei(en) existieren nicht unter ${root} und wurden übersprungen.`));
   }
+  // Loop-Anker (UI-107, Divisionspflicht): Der Thinker kann nur dann
+  // SCOPE-KONFORM/SCOPE-DIVERGENZ deklarieren, wenn er den Coder-Intent
+  // kennt — ohne --agent-intent fehlt die eine Seite der Division und ein
+  // offener Anker kann nie aufgelöst werden. Deshalb: ehrliche Warnung
+  // (kein stiller Ausfall), solange ein Anker offen UND kein Intent
+  // mitgegeben wurde.
+  if (scope && scope.last_divergence && !agentIntent) {
+    console.warn(yellow(`⚠ Offener Scope-Divergenz-Anker ohne --agent-intent: der Thinker kann die Divergenz nicht gegen den Coder-Vorschlag dividieren („SCOPE-KONFORM“ wird unerreichbar). Intent der nächsten Iteration mitgeben: --agent-intent "…"\n  Offene Divergenz: ${String(scope.last_divergence).slice(0, 120)}`));
+  }
   if (!filesList.length) {
     console.error(red('FEHLER: --files ist Pflicht beim Einreichen (kommagetrennte Dateiliste relativ zu --root), z. B.: --files "app.js,lib/auth.js"'));
     closeDb();
