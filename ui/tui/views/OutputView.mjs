@@ -8,10 +8,22 @@ import { truncate } from "../wcwidth.mjs";
 
 const h = React.createElement;
 
-export default function OutputView({ snap, cols, rows }) {
+export default function OutputView({ snap, cols, rows, withStatusHeader = false }) {
   const inner = cols - 2;
   const lines = snap.output ?? [];
-  const header = ` THINKING-TEXT (${lines.length} Zeilen) · Taste t = Status `;
+  // Kompakt-Status (mitStatusHeader): WER denkt (Thinker/Twin + Modell) und
+  // die Aktivitaet bleiben sichtbar, waehrend der Reasoning-Verlauf laeuft.
+  const statusLines = [];
+  if (withStatusHeader) {
+    const m = snap.model;
+    if (m) {
+      const whoLabel = m.who === "twin" ? "EVIL TWIN (Gegenpruefung)" : "THINKER (Erstpruefung)";
+      const modelId = m.who === "twin" ? (m.twin ?? "-") : (m.thinker ?? "-");
+      statusLines.push({ text: ` ${whoLabel} · ${modelId}`, color: m.who === "twin" ? "red" : "blue", bold: true });
+    }
+    if (snap.activity?.label) statusLines.push({ text: ` ${snap.activity.label}`, color: "cyan" });
+  }
+  const header = ` THINKING-VERLAUF (${lines.length} Zeilen) · Taste t = Status `;
   const body = [];
   if (lines.length === 0) {
     body.push(h(Text, { key: "none", color: "gray" }, "  – noch kein Output –"));
@@ -25,6 +37,7 @@ export default function OutputView({ snap, cols, rows }) {
     });
   }
   const out = [h(Text, { key: "h", bold: true, color: "cyan" }, header)];
+  for (const s of statusLines) out.push(h(Text, { key: `s${out.length}`, color: s.color, bold: s.bold }, s.text.slice(0, Math.max(0, inner))));
   for (const el of body) out.push(el);
   while (out.length < rows) out.push(h(Text, { key: `f${out.length}`, color: "gray" }, ""));
   const rowsEl = [];

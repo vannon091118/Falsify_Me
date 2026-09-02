@@ -433,6 +433,9 @@ async function main() {
   console.log("");
 
   const systemPrompt = lang === "en" ? SYSTEM_EN : SYSTEM_DE;
+  // UI-Traceability (E2E-Befund): die UI muss SEHEN, wer denkt und mit welchem
+  // Modell - sonst ist die Gegenpruefung von der Erstpruefung nicht unterscheidbar.
+  uiEvt({ t: "model", thinker: model, twin: CFG.twinModel, who: "thinker" });
   const findings = scope ? getFindings(db, scope.id) : [];
   const userContent = buildUserContent({
     header: scope ? scope.header : null,
@@ -560,6 +563,7 @@ async function main() {
   let twin = null;
   if (verdict === "WRITE") {
     uiEvt({ t: "state", s: "VERIFYING" });
+    uiEvt({ t: "model", who: "twin" }); // Rollenwechsel sichtbar: jetzt prueft der Twin
     enforceRateLimit(maxRpm, false); // zweiter Call: Budget teilen, nie wegen Budget failen
     console.log(dim("Gegenprüfung (Evil Twin – unabhängige Konversation) läuft …"));
     // Twin-Diversität (Pkt 3/10): eigenes Modell/eigene API-Base/ eigener Key
@@ -618,6 +622,7 @@ async function main() {
 
   // Finding-Severity echt (UI-065-Befund 3): info/warning/critical je Verdict,
   // nicht hartkodiert. progress wird NIE erfunden.
+  uiEvt({ t: "model", who: "thinker" }); // nach der Gegenpruefung zurueck zum Erstpruefer-Kontext
   uiEvt({ t: "state", s: "FINDINGS" });
   if (befund) uiEvt({ t: "finding", severity: findingSeverity(verdict) });
   uiEvt({ t: "phase_done", phase: phaseLabel });

@@ -15,7 +15,7 @@ export const SOFT_CAP_MS = 2500;
 
 export const EVENT_TYPES = Object.freeze([
   "boot", "job", "state", "activity", "finding", "phase", "phase_done",
-  "verdict", "output", "files", "done", "focus", "selftest", "stats",
+  "verdict", "output", "files", "done", "focus", "selftest", "stats", "model",
 ]);
 
 const slotOf = (state, evt) => {
@@ -37,6 +37,7 @@ export const refreshGlobal = (state, now = Date.now()) => {
   state.findings = target.findings;
   state.phases = target.phases;
   state.activity = target.activity;
+  state.model = target.model;
   state.files = target.files;
   state.events = target.events;
   state.output = target.output;
@@ -81,6 +82,7 @@ export const apply = (state, evt, now = Date.now()) => {
       progress.reset(target);
       target.verdict = null;
       target.activity = null;
+      target.model = null;
       target.files = 0;
       target.state = "STARTING";
       target.bootAt = now;
@@ -137,6 +139,25 @@ export const apply = (state, evt, now = Date.now()) => {
       const ok = setState(slot, evt.s, now);
       refreshGlobal(state, now);
       return ok;
+    }
+    case "model": {
+      // UI-Traceability (E2E-Befund 2026-09-02): WER denkt (Thinker vs.
+      // Evil Twin) und MIT WELCHEM MODELL - ohne das ist die Gegenpruefung
+      // von der Erstpruefung nicht unterscheidbar. Teil-Updates erlaubt
+      // (z.B. nur who-Wechsel); ein who ohne passendes Modell ist ungueltig
+      // (kein Fake-State).
+      const slot = slotOf(state, evt);
+      const prev = slot.model ?? { thinker: null, twin: null, who: null };
+      const thinker = typeof evt.thinker === "string" && evt.thinker.trim() ? evt.thinker.trim().slice(0, 80) : prev.thinker;
+      const twin = typeof evt.twin === "string" && evt.twin.trim() ? evt.twin.trim().slice(0, 80) : prev.twin;
+      const who = evt.who === "thinker" || evt.who === "twin" ? evt.who : prev.who;
+      if (who === "twin" && !twin) return false;
+      if (who === "thinker" && !thinker) return false;
+      if (!who || (!thinker && !twin)) return false;
+      slot.model = { thinker, twin, who };
+      slot.events.push({ t: "model", thinker, twin, who, ts: now });
+      refreshGlobal(state, now);
+      return true;
     }
     case "activity": {
       const slot = slotOf(state, evt);

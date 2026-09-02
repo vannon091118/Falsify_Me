@@ -51,8 +51,6 @@ export default function App({ getSnapshot, subscribe, emit }) {
   let main;
   if (snap.globalIdle) {
     main = h(IdleView, { snap, cols, rows: mainH });
-  } else if (busyCount > 1) {
-    main = h(SlotsView, { snap, cols, rows: mainH });
   } else if (snap.state === "VERDICT" && snap.verdict) {
     main = h(VerdictView, { snap, cols, rows: mainH });
   } else if (snap.boot && snap.boot.mode !== "live") {
@@ -62,10 +60,19 @@ export default function App({ getSnapshot, subscribe, emit }) {
     // Rot/Schwarz-Kontrast-Bildschirm und zeigt den Roh-Text des Gegenpruefers
     // (unabhaengig vom t-Toggle - die Phase selbst ist das Signal).
     main = h(EvilTwinView, { snap, cols, rows: mainH });
+  } else if (snap.state === "THINKING" || snap.state === "TOOL_ACTIVITY") {
+    // UI-Traceability (Live-Befund 2026-09-02): Solange ein Slot wirklich
+    // DENKT (Reasoning laeuft), ist der lesbare Verlauf die Hauptsache —
+    // NICHT die Partikel-Animation. Das gilt auch, wenn parallel ein zweiter
+    // Slot in STARTING steht (vorher gewann SlotsView und verdeckte den Text
+    // komplett). Kopf zeigt THINKER/EVIL TWIN + Modell + Aktivitaet.
+    main = h(OutputView, { snap, cols, rows: mainH, withStatusHeader: true });
+  } else if (busyCount > 1) {
+    // Mehrere Slots parallel, aber keiner denkt gerade: die Übersicht (mehrere
+    // Fenster-Kacheln) statt Verlauf. Der Fokus-Slot bleibt über [1..3] wählbar.
+    main = h(SlotsView, { snap, cols, rows: mainH });
   } else if (snap.mode === "thinking") {
-    // t-Toggle (2026-09-01): „thinking“ = LLM-Rohtext SICHTBAR (statt
-    // Partikel-Animation, die nichts erklaert); „reasoning“ = strukturierter
-    // Status + Fortschrittsindikator (ReasoningView).
+    // t-Toggle (2026-09-01): „thinking“ = LLM-Rohtext SICHTBAR.
     main = h(OutputView, { snap, cols, rows: mainH });
   } else {
     main = h(ReasoningView, { snap, cols, rows: mainH });

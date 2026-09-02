@@ -65,6 +65,17 @@ export default function ReasoningView({ snap, cols, rows }) {
     lines.push(h(Text, { key: "scan", color: "cyan" }, `  ${truncate(snap.filesList.join(", "), inner - 2, "…")}`));
   }
 
+  // Modell-/Rollen-Traceability (E2E-Befund 2026-09-02): WER denkt gerade
+  // (Thinker oder Evil Twin) und mit WELCHEM Modell.
+  const m = snap.model;
+  if (m) {
+    const whoLabel = m.who === "twin" ? "EVIL TWIN (Gegenpruefung)" : "THINKER (Erstpruefung)";
+    const modelId = m.who === "twin" ? (m.twin ?? "–") : (m.thinker ?? "–");
+    lines.push(h(Text, { key: "whoH", color: "gray" }, "PRUEFUNG"));
+    lines.push(h(Text, { key: "who", color: m.who === "twin" ? "red" : "blue", bold: true },
+      `  ${whoLabel} · ${truncate(modelId, inner - 30, "…")}`));
+  }
+
   lines.push(h(Text, { key: "actH", color: "gray" }, "AKTIVITÄT"));
   const activity = snap.activity;
   if (activity) {

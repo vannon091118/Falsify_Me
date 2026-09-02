@@ -7,6 +7,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import { fill, padEnd, strWidth, truncate } from "../wcwidth.mjs";
 import { renderCells } from "./ParticlesView.mjs";
+import { slotBodyLines } from "./panelBody.mjs";
 
 const h = React.createElement;
 
@@ -57,6 +58,22 @@ export default function SlotsView({ snap, cols, rows }) {
       h(Text, { color: "gray" }, "│"),
     ));
 
+    // Modell-/Rollen-Traceability: WER denkt (Thinker oder Evil Twin) und
+    // mit WELCHEM Modell — ohne diese Zeile sind Erst- und Gegenpruefung
+    // fuer den Beobachter nicht unterscheidbar (E2E-Befund 2026-09-02).
+    const m = p.model;
+    if (m) {
+      const whoLabel = m.who === "twin" ? "EVIL TWIN" : "THINKER";
+      const modelId = m.who === "twin" ? (m.twin ?? "–") : (m.thinker ?? "–");
+      const whoColor = m.who === "twin" ? "red" : "blue";
+      els.push(h(Box, { key: `m${i}`, width: cols },
+        h(Text, { color: "gray" }, "│"),
+        h(Text, { color: whoColor, bold: m.who === "twin" },
+          truncate(` ${whoLabel} · ${modelId}`, inner, "…")),
+        h(Text, { color: "gray" }, "│"),
+      ));
+    }
+
     // Verdict-Zeile (falls vorhanden) ODER Mini-Partikelfeld
     const interior = pH - 4; // Kopf + 2 Info-Zeilen + Rahmen unten
     if (p.verdict) {
@@ -75,7 +92,14 @@ export default function SlotsView({ snap, cols, rows }) {
         ));
       }
     } else {
-      const cellLines = renderCells(p.particles, cols).slice(0, Math.max(0, interior));
+      // Multi-Window-Sichtbarkeit (E2E-Befund 2026-09-02): Ein Slot im
+      // Denk-Zustand zeigt SEINEN lesbaren Output-Verlauf (statt Partikel),
+      // damit Erst- und Gegenpruefung wirklich ablesbar sind. Partikel nur,
+      // wenn noch kein Output da ist (Start/Idle).
+      const verText = slotBodyLines(p, cols, Math.max(0, interior));
+      const cellLines = verText
+        ? verText.map((t) => ({ text: t, dimOnly: false }))
+        : renderCells(p.particles, cols).slice(0, Math.max(0, interior));
       for (const line of cellLines) {
         els.push(h(Box, { key: `c${i}_${els.length}`, width: cols },
           h(Text, { color: "gray" }, "│"),

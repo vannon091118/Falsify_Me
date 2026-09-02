@@ -3,9 +3,22 @@
 
 export function parseVerdict(content) {
   const lines = String(content || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  // 1) klassische Zeilenform, letzte gewinnt
   for (let i = lines.length - 1; i >= 0; i--) {
-    const match = lines[i].match(/^VERDICT:\s*(PLAN|RESEARCH|WRITE|ASK)\b/i);
+    const match = lines[i].match(/^#{0,3}\s*VERDICT:\s*(PLAN|RESEARCH|WRITE|ASK)\b/i);
     if (match) return match[1].toUpperCase();
+  }
+  // 2) Überschriften-Form „## VERDICT“ mit Wert in der nächsten Zeile
+  //    (Live-E2E 2026-09-02: Modelle schreiben das Urteil als Markdown-
+  //    Überschrift — fail-closed wäre hier fälschlich UNBEKANNT)
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (/^#{1,3}\s*VERDICT\s*$/i.test(lines[i])) {
+      for (let j = i + 1; j < lines.length && j <= i + 3; j++) {
+        const m2 = lines[j].match(/^(PLAN|RESEARCH|WRITE|ASK)\b/i);
+        if (m2) return m2[1].toUpperCase();
+        if (/^#{1,3}\s|^BEFUND:|^SUBPROMPT:/i.test(lines[j])) break;
+      }
+    }
   }
   return null;
 }
@@ -23,6 +36,20 @@ export function parseBefund(content) {
   for (let i = lines.length - 1; i >= 0; i--) {
     const match = lines[i].match(/^BEFUND:\s*(.+)$/i);
     if (match) return match[1].trim();
+  }
+  // Fallback: „## Befund“-Überschrift + erster Absatz (Live-E2E 2026-09-02:
+  // Modelle schreiben den Befund als Markdown-Absatz ohne BEFUND:-Zeile)
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (/^#{1,3}\s*Befund\s*$/i.test(lines[i])) {
+      const para = [];
+      for (let j = i + 1; j < lines.length; j++) {
+        if (/^#{1,3}\s|^BEFUND:|^VERDICT:|^SUBPROMPT:/i.test(lines[j])) break;
+        para.push(lines[j]);
+        if (para.join(" ").length > 40) break; // erster sinnvoller Absatz reicht
+      }
+      const text = para.join(" ").trim();
+      if (text) return text;
+    }
   }
   return null;
 }

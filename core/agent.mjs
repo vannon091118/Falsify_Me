@@ -8,11 +8,29 @@ import { makeTools } from "./tools.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Live-Dock-Befund 2026-09-02: LLM-Reasoning kommt als Fliesstext OHNE
+// Newlines; der UI-Parser kappt solche Riesen-Zeilen (OOM-Schutz) — der
+// Beobachter sah keinen lesbaren Verlauf. Der Stream-Writer bricht daher
+// an Wortgrenzen in UI-lesbare Zeilen um.
+export function wrapStreamLines(text, width = 110) {
+  const out = [];
+  for (const para of String(text || "").split("\n")) {
+    if (!para) { out.push(""); continue; }
+    let line = "";
+    for (const word of para.split(/\s+/).filter(Boolean)) {
+      if (line && line.length + 1 + word.length > width) { out.push(line); line = word; }
+      else line = line ? line + " " + word : word;
+    }
+    if (line) out.push(line);
+  }
+  return out;
+}
+
 // ── Flüssige Ausgabe: kleine Stream-Chunks in ~40-ms-Frames bündeln ─────────
 let streamBuf = "";
 let streamTimer = null;
 function streamWrite(s) {
-  streamBuf += s;
+  for (const line of wrapStreamLines(s, 110)) streamBuf += line + "\n";
   if (!streamTimer) streamTimer = setInterval(() => {
     if (streamBuf) { try { process.stdout.write(streamBuf); } catch { /* egal */ } streamBuf = ""; }
   }, 40);

@@ -94,6 +94,7 @@ const makeSlot = (idx) => ({
   findings: freshFindings(),
   phases: createPhases(),
   activity: null, // { label, tool, file } | null
+  model: null,    // { thinker, twin, who: "thinker"|"twin" } | null (UI-Traceability)
   files: 0,
   filesList: [], // echte Scan-Dateien (files-Event mit list)
   events: createRing(80),  // strukturierte Aktivitaets-Events des Slots
@@ -130,6 +131,7 @@ export const createUiState = () => {
     findings: slots[0].findings,
     phases: slots[0].phases,
     activity: null,
+    model: null,
     files: 0,
     filesList: [],
     events: slots[0].events,

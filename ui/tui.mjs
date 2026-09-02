@@ -178,6 +178,7 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
         scopeId: s.scopeId,
         verdict: verdict.view(s, now),
         files: s.files,
+        model: s.model,
       })),
       slotPanels: busy.map((s) => ({
         idx: s.idx,
@@ -194,8 +195,9 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
         activePhase: progress.activePhase(s),
         files: s.files,
         activity: s.activity,
-        files: s.files,
         filesList: s.filesList,
+        model: s.model,
+        output: s.output.toArray().slice(-40), // lesbarer Verlauf (Multi-Window-Sichtbarkeit, E2E 2026-09-02)
         particles: renderField(fields[s.idx]),
       })),
       boot: bootStage,
@@ -217,6 +219,7 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
       phases: progress.phasesView(focused),
       activePhase: progress.activePhase(focused),
       activity: focused.activity,
+      model: focused.model,
       lastEvents: focused.events.toArray().slice(-10),
       // Roh-Output des LLM/der Pipeline (Ring, begrenzt) — fuer den
       // t-Toggle „Thinking sichtbar machen“ (OutputView).
