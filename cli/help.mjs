@@ -11,6 +11,7 @@ Verwendung:
   falsify history [--last n]              letzte Befunde aus der DB
   falsify scope new "<user-input>"        Scope anlegen (HEADER = User-Input 1:1)
   falsify scope show <id> [--full]        Scope-Artefakt (Header, Phase, letzter Befund, alle Befunde)
+  falsify scope trace <id>                GAP-Loop je Runde: Welle/Verdict/Intent/Befund + Loop-Ausgang
   falsify scope list [--all]              aktive (oder alle) Scopes
   falsify run [--submit|--falsiflow] …   EINHEITLICHER Einstieg (Generalisierung
                                         2026-09-01): Direkt-Run, Job-Einreichung

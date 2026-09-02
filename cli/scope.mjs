@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { openDb, closeDb } from "../artifacts/db.mjs";
 import { createScope, getScope, listScopes, getFindings } from "../artifacts/scopes.mjs";
+import { listJobs } from "../artifacts/jobs.mjs";
 import { fail, truncate } from "./util.mjs";
 
 export function runScope(args) {
@@ -13,7 +14,8 @@ export function runScope(args) {
   if (sub === "new") return scopeNew(args.slice(1));
   if (sub === "show") return scopeShow(args.slice(1));
   if (sub === "list") return scopeList(args.slice(1));
-  fail("Verwendung: falsify scope new|show|list …");
+  if (sub === "trace") return scopeTrace(args.slice(1));
+  fail("Verwendung: falsify scope new|show|list|trace …");
 }
 
 // ── scope new "<user-input>" ────────────────────────────────────────────────
@@ -60,6 +62,56 @@ function scopeShow(rest) {
     console.log(`\n[Runde ${f.round} · Modus ${f.mode || "?"} · Verdict ${f.verdict || "?"} · ${f.created_at}]`);
     if (f.befund) console.log(`BEFUND: ${f.befund}`);
     if (full && f.content) console.log(f.content);
+  }
+  closeDb();
+}
+
+// ── scope trace <id> ────────────────────────────────────────────────────────
+// Der GAP-Loop auf einen Blick: je Runde die Einreichung (Welle, Intent), der
+// finale Verdict, die Findings und das Loop-Ergebnis. Rein abgeleitet aus der
+// Queue (Regel 3: eine Wahrheit) – read-only, keine zweite Persistenz.
+function scopeTrace(rest) {
+  const id = rest[0];
+  if (!id) fail("Verwendung: falsify scope trace <scope-id>");
+  const db = openDb();
+  const scope = getScope(db, id);
+  if (!scope) fail(`Scope nicht gefunden: ${id}`);
+  const jobs = listJobs(db).filter((j) => j.scope_id === id).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const findings = getFindings(db, id);
+  const byJob = new Map(findings.map((f) => [f.job_id, f]));
+
+  console.log(`LOOP-TRACE ${id}`);
+  console.log(`HEADER: ${truncate(scope.header, 90)}`);
+  console.log(`Status: ${scope.status} · Phase: ${scope.phase} · Jobs: ${jobs.length} · Findings: ${findings.length} · Offene Konflikte: ${scope.open_conflicts}`);
+  if (scope.last_divergence) console.log(`Offene Divergenz (Loop-Anker): ${truncate(scope.last_divergence, 100)}`);
+  console.log("");
+
+  if (!jobs.length) {
+    console.log("(keine Jobs – der Loop hat noch nicht begonnen)");
+    closeDb();
+    return;
+  }
+
+  const finished = jobs.filter((j) => /^(DONE|ERROR)/.test(j.status)).length;
+  for (const j of jobs) {
+    const dur = j.started_at && j.done_at
+      ? ` · ${Math.max(0, Math.round((new Date(j.done_at) - new Date(j.started_at)) / 1000))}s`
+      : "";
+    const f = byJob.get(j.id);
+    console.log(`[${j.created_at}] ${j.id} · Welle ${j.wave || "?"} · ${j.status}${j.verdict ? ` (${j.verdict})` : ""}${dur}`);
+    if (j.agent_intent) console.log(`  Intent: ${truncate(j.agent_intent, 120)}`);
+    if (f?.befund) console.log(`  Befund: ${truncate(f.befund, 160)}`);
+    if (j.error) console.log(`  Fehler: ${truncate(j.error, 160)}`);
+  }
+
+  // Loop-Ausgang: was der Verdict-Verlauf über den Gap sagt.
+  console.log("");
+  if (scope.status === "hardened" || scope.status === "done") {
+    console.log(`Loop-Ausgang: GESCHLOSSEN — ${scope.hardened_at ? `gehaertet ${scope.hardened_at}` : "abgeschlossen"} (WRITE nach bestandener Falsifikation).`);
+  } else if (scope.last_divergence) {
+    console.log("Loop-Ausgang: OFFEN — Divergenz-Anker gesetzt; naechster Submit muss --agent-intent tragen und den Scope praezisieren.");
+  } else {
+    console.log(`Loop-Ausgang: OFFEN — Phase ${scope.phase}, ${finished}/${jobs.length} Jobs abgeschlossen; naechste Iteration einreichen (falsify run --submit).`);
   }
   closeDb();
 }

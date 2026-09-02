@@ -6,6 +6,9 @@
 // (widerlegte Annahmen = findings PLAN/RESEARCH), und die Aggregation ist
 // READ-ONLY (kein Schreiben, kein zweites Speichersystem - Regel 3).
 // ─────────────────────────────────────────────────────────────────────────────
+// Loop-Trace (UI-116): `falsify scope trace <id>` leitet den GAP-Loop je Runde
+// aus der Queue ab (Jobs+Welle+Verdict+Intent+Befund+Loop-Ausgang) — read-only,
+// keine zweite Persistenz.
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -130,7 +133,7 @@ test("falsify state: PROGRESSION-Zeile + ANCHOR-Satz im --state-Output (UI-115)"
     addFinding(db, { scopeId: s1.id, jobId: ids[0], round: 1, mode: "plan", befund: "b", content: "c", verdict: "PLAN" });
     addFinding(db, { scopeId: s1.id, jobId: ids[1], round: 1, mode: "research", befund: "b", content: "c", verdict: "RESEARCH" });
     addFinding(db, { scopeId: s2.id, jobId: ids[2], round: 1, mode: "plan", befund: "b", content: "c", verdict: "PLAN" });
-    // Kein Worker registriert -> --state sagt IDLE, zeigt aber den Anker.
+    // Loop-Trace: createJob gibt { id, header } zurueck — erster Job pro Scope.
     closeDb();
 
     const { spawnSync } = await import("node:child_process");
@@ -198,6 +201,55 @@ test("collectStats: leere DB -> Anker sagt 0, kein Crash", async () => {
     assert.match(progressionStatement(empty), /0 Fehler/);
     assert.match(progressionStatement(empty), /0 Jobs/);
     closeDb();
+  } finally {
+    const { closeDb } = await mod("artifacts/db.mjs");
+    try { closeDb(); } catch { /* egal */ }
+    h.cleanup();
+  }
+});
+
+test("falsify scope trace: GAP-Loop je Runde aus der Queue abgeleitet (UI-116, read-only)", async () => {
+  // Integrationstest ueber die echte CLI-Oberflaeche (cli/main.mjs scope trace)
+  // mit isoliertem FALSIFY_HOME + Seed-Daten: 2 Runden (RESEARCH -> PLAN),
+  // inkl. Intent, Befund, Wellen-Dimension und offenem Loop-Ausgang.
+  const h = withTempHome();
+  try {
+    const { openDb, closeDb } = await mod("artifacts/db.mjs");
+    const { createScope, addFinding, updateScopeAfterReview } = await mod("artifacts/scopes.mjs");
+    const { createJob, jobDone } = await mod("artifacts/jobs.mjs");
+    const db = openDb();
+    const s = createScope(db, "Task mit Loop-Verlauf");
+    const j1 = createJob(db, { scopeId: s.id, payload: "p", wave: "scan", mode: "plan", agentIntent: "Erste Annahme: nur Header lesen" });
+    const j2 = createJob(db, { scopeId: s.id, payload: "p", wave: "plan", mode: "plan", agentIntent: "Zweite Annahme: Evidenz pruefen" });
+    const ids = db.prepare("SELECT id FROM jobs ORDER BY created_at").all().map((r) => r.id);
+    jobDone(db, ids[0], "RESEARCH", null);
+    jobDone(db, ids[1], "PLAN", null);
+    addFinding(db, { scopeId: s.id, jobId: ids[0], round: 1, wave: "scan", mode: "plan", befund: "Runde 1: Recherche noetig", content: "c", verdict: "RESEARCH" });
+    addFinding(db, { scopeId: s.id, jobId: ids[1], round: 2, wave: "plan", mode: "plan", befund: "Runde 2: Gate-Format lueckig", content: "c", verdict: "PLAN" });
+    updateScopeAfterReview(db, s.id, "PLAN", "Runde 2: Gate-Format lueckig", null, null, null);
+    closeDb();
+
+    const { spawnSync } = await import("node:child_process");
+    const r = spawnSync(process.execPath, [path.join(ROOT, "cli", "main.mjs"), "scope", "trace", s.id], {
+      encoding: "utf8",
+      timeout: 30000,
+      env: { ...process.env, FALSIFY_HOME: h.tmp },
+    });
+    assert.equal(r.status, 0, `scope trace exit 0 (stderr: ${r.stderr})`);
+    const out = String(r.stdout);
+    assert.match(out, /^LOOP-TRACE /m, "Trace-Kopf");
+    assert.match(out, /Jobs: 2 · Findings: 2/, "Zaehler aus der Queue");
+    assert.match(out, /Welle scan · DONE RESEARCH/, "Runde 1 mit Welle + Verdict");
+    assert.match(out, /Welle plan · DONE PLAN/, "Runde 2 mit Welle + Verdict");
+    assert.match(out, /Intent: Erste Annahme: nur Header lesen/, "Coder-Intent je Runde sichtbar");
+    assert.match(out, /Befund: Runde 2: Gate-Format lueckig/, "Befund je Runde sichtbar");
+    assert.match(out, /Loop-Ausgang: OFFEN/, "ehrlicher Loop-Ausgang bei offenem Scope");
+
+    // Read-only: zweiter Lauf liefert identischen Output (keine Persistenz).
+    const r2 = spawnSync(process.execPath, [path.join(ROOT, "cli", "main.mjs"), "scope", "trace", s.id], {
+      encoding: "utf8", timeout: 30000, env: { ...process.env, FALSIFY_HOME: h.tmp },
+    });
+    assert.equal(String(r2.stdout), out, "trace ist eine reine Ableitung (deterministisch)");
   } finally {
     const { closeDb } = await mod("artifacts/db.mjs");
     try { closeDb(); } catch { /* egal */ }

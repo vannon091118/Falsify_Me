@@ -1484,3 +1484,10 @@ STATUS: DONE
 DEPENDS_ON: UI-110 (collectStats/progressionStatement), UI-090 (Queue)
 VERIFY: node --test tests/stats.test.mjs (Spawn-Integrationstest: IDLE + PROGRESSION jobs=5 tasks=2 errorsCaught=3 releases=2 + ANCHOR-Satz); live gegen echte Queue (12 Jobs, 6 Fehler, 2 Tasks); Kern- + UI-Suite grün.
 RESULT: ui/worker.mjs --state-Pfad: nach IDLE/BUSY-Zeilen PROGRESSION jobs=… tasks=… errorsCaught=… releases=… modelCalls=… (maschinenlesbar) + ANCHOR <progressionStatement> (User-Wortlaut); try/catch (Statistik ist Anzeige, kein kritischer Pfad). Persistenz bleibt EINE Quelle (SQLite-Queue), kein zweites Speichersystem.
+
+ID: UI-116
+TASK: Loop-Trace — `falsify scope trace <id>` leitet den GAP-Loop je Runde aus der Queue ab: Jobs mit Welle/Verdict/Laufzeit, Coder-Intent, Befund, Fehler, offene Konflikte, Divergenz-Anker und ehrlichem Loop-Ausgang (GESCHLOSSEN bei hardened/done, sonst OFFEN mit nächstem Schritt).
+STATUS: DONE
+DEPENDS_ON: UI-090 (Queue/Etage-2-Felder), UI-115 (Ableitungs-Prinzip)
+VERIFY: node --test tests/stats.test.mjs (Spawn-Integrationstest über cli/main.mjs: LOOP-TRACE-Kopf, Zähler, Welle+Verdict je Runde, Intent/Befund sichtbar, Loop-Ausgang OFFEN, zweiter Lauf byte-identisch = reine Ableitung); live gegen echte E2E-Queue (12 Jobs lesbar inkl. Recovery-ERROR und Abort); 103/103 Kernsuite grün.
+RESULT: cli/scope.mjs scopeTrace (read-only, listJobs+getFindings, keine zweite Persistenz — Regel 3); Header/Install-Hilfe nachgezogen. Das Wellen-/Intent-Datenmodell (Etage 2) ist damit erstmals als Loop-Verlauf lesbar statt nur als Einzelscheibe.

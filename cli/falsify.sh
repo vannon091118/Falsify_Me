@@ -21,7 +21,8 @@
 #   falsify wait <job-id>                    STILLER CHECKBACK (jede Sekunde, KEIN Timeout):
 #                                            Ergebnis kommt im Moment der Fertigstellung.
 #   falsify status <job-id> | falsify jobs | falsify stats [--json] | falsify state | falsify check
-#   falsify scope show <id> | falsify scope list
+#   falsify scope show <id> | falsify scope trace <id> | falsify scope list
+#   falsify scope trace <id>                 GAP-Loop je Runde: Welle/Verdict/Intent/Befund + Loop-Ausgang
 #   falsify log <job-id> | falsify answer <job-id> [--file pfad]
 #   falsify history [--last n]
 #   falsify run <Plan-Text...> [Optionen]    direkter API-Lauf (ohne Worker-Fenster)
@@ -95,7 +96,7 @@ case "$cmd" in
     fi
     echo ""
     echo "Fertig. Ab sofort in JEDER neuen Bash (auch Agents):"
-    echo "  falsify scope new ... | submit ... | wait | status | jobs | state | check | history | log | answer | run"
+    echo "  falsify scope new ... | trace ... | submit ... | wait | status | jobs | state | check | history | log | answer | run"
     echo "Aktive Shells:  source ~/.bashrc"
     ;;
   submit)
