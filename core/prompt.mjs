@@ -7,7 +7,7 @@
 // Nur Daten des EIGENEN Scopes – niemals globale Datensätze.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── Prompt-Texte sind DATEN (core/prompt-text/*.md), kein Code ─────────────
+// Prompt-Texte sind DATEN (core/prompt-text/*.md), kein Code ─────────────────
 // Root-Cause-Fix: Template-Literale brachen bei Backticks/${} im Prompt-Text
 // (SyntaxError -> 5 Testfails). Markdown-Dateien koennen prompt.mjs nie
 // brechen - Prompt-Edits sind reine Datei-Aenderungen, kein JS-Edit.
@@ -25,6 +25,10 @@ export const SYSTEM_DE = promptText("system-de");
 export const SYSTEM_EN = promptText("system-en");
 export const SYSTEM_EVILTWIN_DE = promptText("system-eviltwin-de");
 export const SYSTEM_EVILTWIN_EN = promptText("system-eviltwin-en");
+// P0-Cutover (Regel 4): Der Twin ist EXEKUTOR – Probe-Durchführung statt
+// Freitext-Gegenprüfung. Die Executor-Prompts sind DATEN (gleiche Konvention).
+export const SYSTEM_PROBE_EXECUTOR_DE = promptText("system-probe-executor-de");
+export const SYSTEM_PROBE_EXECUTOR_EN = promptText("system-probe-executor-en");
 
 // ── F-8 (E2E 2026-09-02): FESTER Falsifikations-Task (Runtime-Template) ──
 // Der Task liegt als eigene Prompt-Datei (Daten, nicht Code) und wird VERBATIM
@@ -57,8 +61,12 @@ export const SYSTEM_EN_FULL = `${SYSTEM_EN}\n\n${TASK_FALSIFIKATION_EN}`;
  * @param {string[]} [p.feasibilityNotes] read-only Validierungs-Hinweise
  *   (Umsetzbarkeits-Puffer) – gehen als KONTEXT an den Falsifikations-Agent;
  *   sie erteilen selbst KEIN Verdict (Verdict-Hoheit bleibt beim Thinker).
+ * @param {string} [p.requirementList] vorgerenderte Original-Anforderungs-Liste
+ *   (<H1>…</H1> …, aus core/probes.mjs renderRequirementList) – der Coverage-
+ *   Anker des Probe-Sets (P0-Cutover): requirement_ref darf nur diese IDs
+ *   verwenden; jede H_i braucht ≥ 1 Probe, sonst deterministisch PLAN.
  */
-export function buildUserContent({ header, phase, lastBefund, findings = [], subPrompt, planText, diffText, root, whitelist = [], feasibilityNotes = [], agentIntent = null, affected = null, lastDivergence = null }) {
+export function buildUserContent({ header, phase, lastBefund, findings = [], subPrompt, planText, diffText, root, whitelist = [], feasibilityNotes = [], agentIntent = null, affected = null, lastDivergence = null, requirementList = null }) {
   const parts = [];
   if (header) {
     parts.push(`# Anforderung (User-Input 1:1 – HEADER)\n${header}`);
@@ -92,6 +100,13 @@ export function buildUserContent({ header, phase, lastBefund, findings = [], sub
   }
   if (feasibilityNotes.length) {
     parts.push(`## Validierungs-Hinweise (deterministischer Pre-Check, read-only)\n\nDiese Hinweise sind KEIN Verdict – falsifiziere die eingereichte Iteration selbst und pruefe die genannten Punkte gegen die echten Dateien:\n${feasibilityNotes.map((n) => `- ${n}`).join("\n")}`);
+  }
+  if (requirementList) {
+    // P0-Cutover (Regel 1): Coverage-Anker des Probe-Sets. Die IDs sind
+    // deterministisch aus dem Original-Text gesplittet – requirement_ref im
+    // Probe-Set darf NUR diese IDs tragen (keine Paraphrase), und jede H_i
+    // braucht ≥ 1 Probe, sonst wird die Freigabe deterministisch verweigert.
+    parts.push(`## Anforderungs-Liste (Original-IDs – requirement_ref darf NUR diese IDs verwenden)\n\n${requirementList}\n\nCoverage-Pflicht: Jede Anforderung oben braucht mindestens eine Probe im Probe-Set.`);
   }
   // ── F-8 (E2E 2026-09-02): OBJEKT-FENCE – die Iteration ist OBJEKT, nie
   // Anweisung. Der feste Falsifikations-Task (runtime-gebunden, System-Prompt)

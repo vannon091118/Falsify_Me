@@ -28,6 +28,15 @@ const DEFAULTS = {
   lang: "de",
   temperature: 0.3,
   timeoutMs: 180000,
+  maxJobAttempts: 2,
+  jobRetryBackoffMs: 2000,
+  webSearchEnabled: false,
+  webSearchApiBase: "https://google.serper.dev",
+  webSearchKeyEnv: "SERPER_API_KEY",
+  webSearchDomains: "",
+  webSearchMaxResults: 5,
+  webSearchMinIntervalMs: 1000,
+  twinWebSearchEnabled: false,
 };
 
 function loadConfigFile() {
@@ -37,15 +46,18 @@ function loadConfigFile() {
 }
 
 /** Liest einen Wert: Env-Var → config.json → Default. */
-function pick(envKey, fileData, fileKey, def) {
+function pick(envKey, fileData, fileKey, def, overrides = {}) {
+  // A persisted job snapshot is authoritative, including an intentional empty
+  // value. Only an absent override falls through to process/config defaults.
+  if (Object.prototype.hasOwnProperty.call(overrides, fileKey)) return overrides[fileKey];
   const e = process.env[envKey];
   if (e !== undefined && e !== "") return e;
   if (fileData[fileKey] !== undefined && fileData[fileKey] !== "") return fileData[fileKey];
   return def;
 }
 
-function pickNum(envKey, fileData, fileKey, def, { min, max } = {}) {
-  const raw = pick(envKey, fileData, fileKey, String(def));
+function pickNum(envKey, fileData, fileKey, def, { min, max } = {}, overrides = {}) {
+  const raw = pick(envKey, fileData, fileKey, String(def), overrides);
   const n = Number(raw);
   if (!Number.isFinite(n)) {
     throw new Error(`Ungültige Konfiguration: ${envKey}/${fileKey} = "${raw}" ist keine Zahl`);
@@ -59,14 +71,49 @@ function pickNum(envKey, fileData, fileKey, def, { min, max } = {}) {
   return n;
 }
 
+function pickBool(envKey, fileData, fileKey, def, overrides = {}) {
+  const raw = pick(envKey, fileData, fileKey, def, overrides);
+  if (typeof raw === "boolean") return raw;
+  const value = String(raw).trim().toLowerCase();
+  if (["1", "true", "yes", "ja", "on"].includes(value)) return true;
+  if (["0", "false", "no", "nein", "off", ""].includes(value)) return false;
+  throw new Error(`Ungültige Konfiguration: ${envKey}/${fileKey} = "${raw}" (erlaubt: true|false)`);
+}
+
+function validateUrl(value, label) {
+  const url = String(value || "").replace(/\/+$/, "");
+  if (url && !/^https?:\/\//i.test(url)) {
+    throw new Error(`Ungültige Konfiguration: ${label} = "${url}" (muss mit http:// oder https:// beginnen)`);
+  }
+  return url;
+}
+
 /** Provider-Label nur zur Anzeige (nie für Logik). */
 export function providerLabel(apiBase) {
   const b = String(apiBase || "").toLowerCase();
   if (b.includes("api.openai.com")) return "OpenAI";
   if (b.includes("integrate.api.nvidia.com")) return "NVIDIA NIM";
-  if (b.includes("localhost") || b.includes("127.0.0.1") || b.includes(":11434")) return "lokal (Ollama/LM Studio)";
+  if (isLocalApiBase(b)) return "lokal (Ollama/LM Studio)";
   if (b) return "OpenAI-kompatibel";
   return "?";
+}
+
+/**
+ * Loopback-Provider wie Ollama und LM Studio akzeptieren üblicherweise keinen
+ * API-Key. Remote-Endpunkte bleiben key-pflichtig; die Entscheidung ist rein
+ * aus der Zieladresse abgeleitet und erteilt kein Verdict.
+ */
+export function isLocalApiBase(apiBase) {
+  try {
+    const url = new URL(String(apiBase || ""));
+    return ["localhost", "127.0.0.1", "::1"].includes(url.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+export function requiresApiKey(apiBase) {
+  return !isLocalApiBase(apiBase);
 }
 
 /**
@@ -78,14 +125,14 @@ export function providerLabel(apiBase) {
  *   configFile:string
  * }}
  */
-export function loadConfig() {
+export function loadConfig(overrides = {}) {
   const { file, data } = loadConfigFile();
-  const apiBase = String(pick("FALSIFY_API_BASE", data, "apiBase", DEFAULTS.apiBase)).replace(/\/+$/, "");
-  if (!/^https?:\/\//.test(apiBase)) {
-    throw new Error(`Ungültige Konfiguration: FALSIFY_API_BASE/apiBase = "${apiBase}" (muss mit http:// oder https:// beginnen)`);
+  const apiBase = validateUrl(pick("FALSIFY_API_BASE", data, "apiBase", DEFAULTS.apiBase, overrides), "FALSIFY_API_BASE/apiBase");
+  if (!apiBase) {
+    throw new Error("Ungültige Konfiguration: FALSIFY_API_BASE/apiBase darf nicht leer sein");
   }
-  const lang = String(pick("FALSIFY_LANG", data, "lang", DEFAULTS.lang)).toLowerCase();
-  const reasoningEffort = String(pick("FALSIFY_REASONING_EFFORT", data, "reasoningEffort", DEFAULTS.reasoningEffort)).toLowerCase();
+  const lang = String(pick("FALSIFY_LANG", data, "lang", DEFAULTS.lang, overrides)).toLowerCase();
+  const reasoningEffort = String(pick("FALSIFY_REASONING_EFFORT", data, "reasoningEffort", DEFAULTS.reasoningEffort, overrides)).toLowerCase();
   if (!["high", "medium", "low", "auto", "off"].includes(reasoningEffort)) {
     throw new Error(`Ungültige Konfiguration: FALSIFY_REASONING_EFFORT/reasoningEffort = "${reasoningEffort}" (erlaubt: high, medium, low, auto, off)`);
   }
@@ -99,34 +146,37 @@ export function loadConfig() {
   // Prüfung des Falls, keine unabhängige Wahrheit (gleiche Modellfamilie,
   // gleiche Biases). Die Konfiguration macht die Diversität WÄHLBAR, die
   // Warnung macht ihren Verzicht SICHTBAR — nie still.
-  const model = String(pick("FALSIFY_MODEL", data, "model", DEFAULTS.model)).trim();
-  const twinModel = String(pick("FALSIFY_TWIN_MODEL", data, "twinModel", "")).trim();
-  const twinApiBase = String(pick("FALSIFY_TWIN_API_BASE", data, "twinApiBase", "")).replace(/\/+$/, "");
-  if (twinApiBase && !/^https?:\/\//.test(twinApiBase)) {
-    throw new Error(`Ungültige Konfiguration: FALSIFY_TWIN_API_BASE/twinApiBase = "${twinApiBase}" (muss mit http:// oder https:// beginnen)`);
-  }
-  const twinApiKeyEnv = String(pick("FALSIFY_TWIN_API_KEY_ENV", data, "twinApiKeyEnv", "")).trim();
+  const model = String(pick("FALSIFY_MODEL", data, "model", DEFAULTS.model, overrides)).trim();
+  const twinModel = String(pick("FALSIFY_TWIN_MODEL", data, "twinModel", "", overrides)).trim();
+  const twinApiBase = validateUrl(pick("FALSIFY_TWIN_API_BASE", data, "twinApiBase", "", overrides), "FALSIFY_TWIN_API_BASE/twinApiBase");
+  const twinApiKeyEnv = String(pick("FALSIFY_TWIN_API_KEY_ENV", data, "twinApiKeyEnv", "", overrides)).trim();
   // F-3-Fix (Live-E2E 2026-09-02): Der Twin erbte den reasoningEffort des
   // Primaermodells - Groq lehnt `reasoning_effort=high` mit HTTP 400 ab
   // (live belegt), damit war eine Twin-Freigabe (BESTAETIGT) mit Groq-Twin
   // bei high strukturell unmoeglich. Jetzt eigener Wert twinReasoningEffort
   // (FALSIFY_TWIN_REASONING_EFFORT / config.json twinReasoningEffort),
   // gleiche Enum-Validierung wie beim Primaerwert, Fallback = Primaerwert.
-  const maxTokens = pickNum("FALSIFY_MAX_TOKENS", data, "maxTokens", DEFAULTS.maxTokens, { min: 256, max: 1_000_000 });
-  const twinReasoningEffort = String(pick("FALSIFY_TWIN_REASONING_EFFORT", data, "twinReasoningEffort", "")).toLowerCase();
+  const maxTokens = pickNum("FALSIFY_MAX_TOKENS", data, "maxTokens", DEFAULTS.maxTokens, { min: 256, max: 1_000_000 }, overrides);
+  const twinReasoningEffort = String(pick("FALSIFY_TWIN_REASONING_EFFORT", data, "twinReasoningEffort", "", overrides)).toLowerCase();
   if (twinReasoningEffort && !["high", "medium", "low", "auto", "off"].includes(twinReasoningEffort)) {
     throw new Error(`Ungueltige Konfiguration: FALSIFY_TWIN_REASONING_EFFORT/twinReasoningEffort = "${twinReasoningEffort}" (erlaubt: high, medium, low, auto, off)`);
   }
   return {
     model,
     apiBase,
-    provider: String(pick("FALSIFY_PROVIDER", data, "provider", providerLabel(apiBase))).trim(),
+    provider: String(pick("FALSIFY_PROVIDER", data, "provider", providerLabel(apiBase), overrides)).trim(),
     keyEnvNames: (() => {
+      // Ein Job-Snapshot liefert bereits die aufgelöste Reihenfolge. Sie muss
+      // auch dann Vorrang behalten, wenn config.json inzwischen einen anderen
+      // apiKeyName enthält (kein stiller Settings-Drift zwischen Submit und Run).
+      if (Array.isArray(overrides.keyEnvNames)) {
+        return overrides.keyEnvNames.map((s) => String(s).trim()).filter(Boolean);
+      }
       // Liste: FALSIFY_API_KEY_ENV → config.json apiKeyEnv → Default. Ein explizit
       // via `falsify settings set apiKeyName=…` gesetzter Name hat Vorrang
       // (settings.mjs löst ihn genauso auf) – sonst wäre der konfigurierte
       // Key-Name für Jobs unsichtbar („Kein API-Key gefunden“).
-      const base = String(pick("FALSIFY_API_KEY_ENV", data, "apiKeyEnv", DEFAULTS.apiKeyEnv))
+      const base = String(pick("FALSIFY_API_KEY_ENV", data, "apiKeyEnv", DEFAULTS.apiKeyEnv, overrides))
         .split(",").map((s) => s.trim()).filter(Boolean);
       const named = typeof data.apiKeyName === "string" && data.apiKeyName.trim()
         ? data.apiKeyName.trim()
@@ -135,11 +185,13 @@ export function loadConfig() {
     })(),
     maxTokens: maxTokens,
     reasoningEffort,
-    maxToolRounds: pickNum("FALSIFY_MAX_TOOL_ROUNDS", data, "maxToolRounds", DEFAULTS.maxToolRounds, { min: 1, max: 20 }),
-    maxRpm: pickNum("FALSIFY_MAX_RPM", data, "maxRpm", DEFAULTS.maxRpm, { min: 1, max: 1000 }),
+    maxToolRounds: pickNum("FALSIFY_MAX_TOOL_ROUNDS", data, "maxToolRounds", DEFAULTS.maxToolRounds, { min: 1, max: 20 }, overrides),
+    maxRpm: pickNum("FALSIFY_MAX_RPM", data, "maxRpm", DEFAULTS.maxRpm, { min: 1, max: 1000 }, overrides),
     lang,
-    temperature: pickNum("FALSIFY_TEMPERATURE", data, "temperature", DEFAULTS.temperature, { min: 0, max: 2 }),
-    timeoutMs: pickNum("FALSIFY_TIMEOUT_MS", data, "timeoutMs", DEFAULTS.timeoutMs, { min: 1000, max: 3_600_000 }),
+    temperature: pickNum("FALSIFY_TEMPERATURE", data, "temperature", DEFAULTS.temperature, { min: 0, max: 2 }, overrides),
+    timeoutMs: pickNum("FALSIFY_TIMEOUT_MS", data, "timeoutMs", DEFAULTS.timeoutMs, { min: 1000, max: 3_600_000 }, overrides),
+    maxJobAttempts: pickNum("FALSIFY_MAX_JOB_ATTEMPTS", data, "maxJobAttempts", DEFAULTS.maxJobAttempts, { min: 1, max: 5 }, overrides),
+    jobRetryBackoffMs: pickNum("FALSIFY_JOB_RETRY_BACKOFF_MS", data, "jobRetryBackoffMs", DEFAULTS.jobRetryBackoffMs, { min: 0, max: 3_600_000 }, overrides),
     // Twin: Fallback = Primärmodell (ehrlich: dann gibt es KEINE Modell-Diversität).
     twinModel: twinModel || model,
     twinApiBase: twinApiBase || apiBase,
@@ -150,16 +202,95 @@ export function loadConfig() {
     // weil Groq (qwen/qwen3.6-27b) > 16384 mit 400 ablehnt — der geerbte
     // Primaerwert (bis 1e6) wuerde jede Groq-Twin-Freigabe unmöglich machen.
     // (OpenRouter-Free-Tier liegt teils noch niedriger — dann per CLI setzen.)
-    twinMaxTokens: pickNum("FALSIFY_TWIN_MAX_TOKENS", data, "twinMaxTokens", Math.min(maxTokens, 16384), { min: 256, max: 1_000_000 }),
-    twinApiKeyEnv: twinApiKeyEnv ? [twinApiKeyEnv, ...(() => {
-      const base = String(pick("FALSIFY_API_KEY_ENV", data, "apiKeyEnv", DEFAULTS.apiKeyEnv))
-        .split(",").map((s) => s.trim()).filter(Boolean);
-      const named = typeof data.apiKeyName === "string" && data.apiKeyName.trim()
-        ? data.apiKeyName.trim()
-        : null;
-      return named ? [named, ...base.filter((n) => n !== named)] : base;
-    })()] : undefined,
+    twinMaxTokens: pickNum("FALSIFY_TWIN_MAX_TOKENS", data, "twinMaxTokens", Math.min(maxTokens, 16384), { min: 256, max: 1_000_000 }, overrides),
+    twinApiKeyEnv: Array.isArray(overrides.twinApiKeyEnv)
+      ? overrides.twinApiKeyEnv.map((s) => String(s).trim()).filter(Boolean)
+      : (twinApiKeyEnv ? [twinApiKeyEnv, ...(() => {
+        const base = String(pick("FALSIFY_API_KEY_ENV", data, "apiKeyEnv", DEFAULTS.apiKeyEnv, overrides))
+          .split(",").map((s) => s.trim()).filter(Boolean);
+        const named = typeof data.apiKeyName === "string" && data.apiKeyName.trim()
+          ? data.apiKeyName.trim()
+          : null;
+        return named ? [named, ...base.filter((n) => n !== named)] : base;
+      })()] : undefined),
     twinDiversity: Boolean(twinModel) && twinModel !== model,
+    webSearchEnabled: pickBool("FALSIFY_WEB_SEARCH_ENABLED", data, "webSearchEnabled", DEFAULTS.webSearchEnabled, overrides),
+    webSearchApiBase: validateUrl(pick("FALSIFY_WEB_SEARCH_API_BASE", data, "webSearchApiBase", DEFAULTS.webSearchApiBase, overrides), "FALSIFY_WEB_SEARCH_API_BASE"),
+    webSearchKeyEnv: String(pick("FALSIFY_WEB_SEARCH_KEY_ENV", data, "webSearchKeyEnv", DEFAULTS.webSearchKeyEnv, overrides)).trim(),
+    webSearchDomains: String(pick("FALSIFY_WEB_SEARCH_DOMAINS", data, "webSearchDomains", DEFAULTS.webSearchDomains, overrides)).trim(),
+    webSearchMaxResults: pickNum("FALSIFY_WEB_SEARCH_MAX_RESULTS", data, "webSearchMaxResults", DEFAULTS.webSearchMaxResults, { min: 1, max: 20 }, overrides),
+    webSearchMinIntervalMs: pickNum("FALSIFY_WEB_SEARCH_MIN_INTERVAL_MS", data, "webSearchMinIntervalMs", DEFAULTS.webSearchMinIntervalMs, { min: 0, max: 3_600_000 }, overrides),
+    twinWebSearchEnabled: pickBool("FALSIFY_TWIN_WEB_SEARCH_ENABLED", data, "twinWebSearchEnabled", DEFAULTS.twinWebSearchEnabled, overrides),
     configFile: file,
   };
+}
+
+/**
+ * Erstellt den nicht-geheimen Laufzeit-Snapshot, der in einen Job geschrieben
+ * wird. API-Key-Werte und Prozess-Umgebungsvariablen sind absichtlich nicht
+ * enthalten; ein späterer Settings-Wechsel kann den Job nicht umkonfigurieren.
+ */
+export function snapshotConfig(cfg) {
+  return {
+    model: cfg.model,
+    apiBase: cfg.apiBase,
+    provider: cfg.provider,
+    keyEnvNames: [...(cfg.keyEnvNames || [])],
+    maxTokens: cfg.maxTokens,
+    reasoningEffort: cfg.reasoningEffort,
+    maxToolRounds: cfg.maxToolRounds,
+    maxRpm: cfg.maxRpm,
+    lang: cfg.lang,
+    temperature: cfg.temperature,
+    timeoutMs: cfg.timeoutMs,
+    maxJobAttempts: cfg.maxJobAttempts,
+    jobRetryBackoffMs: cfg.jobRetryBackoffMs,
+    twinModel: cfg.twinModel,
+    twinApiBase: cfg.twinApiBase,
+    twinReasoningEffort: cfg.twinReasoningEffort,
+    twinMaxTokens: cfg.twinMaxTokens,
+    twinApiKeyEnv: cfg.twinApiKeyEnv ? [...cfg.twinApiKeyEnv] : null,
+    twinDiversity: Boolean(cfg.twinDiversity),
+    webSearchEnabled: Boolean(cfg.webSearchEnabled),
+    webSearchApiBase: cfg.webSearchApiBase,
+    webSearchKeyEnv: cfg.webSearchKeyEnv,
+    webSearchDomains: cfg.webSearchDomains,
+    webSearchMaxResults: cfg.webSearchMaxResults,
+    webSearchMinIntervalMs: cfg.webSearchMinIntervalMs,
+    twinWebSearchEnabled: Boolean(cfg.twinWebSearchEnabled),
+  };
+}
+
+/** Lädt einen gespeicherten Snapshot ohne auf spätere Env-/Datei-Werte zurückzufallen. */
+export function configFromSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+    throw new Error("Ungültiger Job-Laufzeit-Snapshot");
+  }
+  const overrides = { ...snapshot };
+  if (Array.isArray(snapshot.keyEnvNames)) {
+    overrides.keyEnvNames = [...snapshot.keyEnvNames];
+    overrides.apiKeyEnv = snapshot.keyEnvNames.join(",");
+  }
+  if (Object.prototype.hasOwnProperty.call(snapshot, "twinApiKeyEnv")) {
+    overrides.twinApiKeyEnv = Array.isArray(snapshot.twinApiKeyEnv)
+      ? [...snapshot.twinApiKeyEnv]
+      : [];
+  }
+  // Metadata is not a loadConfig input and must not affect resolution.
+  delete overrides.configFile;
+  const cfg = loadConfig(overrides);
+  const comparable = [
+    "model", "apiBase", "provider", "maxTokens", "reasoningEffort",
+    "maxToolRounds", "maxRpm", "lang", "temperature", "timeoutMs",
+    "maxJobAttempts", "jobRetryBackoffMs", "twinModel", "twinApiBase",
+    "twinReasoningEffort", "twinMaxTokens", "webSearchEnabled",
+    "webSearchApiBase", "webSearchKeyEnv", "webSearchDomains",
+    "webSearchMaxResults", "webSearchMinIntervalMs", "twinWebSearchEnabled",
+  ];
+  for (const key of comparable) {
+    if (snapshot[key] !== undefined && JSON.stringify(snapshot[key]) !== JSON.stringify(cfg[key])) {
+      throw new Error(`Job-Laufzeit-Snapshot konnte bei ${key} nicht unverändert geladen werden`);
+    }
+  }
+  return cfg;
 }

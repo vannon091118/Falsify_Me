@@ -56,6 +56,32 @@ geworden ist (laufendes Worker-Fenster über `--check`, Job-Claim = Status nicht
 mehr `QUEUED`), bevor er blockierend auf das Verdict wartet. Schlägt die
 Bestätigung fehl, bleibt die Warnung sichtbar und der Job in der Queue.
 
+## Pflichtprotokoll nach jeder Arbeit
+
+Nach jedem Plan, jeder Änderung, jedem Bugfix, jedem Refactoring, jedem Feature,
+jeder Dokumentations- und jeder Konfigurationsänderung:
+
+1. **CHANGE_GATE_10X:** Beantworte A1 bis A10 mit `JA`; jede Antwort enthält
+   `Proof:` und `Test:`. Prüfe Scope, Architektur, Verdict-Hoheit, echte
+   Evidenz, Root-/Scope-Bindung, fail-closed WRITE, Twin-Isolation,
+   Fehler-/Ausfallverhalten, ausführbaren Testbeleg und feindselige Agents.
+2. **FALSIFICATION_RECORD_10X:** Der unabhängige Reviewer dokumentiert F1
+   Coder-Behauptung, F2 User-Vertrag, F3 Scope-Abgleich, F4 falsifizierbare
+   Annahme, F5 Angriff, F6 verifizierte Datei:Zeile/Symbol/Probe, F7
+   Gegenbeweise, F8 ungeprüften Bereich, F9 Rest-Risiko und F10
+   Release-Entscheidung.
+
+`JA` ohne Beleg gilt nicht. Ein einziges `NEIN`, `UNBEKANNT` oder fehlender
+Nachweis beendet die Arbeit mit:
+
+```text
+BLOCKED – mindestens eine Invariante ist nicht nachgewiesen.
+```
+
+Das Protokoll ist ein Agenten-/Review-Vertrag, keine neue Queue und kein
+alternativer Verdict-Pfad. `WRITE` bleibt ausschließlich das Ergebnis der
+bestehenden Falsifikationspipeline.
+
 ## Sicherheitsgrenzen
 
 - Der Skill prüft, aber schreibt nicht in das Zielprojekt.

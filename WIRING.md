@@ -52,7 +52,10 @@ ui/                        ← Terminal-UI (Phase 1+2, live verdrahtet)
   tui/                     ← Bausteine (1 Modul = 1 Verantwortung, siehe §5)
 core/settings.mjs          ← Runtime-Provider/Model/Key + live /models-Abfrage
 core/feasibility.mjs       ← Umsetzbarkeits-Puffer (Intent→Execution, §14)
+core/probes.mjs            ← Probe-Vertrag (P0-Cutover, §16): splitRequirement /
+                             parseProbeSet / validateProbeSet / computeVerdict
 core/twin.mjs              ← Unabhängige Gegenprüfung (Evil Twin, Regel 6, §15)
+                             + Probe-Exekution (runProbeExecution)
 core/verdict.mjs            ← Loop-Anker: parseScopeDivergence (Regel 7, §15, UI-107)
 cli/settings.mjs           ← settings show/set + models (siehe §6)
   tui/views/               ← React/Ink Views (NUR Darstellung, stateless)
@@ -198,6 +201,8 @@ oder:         start "FalsifyMe-TUI" cmd /k node ui\tui-demo.mjs %*
 | `core/verdict.mjs` | Kompatibilitätsfassade für Verdict-/Befund-Parsing und bestehende Gate-Exporte |
 | `artifacts/invariants.mjs` | Zustandsmodell-Invariante: checkQueueConsistency (read-only, Regel 3) |
 | `core/twin.mjs` | Unabhängige Gegenprüfung (Evil Twin): runTwinCheck/parseTwinVerdict/extractClaims, Fail-closed (Regel 6) |
+| `core/probes.mjs` | Probe-Vertrag (P0-Cutover, §16): splitRequirement (H1..Hn, Original-Spans), parseProbeSet, validateProbeSet (nur formal/strukturell), probeEvidenceOk, computeVerdict (deterministisches WRITE/PLAN-Gate) |
+| `core/config.mjs` + `artifacts/jobs.mjs` | Audit-Grundlage für nicht-geheime Job-Laufzeit-Snapshots sowie Retry-Metadaten; Snapshot-Verbrauch und vollständige Retry-Orchestrierung sind noch offen (siehe HANDOFF.md) |
 | `core/verdict.mjs` | Loop-Anker (Regel 7, UI-107): parseScopeDivergence — Divergenz-Deklaration des Thinkers blockt WRITE (PLAN), `scopes.last_divergence` (Schema v4) |
 | `tui/events.mjs` | Event-Contract + einziger State-Writer (`apply`/`tick`), Slot-Routing 1..3, Fokus, Spiegel |
 | `tui/state.mjs` | Zustände, erlaubte Übergänge, 3 Fenster-Slots, globalIdle, Labels/Farben |
@@ -328,10 +333,14 @@ node --test tests/research-additions.test.mjs  # extractResearchAdditions (Pfad-
 
 ## 9. OFFENE UND AUFGESCHOBENE TASKS
 
-`ui/PLAN.md` ist die maßgebliche Aufgabenliste. Aktuell offen ist nur
-`UI-073` (API-Key-Abfrage beim Install/Bootstrap; bis dahin: README
-„API-Key / .env manuell einrichten" + `falsify onboard`). Alle anderen
-Tasks sind DONE (Stand 2026-09-01, Batch-Refactor).
+`ui/PLAN.md` ist die maßgebliche Aufgabenliste. Dokumentiert offen bleiben
+`UI-073` (API-Key-Abfrage beim Install/Bootstrap) sowie die noch nicht
+abgeschlossenen Runtime-Erweiterungen aus dem aktuellen Audit:
+Job-Snapshot-Verbrauch im Worker, vollständige Retry-Ausführung, per-Run-
+Override-Weitergabe, optionale Web-Recherche und Uninstall-/Doctor-Härtung.
+Die vorhandenen Spalten und Konfigurationswerte dafür sind **Grundlage, keine
+fertige Produktionsfunktion**. Bis UI-073 umgesetzt ist, bleiben README
+„API-Key / .env manuell einrichten" und `falsify onboard` der ehrliche Weg.
 
 Die Phase-2-Integration in Worker/CLI ist umgesetzt und via
 `npm run test:phase2` verifiziert (BLOCK 6 in `ui/PLAN.md`); die sichtbare
@@ -342,6 +351,28 @@ die Verdrahtung gehören in `ui/PLAN.md` Block 6 und dürfen nicht nur in
 Antworten/Commits leben.
 
 ## 10. REGELN (unverhandelbar)
+
+### Pflichtprotokoll nach jeder Arbeit
+
+Jeder Plan, jede Änderung, jeder Bugfix, jedes Refactoring, jedes Feature sowie
+jede Dokumentations- und Konfigurationsänderung erhält zwei ausdrücklich
+getrennte Nachweise:
+
+- `CHANGE_GATE_10X`: Der Coding-Agent beantwortet A1–A10 mit `JA` und liefert je
+  Frage `Proof:` plus `Test:`. Die Fragen prüfen Scope, Architektur,
+  Verdict-Hoheit, Falsifikations-Evidenz, Root-/Scope-Bindung, fail-closed
+  `WRITE`, Evil-Twin-Isolation, Ausfallverhalten, ausführbaren Testbeleg und
+  feindselige Agents.
+- `FALSIFICATION_RECORD_10X`: Der unabhängige Reviewer beantwortet F1
+  Coder-Behauptung, F2 User-Vertrag, F3 Scope-Abgleich, F4 falsifizierbare
+  Annahme, F5 Angriff, F6 verifizierte Evidenz, F7 Gegenbeweise, F8 ungeprüften
+  Bereich, F9 Rest-Risiko und F10 Release-Entscheidung.
+
+`JA` ohne Beleg ist ungültig. Ein einziges `NEIN`, `UNBEKANNT` oder fehlender
+Nachweis bedeutet exakt `BLOCKED – mindestens eine Invariante ist nicht
+nachgewiesen.` Diese Nachweise sind Agenten-/Review-Dokumentation, keine neue
+Queue und kein zweiter Verdict-Pfad; `WRITE` bleibt bei der bestehenden
+Falsifikationspipeline.
 
 - **KERNPRINZIP §0:** Falsifikation der Coder-Annahmen; eine Job/Scope-Queue;
   Verdict-Hoheit nur beim Falsifikations-Agent; Wissen lokal für den Nutzer.
@@ -421,9 +452,12 @@ Worker stoppen (PIDs aus `ui/worker.mjs --check`), `~/.Falsify_Core` +
 `~/.Falsify_Private` entfernen, `~/.agents/skills/falsifyme*` und
 Instruction-Dateien + Profil-Marker entfernen, den markierten
 Instruction-Block aus `AGENTS.md`/`FALSIFYME-WORKFLOW.md` des Zielprojekts
-(`--project-root` oder aktuelle cwd), `~/.Falsify` (FALSIFY_HOME: Key-Inhalt
-vorher nach `~/.Falsify.env.uninstall-backup` gesichert; `--keep-env` behält
-alles) und npm-Global-Shims. Flags: `--dry-run`, `--keep-env`, `--project-root`.
+(`--project-root` oder aktuelle cwd) und npm-Global-Shims. Der kanonische
+Runtime-Home ist `~/.Falsify_Private`; vorhandene alte `~/.Falsify`-Daten sind
+Legacy-Drift und werden im aktuellen Uninstall-Audit noch nicht als vollständig
+bereinigtes Ziel behauptet (siehe `HANDOFF.md`). Key-Inhalte werden vor der
+Entfernung nach `~/.Falsify.env.uninstall-backup` gesichert; `--keep-env` behält
+private Laufzeitdaten. Flags: `--dry-run`, `--keep-env`, `--project-root`.
 Idempotent; `package.json`: `npm run uninstall:user`. Der Modus-Entscheid
 (Reichweite/Betriebsmodus, nur `PFLICHT` = Gate) ist im Skill
 `falsifyme-selfinstall` verankert.
@@ -595,3 +629,35 @@ Zustandsmaschine, ASK/exitCodeOf, buildUserContent-Intake) +
 Existenzfilter, Fremdprojekt, Live-Submit-Smoke) +
 `node --test tests/invariants.test.mjs` (4 Tests: statischer Writer-Beweis,
 konsistenter Zustand, verletzte Ableitungen, Phase-Stabilität UNBEKANNT).
+
+---
+
+## 16. P0-CUTOVER – PROBE-BASIERTE WRITE-ENTScheidung (Revision 5, 2026-09-02)
+
+Prosa-Evidenz (`hasChallengeEvidence`, Regel 2 alt) suchte Evidenz im Fließtext –
+Form-Slop („widerlegt“ + existierender Pfad ohne inhaltlichen Angriff) passierte
+das Gate. Der Cutover ersetzt Prosa-Regex durch ein strukturiertes Protokoll:
+
+| Schicht | Modul | Verantwortung (UNVERHANDLBAR getrennt) |
+|---|---|---|
+| Thinker | `core/prompt-text/system-*.md` + `core/prompt.mjs` + `cli/run.mjs` | erzeugt das Probe-Set (```json-Fence, `requirement_ref` = Original-H_i-IDs); WRITE-Wort bleibt wirkungslos |
+| Validator | `core/probes.mjs validateProbeSet` | NUR formal/strukturell: Schema, requirement_ref ∈ H1..Hn (keine Paraphrase), Coverage (jede H_i ≥ 1 Probe, sonst PLAN), Target in Root+Whitelist, Anti-Vakuum-Minima (claim ≥ 16, check ≥ 24, Lob-Blacklist – Müllfilter, KEIN Qualitätsbeweis), keine Doppel-IDs, Enum |
+| Twin | `core/twin.mjs runProbeExecution` | führt JEDE Probe aus (semantische Ausführbarkeit) → ProbeResult[] `{probe_id, status: BESTAETIGT\|WIDERSPRUCH\|UNKLAR, evidence}`; Parse-Fehler/Timeout → alle UNKLAR; fehlende probe_id → diese Probe UNKLAR |
+| Gate | `core/probes.mjs computeVerdict` (aufgerufen aus `cli/run.mjs`) | entscheidet NUR aus Resultaten + Evidence (`probeEvidenceOk` = bestehende twinEvidenceOk/twinOwnFalsificationOk-Semantik pro Probe) + bestehenden harten Gates (structural, Divergenz-Anker, Dateien-unverändert) → WRITE/PLAN; Verdict in den bestehenden Review-Commit |
+
+Header-Anker: `splitRequirement` zerlegt den HEADER (User-Input 1:1) deterministisch
+an Satz-/Listen-/Zeilen-/Semikolon-Grenzen in H1..Hn (Original-Spans, Tail-Merge-Kappe
+12, Mini-Merge, vager Ein-Satz-Header → H1). Keine LLM-Zerlegung, keine H1a/H1b-
+Verfeinerung, keine Header-Mindestqualität – der Anker ist nicht intelligent, aber ehrlich.
+
+Härten: `parseVerdict`-WRITE ist nur Kandidat – Release NUR über das voll bestätigte
+Probe-Set; `parseProbeSet` fail-closed (kein/kaputter Fence → PLAN); fehlende probe_id
+im ProbeResult → PLAN; Twin-Config (twinModel/reasoningEffort) wie bisher weitergegeben.
+`core/verdict.mjs` bleibt Probe-frei (keine Müllhalde der Semantik);
+`core/twin-evidence.mjs` unverändert. `core/evidence.mjs` (hasChallengeEvidence)
+wird vom WRITE-Pfad nicht mehr benutzt, bleibt aber exportiert (andere Konsumenten).
+
+Tests: `node --test tests/probes.test.mjs` (Splitter byte-identisch/IDs=Spans,
+Kappe, vager Ein-Satz; Validator-Formen inkl. Coverage-Härte und Target-Härte;
+Cutover-Matrix + P7-Attack-Fixtures in `computeVerdict`) + `tests/twin.test.mjs`
+(Probe-Fixtures) + `tests/queue.test.mjs` (E2E-Fixtures WRITE/PLAN/vager Header).

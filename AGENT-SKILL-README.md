@@ -38,6 +38,56 @@ der Agent sieht eine Warnung mit `falsify state`-Hinweis.
   müssen.
 - `WRITE` ist ausschließlich eine Freigabe an den aufrufenden Agenten.
 
+## Pflichtprotokoll nach jeder Arbeit
+
+Nach jedem Plan, jeder Änderung, jedem Bugfix, jedem Refactoring, jedem Feature,
+jeder Dokumentations- und jeder Konfigurationsänderung werden zwei Protokolle
+geführt. Sie erzeugen weder eine neue Queue noch einen zweiten Verdict-Pfad.
+`WRITE` bleibt ausschließlich Ergebnis der bestehenden Falsifikationspipeline.
+
+### CHANGE_GATE_10X
+
+Beantworte alle zehn Fragen mit `JA`; jede Antwort braucht diesen Nachweis:
+
+```text
+A1: JA
+Proof: <konkreter Beleg>
+Test: <exakter Befehl oder reproduzierbare Verifikation>
+```
+
+A1 Scope · A2 bestehende Architektur · A3 Verdict-Hoheit beim Falsifikations-
+prozess · A4 echte Falsifikation statt Lob · A5 Evidenz an Root/Scope gebunden ·
+A6 fail-closed `WRITE` · A7 kontextgetrennter Evil Twin · A8 sichere Fehler-,
+Timeout- und API-Ausfälle · A9 echter Test/E2E-Beleg · A10 Sicherheit gegen
+literalistische, manipulierte oder kaputte Agents.
+
+Ein einziges `NEIN`, `UNBEKANNT` oder fehlender Beleg bedeutet exakt:
+
+```text
+BLOCKED – mindestens eine Invariante ist nicht nachgewiesen.
+```
+
+### FALSIFICATION_RECORD_10X
+
+Der unabhängige Reviewer dokumentiert bei jedem Plan, jeder Änderung und jeder
+Iteration konkret:
+
+```text
+F1: Coder claim
+F2: User contract
+F3: Scope match oder konkrete Divergenz
+F4: falsifizierbare Annahme
+F5: unternommener Angriff
+F6: tatsächlich gelesene und verifizierte Evidenz
+F7: gesuchte Gegenbeweise und Ergebnis
+F8: ungeprüfter oder nur vermuteter Bereich
+F9: stärkstes verbleibendes Risiko
+F10: WRITE-Entscheidung oder konkretes Hindernis
+```
+
+`F6` darf keine Fantasie-Datei, Fantasie-Zeile oder unbelegte Sicherheit
+enthalten. Ohne Nachweis wird `WRITE` nicht behauptet.
+
 Nach jedem Job wird der Scope in SQLite mit Befund, allen Findings und dem
 optionalen dreizeiligen `SUBPROMPT:`-Fallback aktualisiert. Jobs starten jeweils
 eine neue Modell-Konversation; Scopes werden niemals vermischt.

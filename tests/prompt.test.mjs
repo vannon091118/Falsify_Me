@@ -135,6 +135,34 @@ test("buildUserContent bleibt Code: Interpolation + Diff-Fences korrekt", () => 
   assert.match(uc, /Hinweis 1/);
 });
 
+test("P0-Cutover: Probe-Set-Vertrag in beiden System-Prompts (Daten, nicht Code)", () => {
+  for (const [p, marker] of [[SYSTEM_DE, "PROBE-SET-PFLICHT"], [SYSTEM_EN, "PROBE-SET REQUIREMENT"]]) {
+    assert.match(p, new RegExp(marker));
+    assert.match(p, /requirement_ref/);
+    assert.match(p, /Coverage/);
+    // Enum + Anti-Vakuum-Minima sind Vertrag (der Validator erzwingt sie):
+    assert.match(p, /claim-check/);
+    assert.match(p, /16 Zeichen|16 chars/);
+    assert.match(p, /24 Zeichen|24 chars/);
+    // WRITE-Wort im Probe-Set verboten; Freigabe entscheidet das Gegenprüfungs-Gate:
+    assert.match(p, /VERDICT.*VERBOTEN|VERDICT statements are FORBIDDEN/);
+    // ASK bei zu vagen Headern erlaubt:
+    assert.match(p, /VERDICT: ASK/);
+  }
+});
+
+test("P0-Cutover: buildUserContent rendert die Anforderungs-Liste als Coverage-Anker", () => {
+  const reqList = "<H1>Erste Anforderung.</H1>\n<H2>Zweite Anforderung</H2>";
+  const uc = buildUserContent({ header: "H", phase: "write", planText: "P", root: ".", whitelist: ["a.js"], requirementList: reqList });
+  assert.match(uc, /## Anforderungs-Liste/);
+  assert.match(uc, /<H1>Erste Anforderung\.<\/H1>/);
+  assert.match(uc, /<H2>Zweite Anforderung<\/H2>/);
+  assert.match(uc, /requirement_ref darf NUR diese IDs verwenden/);
+  // Ohne Liste bleibt der Abschnitt weg (Direkt-Run-Fallback entscheidet run.mjs):
+  const uc2 = buildUserContent({ header: "H", phase: "write", planText: "P", root: "." });
+  assert.doesNotMatch(uc2, /## Anforderungs-Liste/);
+});
+
 test("Fehlende Prompt-Datei schlägt laut fehl (fail-fast statt stiller Leere)", async () => {
   // Der Loader ist nicht exportiert – wir prüfen den Effekt über einen
   // dynamischen Import auf einen temporären Modul-Schnipsel mit kaputtem Pfad.

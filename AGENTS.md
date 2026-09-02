@@ -307,16 +307,135 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   Testbefehle §8); neue Tasks nach `ui/PLAN.md` (ID/TASK/STATUS/DEPENDS_ON/
   VERIFY/RESULT, Status DONE erst nach ehrlicher Verifikation vgl. WIRING §10).
 
+## Pflichtprotokoll nach jeder Arbeit (CHANGE_GATE_10X + FALSIFICATION_RECORD_10X)
+
+Diese zwei Blöcke sind ein verbindlicher Agenten- und Review-Vertrag für jeden
+Plan, jede Iteration, jeden Bugfix, jedes Refactoring, jedes Feature, jede
+Dokumentations- und jede Konfigurationsänderung. Sie sind KEIN neuer
+Runtime-Verdictpfad, KEINE Queue und KEIN Datenbankschema. Die bestehende
+Falsifikationspipeline bleibt die einzige Quelle für `WRITE`.
+
+### CHANGE_GATE_10X – Abschlussprüfung des Agents
+
+Nach jeder Arbeit beantwortet der Agent alle zehn Fragen mit `JA`. Jede Antwort
+braucht konkreten Beleg und eine reproduzierbare Prüfung im folgenden Format:
+
+```text
+A1: JA
+Proof: <konkreter Beleg aus Diff, Code, Verhalten oder Test>
+Test: <exakter Befehl oder reproduzierbare Verifikation>
+```
+
+Die zehn Fragen:
+
+1. **Scope:** Liegt Änderung vollständig im beauftragten Scope, ohne ungeplante
+   Dateien, Verhalten, Architektur oder Zuständigkeiten?
+2. **Architektur:** Ist dieselbe Architektur erhalten – eine Queue, eine
+   Falsifikationspipeline, ein persistierter Verdict-Pfad und kein Bypass?
+3. **Verdict-Hoheit:** Liefert neue Logik höchstens Kontext oder ein Downgrade/
+   Veto; bleibt release-tragendes `WRITE` ausschließlich im bestehenden
+   Falsifikationsprozess?
+4. **Evidenz:** Werden echte Widerlegungen weiterhin von „gefunden", „sieht
+   korrekt aus", Lob, „kein Problem" und unbelegter Sicherheit getrennt?
+5. **Datenbindung:** Sind jede Datei-, Zeilen-, Symbol-, Zitat- oder
+   Probe-Referenz gegen Root und erlaubten Zugriffsscope verifizierbar?
+6. **Fail-closed:** Führt jede fehlende, kaputte, widersprüchliche,
+   unverifizierbare oder unvollständige Voraussetzung weiterhin zu keiner
+   `WRITE`-Freigabe?
+7. **Twin-Isolation:** Erhält der Evil Twin ausschließlich den definierten
+   Gegenprüfungs-Kontext, niemals Erst-Reasoning, versteckte Zustände oder
+   fremde Scope-Historie?
+8. **Fehlersicherheit:** Werden leere, kaputte oder fehlende Modellantworten,
+   API-Fehler, Timeouts, Provider-Ausfälle und Prozessabbrüche niemals zu
+   `BESTAETIGT` oder `WRITE`?
+9. **Ausführbarer Beleg:** Gibt es einen echten reproduzierbaren Test oder
+   End-to-End-Lauf für genau das geänderte Verhalten?
+10. **Feindseliger Agent:** Bleibt das System sicher bei einem literalistischen,
+    überheblichen, sycophantischen, manipulierten, inkompetenten oder kaputten
+    Agenten?
+
+`A1` bis `A10` müssen `JA` sein. Ein einziges `NEIN`, `UNBEKANNT` oder fehlender
+Beleg bedeutet zwingend:
+
+```text
+BLOCKED – mindestens eine Invariante ist nicht nachgewiesen.
+```
+
+### FALSIFICATION_RECORD_10X – unabhängiges Prüfprotokoll
+
+Der Record ist kein zweites Abschluss-Gate und kein Modell-Override. Er hält
+fest, was der unabhängige Reviewer tatsächlich geprüft hat. Jede Antwort muss
+auf konkrete zugängliche Evidenz zeigen:
+
+```text
+F1: <Coder claim – konkrete Behauptung und betroffene Dateien/Verhalten>
+F2: <User contract – ursprüngliche Anforderung oder unveränderter Scope-Header>
+F3: <Scope match – exakte Übereinstimmung oder konkrete Divergenz>
+F4: <Falsifiable assumption – eine Annahme, die falsch sein könnte>
+F5: <Attack – konkrete Widerlegungsmaßnahme>
+F6: <Evidence – Datei:Zeile, Symbol, Probe oder anderes verifiziertes Artefakt>
+F7: <Counterevidence – gesuchte Gegenbeweise und Ergebnis>
+F8: <Unexamined area – ungeprüfter oder nur vermuteter Bereich>
+F9: <Residual risk – stärkste verbleibende Unsicherheit>
+F10: <Release decision – WRITE nur bei vorhandener Evidenz, sonst Hindernis>
+```
+
+`F1` bis `F10` müssen bei jedem Plan, jeder Änderung und jeder Iteration
+beantwortet werden. `F6` darf keine Fantasie-Referenz enthalten; nicht
+zugängliche oder nicht verifizierte Daten sind als Unsicherheit zu benennen.
+`WRITE` darf nur nach bestandenem bestehenden Probe-/Twin-/Gate-Vertrag
+behauptet werden. Ohne ausreichenden Nachweis lautet der Abschluss nicht
+„wahrscheinlich“, sondern exakt `BLOCKED – mindestens eine Invariante ist nicht
+nachgewiesen.`
+
+## P0-Cutover — Probe-basierte WRITE-Entscheidung (Revision 5)
+
+- WRITE wird NICHT mehr durch Prosa-Evidenz freigegeben. `hasChallengeEvidence`
+  (core/evidence.mjs, Regel 2 alt) suchte Evidenz im Fließtext – Form-Slop
+  („widerlegt“ + existierender Pfad ohne inhaltlichen Angriff) passierte das
+  Gate. Der Cutover ersetzt Prosa-Regex durch ein strukturiertes Protokoll mit
+  DREI getrennten Schichten (keine Vermischung, core/verdict.mjs bleibt
+  Probe-frei): Thinker erzeugt das Probe-Set (```json-Fence, requirement_ref =
+  Original-H_i-IDs) → Validator (`validateProbeSet`, NUR formal/strukturell
+  inkl. Coverage-Härte jede H_i ≥ 1 Probe + Anti-Vakuum-Minima als Müllfilter)
+  → Twin führt JEDE Probe aus (`runProbeExecution`, semantische
+  Ausführbarkeit → ProbeResult[]) → Gate (`computeVerdict`, entscheidet NUR aus
+  Resultaten + Evidence `probeEvidenceOk` = bestehende twinEvidenceOk/
+  twinOwnFalsificationOk-Semantik pro Probe + bestehende harte Gates
+  structural/Divergenz-Anker/Dateien-unverändert) → WRITE/PLAN.
+- `parseVerdict`-WRITE ist nur KANDIDAT, keine Freigabe. Genau EIN WRITE-Pfad:
+  ein Thinker-WRITE ohne gültiges/coverage-vollständiges Probe-Set wird
+  fail-closed PLAN (keine „nicht prüfbar“-Ausnahme, kein Override).
+  Kaputte/coverage-unvollständige Probe-Sets erreichen den Twin NIE.
+- Header-Anker (COVERAGE-Referenz): `splitRequirement` zerlegt den HEADER
+  (User-Input 1:1, scope.header) deterministisch an Satz-/Listen-/Zeilen-/
+  Semikolon-Grenzen in H1..Hn (Original-Spans, Tail-Merge-Kappe 12, Mini-
+  Merge, vager Ein-Satz-Header → H1). Keine LLM-Zerlegung, keine H1a/H1b-
+  Verfeinerung, keine Header-Mindestqualität. Coverage-Härte ist eine
+  FORMAT-Anforderung, KEIN Qualitätsbeweis.
+- Twin-Kontext-Trennung bleibt (Pkt 7): `runProbeExecution` bekommt NUR
+  HEADER + H_i-Originaltexte + Iteration/Diff + Probe-Set, NIE das Erst-
+  Reasoning. Fail-closed: Parse-Fehler/Timeout → alle Proben UNKLAR;
+  fehlende probe_id → diese Probe UNKLAR; globale Zusatzaussagen ohne
+  Autorität. `twinEvidenceOk`/`twinOwnFalsificationOk`/`anchoredFileLine`
+  bleiben, pro Probe angewendet (BESTAETIGT braucht eigenes Lesen UND
+  verifizierte eigene Datei:Zeile-Referenz).
+- Dateien-unverändert-Gate (P0, letzte harte Hürde): `whitelistSnapshot`
+  erfasst mtime+Größe der Whitelist VOR der Twin-Exekution, danach verglichen
+  – eine während der Prüfung veränderte Basis trägt keine Freigabe.
+
 ## Test-/Verifikationspfade
 
 - Kernsuite: `node --test tests/onboard.test.mjs tests/bootstrap.test.mjs
   tests/security.test.mjs tests/phase2.test.mjs tests/queue.test.mjs
   tests/feasibility.test.mjs tests/datamodel.test.mjs tests/invariants.test.mjs
   tests/selfreview.test.mjs tests/twin.test.mjs tests/prompt.test.mjs
-  tests/agent.test.mjs tests/stats.test.mjs tests/research-additions.test.mjs`
-  (Stand 2026-09-01; deckt die Regeln ab: Queue eine Wahrheit,
+  tests/agent.test.mjs tests/stats.test.mjs tests/research-additions.test.mjs
+  tests/probes.test.mjs tests/probe-e2e.test.mjs`
+  (Stand 2026-09-02; deckt die Regeln ab: Queue eine Wahrheit,
   list_dir-Namen-Vertrag, WRITE-Challenge-Evidenz, Self-Review-Scope,
-  strukturelle Kohärenz, Evil-Twin-Gegenprüfung, Prompt-Daten).
+  strukturelle Kohärenz, Evil-Twin-Gegenprüfung, Prompt-Daten,
+  P0-Probe-Vertrag/Cutover-Matrix/E2E-Fixtures).
   `tests/settings.test.mjs` läuft separat.
 - Prompt-Texte sind DATEN, kein Code: Die System-Prompts leben in
   `core/prompt-text/*.md` (Loader in `core/prompt.mjs`, `promptText()`).

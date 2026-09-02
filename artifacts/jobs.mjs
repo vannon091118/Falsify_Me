@@ -7,12 +7,25 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { nowIso, genId, setMeta, getMeta, isProcessAlive } from "./db.mjs";
 
+const RETRYABLE_FAILURES = Object.freeze(["transient", "worker-crash"]);
+
+function isFinalStatus(status) {
+  return String(status || "").startsWith("DONE") || String(status || "").startsWith("ERROR");
+}
+
+function parseIsoMs(value) {
+  const ms = Date.parse(String(value || ""));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 // ── Jobs ─────────────────────────────────────────────────────────────────────
-export function createJob(db, { scopeId, payload, diffText, root, files, agentIntent = null, affected = null, wave = "scan", mode, status = "QUEUED" }) {
+export function createJob(db, { scopeId, payload, diffText, root, files, agentIntent = null, affected = null, wave = "scan", mode, status = "QUEUED", runtimeConfig = null, maxAttempts = 2 }) {
   const id = genId("job");
+  const snapshot = runtimeConfig == null ? null : JSON.stringify(runtimeConfig);
+  const attempts = Math.max(1, Number(maxAttempts) || 2);
   db.prepare(
-    "INSERT INTO jobs(id, scope_id, payload, diff_text, root, files, agent_intent, affected, wave, mode, status, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-  ).run(id, scopeId ?? null, payload ?? null, diffText ?? null, root ?? null, files ?? null, agentIntent ?? null, affected ?? null, wave || "scan", mode ?? null, status, nowIso());
+    "INSERT INTO jobs(id, scope_id, payload, diff_text, root, files, agent_intent, affected, wave, mode, status, runtime_config, attempt, max_attempts, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).run(id, scopeId ?? null, payload ?? null, diffText ?? null, root ?? null, files ?? null, agentIntent ?? null, affected ?? null, wave || "scan", mode ?? null, status, snapshot, 0, attempts, nowIso());
   return id;
 }
 
@@ -25,11 +38,50 @@ export function jobFilesList(job) {
 }
 
 export function jobToRunning(db, id, windowIdx) {
-  db.prepare("UPDATE jobs SET status = 'RUNNING', window_idx = ?, started_at = ? WHERE id = ?")
+  db.prepare("UPDATE jobs SET status = 'RUNNING', window_idx = ?, started_at = ?, attempt = attempt + 1, retry_at = NULL, failure_kind = NULL WHERE id = ? AND status = 'QUEUED'")
     .run(windowIdx ?? null, nowIso(), id);
 }
 
-export function jobDone(db, id, verdict, error) {
+export function jobRuntimeConfig(job) {
+  if (!job?.runtime_config) return null;
+  try {
+    const value = JSON.parse(job.runtime_config);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function classifyFailure(error, { aborted = false, workerCrash = false } = {}) {
+  if (aborted) return "aborted";
+  if (workerCrash) return "worker-crash";
+  const message = String(error?.message || error || "");
+  if (/Abgebrochen|abort|cancel/i.test(message)) return "aborted";
+  if (/HTTP\s+(408|425|429|5\d\d)|timeout|Zeitbudget|Überlastung|network|fetch failed|ECONN|socket|temporar|provider/i.test(message)) return "transient";
+  return "permanent";
+}
+
+/**
+ * Requeues a transient process/provider failure when the snapshot's attempt
+ * budget is not exhausted. Verdicts never enter this function.
+ */
+export function retryJob(db, id, error, { failureKind = "transient", backoffMs = 0 } = {}) {
+  const row = getJob(db, id);
+  if (!row || isFinalStatus(row.status)) return { retried: false, reason: "final" };
+  const kind = RETRYABLE_FAILURES.includes(failureKind) ? failureKind : "permanent";
+  const maxAttempts = Math.max(1, Number(row.max_attempts) || 1);
+  const attempt = Number(row.attempt) || 0;
+  if (!RETRYABLE_FAILURES.includes(kind) || attempt >= maxAttempts) {
+    jobDone(db, id, null, error || "Lauf fehlgeschlagen", { failureKind: kind });
+    return { retried: false, reason: attempt >= maxAttempts ? "attempt-limit" : "permanent" };
+  }
+  const retryAt = new Date(Date.now() + Math.max(0, Number(backoffMs) || 0)).toISOString();
+  db.prepare("UPDATE jobs SET status = 'QUEUED', error = ?, failure_kind = ?, retry_at = ?, window_idx = NULL, started_at = NULL WHERE id = ? AND status = 'RUNNING'")
+    .run(String(error || "Lauf fehlgeschlagen"), kind, retryAt, id);
+  return { retried: true, reason: "retry", retryAt, attempt, maxAttempts };
+}
+
+export function jobDone(db, id, verdict, error, { failureKind = null } = {}) {
   const status = error ? `ERROR ${error}` : `DONE ${verdict || "UNBEKANNT"}`;
   // Finale Zustaende sind IMMUTABEL (Security-Review 2026-09-01, Pkt 4/7):
   // Ein zweites jobDone (Crash-Guard nach dem Review-Commit, spaeter Abort,
@@ -41,8 +93,8 @@ export function jobDone(db, id, verdict, error) {
   if (final && (final.status.startsWith("DONE") || final.status.startsWith("ERROR"))) {
     return false; // bereits finalisiert — unveränderlich, kein Umschreiben
   }
-  db.prepare("UPDATE jobs SET status = ?, verdict = ?, error = ?, done_at = ? WHERE id = ?")
-    .run(status, verdict ?? null, error ?? null, nowIso(), id);
+  db.prepare("UPDATE jobs SET status = ?, verdict = ?, error = ?, failure_kind = ?, retry_at = NULL, done_at = ? WHERE id = ?")
+    .run(status, verdict ?? null, error ?? null, failureKind, nowIso(), id);
   return true;
 }
 
@@ -91,8 +143,8 @@ export function claimNextJob(db, windowIdx, preferredScopeId = null) {
     }
     if (!row) {
       row = db.prepare(
-        "SELECT id, scope_id FROM jobs WHERE status = 'QUEUED' ORDER BY created_at ASC LIMIT 1"
-      ).get();
+        "SELECT id, scope_id FROM jobs WHERE status = 'QUEUED' AND (retry_at IS NULL OR retry_at <= ?) ORDER BY created_at ASC LIMIT 1"
+      ).get(nowIso());
     }
     if (!row) { db.exec("COMMIT"); return null; }
     jobToRunning(db, row.id, windowIdx);

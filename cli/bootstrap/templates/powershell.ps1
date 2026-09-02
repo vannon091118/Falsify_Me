@@ -34,5 +34,12 @@ function Invoke-FalsifyMeCheck {
     return $LASTEXITCODE
 }
 
+# Pflichtprotokoll nach jeder Arbeit:
+# CHANGE_GATE_10X = A1..A10 jeweils JA mit Proof und Test.
+# FALSIFICATION_RECORD_10X = F1..F10 (Coder claim, User contract, Scope,
+# Annahme, Angriff, verifizierte Evidenz, Gegenbeweise, offene Luecke,
+# Rest-Risiko, Release-Entscheidung).
+# NEIN/UNBEKANNT/fehlender Beleg = BLOCKED – mindestens eine Invariante ist nicht nachgewiesen.
+
 Write-Host "FalsifyMe-Integration fuer PowerShell-Agent geladen"
 Write-Host "  Skills: $script:FALSIFYME_SKILLS_DIR"

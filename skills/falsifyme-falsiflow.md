@@ -41,6 +41,54 @@ into a command.
    - `VERDICT: WRITE` → release: you may switch read-only → write. Implement, then submit the implementation for review in the SAME scope (WRITE/REVIEW loop).
 4. FalsifyMe stays absolutely read-only to the project. Error/missing verdict = no release. Exit codes: 0 WRITE · 1 PLAN/RESEARCH · 2 config/args · 3 API/runtime/no-verdict.
 
+## Mandatory 10x protocol after every piece of work
+
+After every plan, change, bug fix, refactor, feature, documentation change, or
+configuration change, record both layers below. They are agent/reviewer
+contracts, not a second queue or verdict path; only the existing falsification
+pipeline can release `WRITE`.
+
+### CHANGE_GATE_10X
+
+Answer A1 through A10 with `JA` and include proof for each answer:
+
+```text
+A1: JA
+Proof: <concrete evidence>
+Test: <exact command or reproducible verification>
+```
+
+The ten checks cover scope, unchanged architecture, verdict authority, real
+refutation evidence, root/scope binding, fail-closed release, Evil-Twin context
+isolation, safe handling of empty/malformed/API-failed responses, executable
+verification, and hostile-agent safety. Any `NEIN`, `UNBEKANNT`, or missing
+proof means exactly:
+
+```text
+BLOCKED – mindestens eine Invariante ist nicht nachgewiesen.
+```
+
+### FALSIFICATION_RECORD_10X
+
+The independent reviewer records for every plan, change, and iteration:
+
+```text
+F1: coder claim
+F2: user contract
+F3: exact scope match or divergence
+F4: falsifiable assumption
+F5: attack performed
+F6: verified evidence actually read
+F7: counterevidence searched and result
+F8: unexamined or merely assumed area
+F9: strongest residual risk
+F10: WRITE decision or concrete blocker
+```
+
+`F6` must identify evidence that exists in the accessible root and scope;
+fictional files, lines, symbols, or confidence are invalid. No sufficient proof
+means no `WRITE` claim.
+
 ## Workflow
 
 1. **Open worker windows first** (up to 3, always visible, never headless):

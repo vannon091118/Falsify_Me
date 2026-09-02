@@ -4,3 +4,11 @@ node_modules/
 .Falsify_Core/
 .Falsify_Private/
 .Falsify/
+
+# Session-/Planungs-Artefakte (Agent-Scratch, kein Produktinhalt) - nie committen
+.planning/.active_plan
+.planning/2026-09-02-falsifyme-rollentausch-audit/
+.planning/2026-09-02-falsifyme-twin-diversity-diff/
+/task_plan.md
+/findings.md
+/progress.md

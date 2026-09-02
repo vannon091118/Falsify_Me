@@ -26,7 +26,7 @@ import path from "node:path";
 import os from "node:os";
 import { DatabaseSync } from "node:sqlite";
 
-export const SCHEMA_VERSION = "5";
+export const SCHEMA_VERSION = "7";
 
 // ── FALSIFY_HOME auflösen / anlegen ─────────────────────────────────────────
 export function falsifyHome() {
@@ -134,6 +134,11 @@ function migrate(db) {
       verdict     TEXT,
       window_idx  INTEGER,
       error       TEXT,
+      runtime_config TEXT,                 -- nicht-geheimer Modell/API/Twin-Snapshot
+      attempt     INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 2,
+      failure_kind TEXT,                  -- transient | permanent | aborted
+      retry_at    TEXT,
       created_at  TEXT NOT NULL,
       started_at  TEXT,
       done_at     TEXT
@@ -193,6 +198,20 @@ function migrate(db) {
   try {
     db.exec("ALTER TABLE scopes ADD COLUMN research_additions TEXT");
   } catch { /* existiert */ }
+
+  // ── Schema-Version 6/7: unveränderlicher Job-Laufzeit-Snapshot + Retry ───
+  // Nur nicht-geheime Konfiguration wird gespeichert. Ein Settings-Wechsel
+  // beeinflusst weder wartende noch wiederholte Jobs; terminale Zustände
+  // bleiben davon unabhängig unveränderlich.
+  for (const sql of [
+    "ALTER TABLE jobs ADD COLUMN runtime_config TEXT",
+    "ALTER TABLE jobs ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE jobs ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 2",
+    "ALTER TABLE jobs ADD COLUMN failure_kind TEXT",
+    "ALTER TABLE jobs ADD COLUMN retry_at TEXT",
+  ]) {
+    try { db.exec(sql); } catch { /* existiert */ }
+  }
 
   setMeta(db, "schema_version", SCHEMA_VERSION);
 }

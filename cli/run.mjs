@@ -32,8 +32,9 @@ import { loadApiKey, loadApiKeyForNames, keyEnvFile, keyNames } from "../core/ke
 import { loadConfig } from "../core/config.mjs";
 import { enforceRateLimit } from "../core/ratelimit.mjs";
 import { SYSTEM_DE_FULL, SYSTEM_EN_FULL, buildUserContent } from "../core/prompt.mjs";
-import { parseVerdict, parseBefund, parseSubPrompt, enforceWriteChallenge, enforceStructuralCoherence, findingSeverity, parseScopeDivergence, enforceResearchContract, extractResearchAdditions, exitCodeOf, twinEvidenceOk, twinOwnFalsificationOk } from "../core/verdict.mjs";
-import { runTwinCheck, extractClaims } from "../core/twin.mjs";
+import { parseVerdict, parseBefund, parseSubPrompt, findingSeverity, parseScopeDivergence, enforceResearchContract, extractResearchAdditions, exitCodeOf } from "../core/verdict.mjs";
+import { runProbeExecution } from "../core/twin.mjs";
+import { parseProbeSet, validateProbeSet, splitRequirement, renderRequirementList, probeEvidenceOk, computeVerdict } from "../core/probes.mjs";
 import { runAgent } from "../core/agent.mjs";
 import { checkFeasibility } from "../core/feasibility.mjs";
 import { resolveProjectContext, validateProjectFiles } from "../core/project-context.mjs";
@@ -158,6 +159,25 @@ for (let i = 0; i < args.length; i++) {
       if (a.startsWith("-")) { console.error(`Unbekannte Option: ${a}`); usage(); process.exit(2); }
       positional.push(a);
   }
+}
+
+/**
+ * P0 (letztes harte Gate): mtime+Größe-Snapshot der Whitelist-Dateien. Wird
+ * vor und nach der Twin-Exekution verglichen – eine während der Prüfung
+ * veränderte Datei invalidate die Freigabe (Gate: Prüf-Basis unverändert).
+ * Read-only; fehlende/unlesbare Dateien tragen keinen Eintrag (Konsistenz:
+ * fehlt vorher UND nachher = unverändert).
+ */
+function whitelistSnapshot(root, whitelist) {
+  const snap = new Map();
+  for (const f of whitelist || []) {
+    try {
+      const abs = path.isAbsolute(f) ? f : path.join(root, f);
+      const st = fs.statSync(abs);
+      if (st.isFile()) snap.set(String(f), { mtimeMs: st.mtimeMs, size: st.size });
+    } catch { /* fehlt/unlesbar – kein Eintrag */ }
+  }
+  return snap;
 }
 
 function readFileOrExit(p, what) {
@@ -456,13 +476,26 @@ async function main() {
     agentIntent: job?.agent_intent || null,
     affected: (job?.affected || "").split(",").map((s) => s.trim()).filter(Boolean),
     lastDivergence: scope ? scope.last_divergence : null,
+    // P0 (Regel 1): Coverage-Anker des Probe-Sets – die Thinker-Antwort darf
+    // requirement_ref nur auf diese Original-H_i-IDs beziehen (keine Paraphrase).
+    requirementList: renderRequirementList(splitRequirement(scope ? scope.header : planText)),
   });
 
   const t0 = Date.now();
   let result;
   uiEvt({ t: "state", s: "THINKING" });
+  // NVIDIA-Overload-Kompensation (2026-09-02): Überlastung/Timeout beendet den
+  // Job NICHT sofort — das Modell arbeitet weiter, sobald das 40-RPM-Budget
+  // wieder Platz hat (enforceRateLimit blockiert bis zum freien Slot).
+  // Begrenzt durch maxJobAttempts/jobRetryBackoffMs; nicht-retrybare Fehler
+  // (z. B. HTTP 401/403, Parse-Fehler) gehen direkt in den Fehlerpfad.
+  const maxAttempts = Math.max(1, Number(CFG.maxJobAttempts) || 1);
+  const backoffMs = Math.max(0, Number(CFG.jobRetryBackoffMs) || 0);
+  const retryableOverload = (msg) => /überlastung|Überlastung|429|rate.?limit|HTTP 5\d\d|timeout|Netzwerk/i.test(msg);
   try {
-    result = await runAgent({
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        result = await runAgent({
       systemPrompt, userContent, model, apiKey,
       apiBase: CFG.apiBase,
       maxTokens: CFG.maxTokens,
@@ -476,7 +509,17 @@ async function main() {
         uiEvt({ t: "state", s: "TOOL_ACTIVITY" });
         uiEvt({ t: "activity", tool: info.tool, file: info.file, label: `${info.tool}(${info.file ?? ""})` });
       },
-    });
+      });
+      break;
+      } catch (e) {
+        if (!retryableOverload(String(e.message || "")) || attempt >= maxAttempts) throw e;
+        const waitMs = Math.max(1000, backoffMs * attempt);
+        console.warn(yellow(`⚠ API-Überlastung (Versuch ${attempt}/${maxAttempts}) – warte ${Math.round(waitMs / 1000)}s auf freien 40-RPM-Slot, dann arbeitet das Modell weiter …`));
+        uiEvt({ t: "state", s: "TIMEOUT" });
+        enforceRateLimit(maxRpm, false);
+        await new Promise((r) => setTimeout(r, waitMs));
+      }
+    }
   } catch (e) {
     // Timeout-Eskalation (2026-09-01): Ueberlastete Provider enden ehrlich —
     // kein Fake-Verdict, Job als ERROR mit Ursache, Exit 3, Hinweis zum
@@ -504,18 +547,34 @@ async function main() {
   const befund = parseBefund(result.content);
   const subPrompt = parseSubPrompt(result.content);
 
-  // ── Anti-Self-Check-Bias (Thinker): WRITE nur mit Challenge-Nachweis ─────
-  // Regel 2 (UI-098): Ein vorhandenes "## Falsifikationsversuche"-Feld ist KEIN
-  // Nachweis — jeder Versuch braucht konkrete, überprüfbare Evidenz (Datei:
-  // Zeile, Whitelist-Datei, zitiertes Symbol). Verifiziert gegen Whitelist +
-  // Root des Jobs (genannte Pfade müssen existieren/erlaubt sein).
+  // ── P0-Cutover (Probe-basierte WRITE-Entscheidung, Revision 5) ───────────
+  // parseVerdict-WRITE ist nur KANDIDAT – die Freigabe entscheidet
+  // AUSSCHLIESSLICH das deterministische Gate über das ausgeführte Probe-Set
+  // (core/probes.mjs computeVerdict). Genau EIN WRITE-Pfad: ein Thinker-WRITE
+  // ohne gültiges Probe-Set wird fail-closed PLAN (kein Override, keine
+  // „nicht prüfbar“-Ausnahme). PLAN/RESEARCH/ASK laufen unverändert durch.
   const parsedVerdict = parseVerdict(result.content);
-  let verdict = enforceWriteChallenge(result.content, parsedVerdict, {
-    whitelist: FILE_WHITELIST,
-    root: ROOT,
-  });
-  if (parsedVerdict === "WRITE" && verdict === null) {
-    console.warn(yellow("\n⚠ WRITE ohne Challenge-EVIDENZ (kein Falsifikationsversuch mit konkreter Datei:Zeile-/Symbol-/Whitelist-Referenz) – als UNKNOWN behandelt, KEINE Freigabe."));
+  let verdict = parsedVerdict;
+  // Schnitt 1: Probe-Set parsen + NUR formal/strukturell validieren (die
+  // alte Prosa-Evidenz-Suche enforceWriteChallenge ist ersetzt). Coverage-
+  // Härte (jede H_i ≥ 1 Probe), Original-H_i-IDs ohne Paraphrase, Target in
+  // Root+Whitelist, Anti-Vakuum-Minima als Müllfilter – keine Semantik.
+  let probeParse = null;
+  let probeValidation = null;
+  if (verdict === "WRITE") {
+    probeParse = parseProbeSet(result.content);
+    probeValidation = probeParse.ok
+      ? validateProbeSet(probeParse.probes, {
+          requirementSource: scope ? scope.header : planText,
+          root: ROOT,
+          whitelist: FILE_WHITELIST,
+        })
+      : { ok: false, reasons: [], probes: [] };
+    if (!probeParse.ok) {
+      console.warn(yellow(`\n⚠ WRITE-Kandidat ohne lesbares Probe-Set (${probeParse.error}) – das Gate entscheidet fail-closed.`));
+    } else if (!probeValidation.ok) {
+      console.warn(yellow(`\n⚠ Probe-Set formal ungültig (${probeValidation.reasons.length} Grund/Gründe, u. a.: ${String(probeValidation.reasons[0]).slice(0, 120)}) – das Gate entscheidet fail-closed.`));
+    }
   }
   // RESEARCH-Vertrag (2026-09-01): RESEARCH nur mit KONKRET benanntem
   // fehlenden Datum im BEFUND — pauschales „brauche mehr Infos“ wird
@@ -537,11 +596,11 @@ async function main() {
     }
   }
   // Regel 5 (UI-103): ein formales Gate macht keine kaputte Basis grün —
-  // WRITE gegen harte strukturelle Blocker wird zu PLAN (nicht freigegeben).
+  // strukturelle Blocker gehen als hartes Gate in computeVerdict ein
+  // (WRITE-Kandidat + Blocker ⇒ PLAN, deterministisch im Gate).
   const structural = feasibility.blocks || [];
   if (parsedVerdict === "WRITE" && structural.length) {
-    console.warn(yellow(`\n⚠ WRITE trotz struktureller Widersprüche (${structural.length}: ${structural[0]}) – als PLAN behandelt. Ein Gate ist erst belastbar, wenn die zugrunde liegende Behauptung steht (Regel 5).`));
-    verdict = enforceStructuralCoherence(structural, verdict);
+    console.warn(yellow(`\n⚠ WRITE trotz struktureller Widersprüche (${structural.length}: ${structural[0]}) – das Gate behandelt dies als PLAN (Regel 5).`));
   }
   // Regel 7 (UI-107, Loop-Anker): Der Thinker deklariert das Ergebnis der
   // Gegenueberstellung der Umsetzungsvorschlaege beider Agents
@@ -552,25 +611,37 @@ async function main() {
   if (anchor.tooShort) {
     console.warn(yellow(`⚠ SCOPE-DIVERGENZ-Begruendung ist sehr vage (<20 Zeichen: ${anchor.divergence.slice(0, 40)}) – Anker wird trotzdem gesetzt (kein stiller Verlust).`));
   }
-  if (verdict === "WRITE" && anchor.divergence) {
-    console.warn(yellow(`\n⚠ WRITE trotz deklarierter SCOPE-DIVERGENZ im Umsetzungsverstaendnis (${anchor.divergence.slice(0, 80)}…) – als PLAN behandelt. Der Loop-Anker zwingt zur Scope-Praezisierung (Regel 7).`));
-    verdict = "PLAN";
-  } else if (anchor.divergence) {
-    console.log(dim(`Loop-Anker: SCOPE-DIVERGENZ deklariert (${anchor.divergence.slice(0, 60)}…) – Anker persistiert.`));
+  if (anchor.divergence) {
+    console.log(dim(`Loop-Anker: SCOPE-DIVERGENZ deklariert (${anchor.divergence.slice(0, 60)}…) – Anker persistiert; das Probe-Gate behandelt eine offene Divergenz als PLAN (Regel 7).`));
   }
-  // Regel 6 (UI-104): WRITE braucht UNABHÄNGIGE Evidenz (Evil Twin). Der
-  // Erstprüfer hat widerlegt und verifiziert in EINER Konversation – eine
-  // Freigabe ist erst belastbar, wenn eine ZWEITE, kontextgetrennte Instanz
-  // die Widerlegung selbst gegen den Code geprüft hat (eigene frische
-  // Konversation, nur die Behauptungen, nie das Erst-Reasoning). Fail-closed:
-  // WIDERSPRUCH/UNKLAR/Fehler ⇒ PLAN – kein WRITE ohne unabhängige
-  // Bestätigung. Nur WRITE-Kandidaten kosten den zweiten Modell-Call.
+  // Regel 6 (UI-104, P0-Schnitt 2): WRITE braucht die unabhängige Probe-
+  // Exekution durch den Evil Twin (kontextgetrennte Konversation: nur HEADER,
+  // H_i-Originaltexte, Iteration/Diff + Probe-Set – nie das Erst-Reasoning).
+  // Der Twin liefert je Probe ein striktes ProbeResult
+  // (BESTAETIGT | WIDERSPRUCH | UNKLAR). Fail-closed: Parse-Fehler/Timeout →
+  // alle Proben UNKLAR; fehlende probe_id → UNKLAR; globale Zusatzaussagen
+  // ohne Autorität. Nur WRITE-Kandidaten mit FORMAL GÜLTIGEM Probe-Set kosten
+  // den zweiten Modell-Call — kaputte/coverage-unvollständige Sets erreichen
+  // den Twin nie (Schritt-2-Regel) und werden direkt im Gate zu PLAN.
   let twin = null;
-  if (verdict === "WRITE") {
+  if (verdict === "WRITE" && !(probeParse?.ok && probeValidation?.ok)) {
+    // Gate ohne Twin-Call: Probe-Set unlesbar/formal ungültig ⇒ deterministisch
+    // PLAN (gleiche Gründe, die computeVerdict liefern würde).
+    const gate = computeVerdict({
+      parseError: probeParse?.ok ? null : (probeParse?.error ?? "Probe-Set fehlt"),
+      validation: probeValidation,
+      results: null,
+      structuralBlocks: structural,
+      divergence: anchor.divergence,
+      filesUnchanged: true,
+    });
+    console.warn(yellow(`\n⚠ Gate: ${gate.verdict} (keine Freigabe, kein Gegenprüfungs-Call). Gründe:\n${gate.reasons.map((r) => `  · ${r}`).join("\n")}`));
+    verdict = "PLAN";
+  } else if (verdict === "WRITE") {
     uiEvt({ t: "state", s: "VERIFYING" });
     uiEvt({ t: "model", who: "twin" }); // Rollenwechsel sichtbar: jetzt prueft der Twin
     enforceRateLimit(maxRpm, false); // zweiter Call: Budget teilen, nie wegen Budget failen
-    console.log(dim("Gegenprüfung (Evil Twin – unabhängige Konversation) läuft …"));
+    console.log(dim("Gegenprüfung (Evil Twin – Probe-Exekution, unabhängige Konversation) läuft …"));
     // Twin-Diversität (Pkt 3/10): eigenes Modell/eigene API-Base/ eigener Key
     // sind WÄHLBAR (FALSIFY_TWIN_*). Ohne Diversität ehrlich warnen — der
     // gemeinsame Blindspot (gleiche Modellfamilie/Biases) ist dann eine
@@ -582,11 +653,16 @@ async function main() {
     if (!CFG.twinDiversity) {
       console.warn(yellow("⚠ Gegenprüfung läuft mit dem PRIMÄRMODELL (keine Modell-Diversität konfiguriert: FALSIFY_TWIN_MODEL/FALSIFY_TWIN_API_BASE). BESTAETIGT heißt dann: der Fall hält Nachprüfung durch dieselbe Modellfamilie stand – ein geteilter Bias/Blindspot ist nicht ausgeschlossen."));
     }
-    twin = await runTwinCheck({
-      header: scope ? scope.header : null,
+    // Dateien während der Prüfung unverändert (P0, letztes harte Gate):
+    // Whitelist-Snapshot VOR der Exekution, mtime+Größe danach verglichen –
+    // eine während der Prüfung veränderte Basis kann keine Freigabe tragen.
+    const snapshotBefore = whitelistSnapshot(ROOT, FILE_WHITELIST);
+    twin = await runProbeExecution({
+      probes: probeValidation.probes,
+      requirementList: renderRequirementList(splitRequirement(scope ? scope.header : planText)),
       planText,
-      befund,
-      claims: extractClaims(result.content),
+      diffText,
+      header: scope ? scope.header : null,
       lang,
       model: CFG.twinModel,
       apiKey: twinKey,
@@ -610,22 +686,40 @@ async function main() {
         uiEvt({ t: "activity", tool: info.tool, file: info.file, label: `${info.tool}(${info.file ?? ""})` });
       },
     });
-    if (twin.verdict === "BESTAETIGT" && twinEvidenceOk(twin, { root: ROOT, whitelist: FILE_WHITELIST })
-        && twinOwnFalsificationOk(twin, { root: ROOT, whitelist: FILE_WHITELIST })) {
-      console.log(green(dim("Gegenprüfung BESTÄTIGT: die Widerlegung hält unabhängiger Nachprüfung stand (eigenes Lesen + eigene verifizierte Referenz nachgewiesen).")));
-    } else if (twin?.verdict === "BESTAETIGT") {
-      // Regel-6-Rig (Befund 2/9): „BESTAETIGT ohne eigenes Lesen“ blockt.
-      // Regel-6-Audit (Befund 10): NACHLESEN der Erstprüfer-Zitate ist keine
-      // zweite Falsifikation. Audit Pkt 8: Existenz-Verifikation ist nur
-      // syntaktisch — die eigene Datei:Zeile muss die Zeile jetzt WÖRTLICH
-      // zitieren (anchoredFileLine), sonst ist die Evidenz nicht semantisch
-      // verankert und die Freigabe bleibt verweigert.
-      const reason = twin.befund || "kein eigenes Lesen/keine wörtlich zitierte eigene Referenz";
-      console.warn(yellow(`\n⚠ BESTAETIGT ohne belegte EIGENE Falsifikation (Tool-Runden: ${twin.toolRounds ?? 0}, wörtlich zitierte eigene Datei:Zeile fehlt: ${reason.slice(0, 80)}) – als UNKLAR behandelt, KEINE Freigabe.`));
-      verdict = "PLAN";
+    // Evidence-Semantik (twinEvidenceOk + twinOwnFalsificationOk, Regel 6) –
+    // pro Probe angewendet: jede BESTAETIGT-Probe braucht eigenes Lesen
+    // (host-aufgezeichnete Tool-Runden) UND eine verifizierbare eigene
+    // Referenz; halluzinierte Zitate failen (anchoredFileLine).
+    const probeEvidenceOpts = { root: ROOT, whitelist: FILE_WHITELIST };
+    const probeResults = twin.results.map((r) => ({
+      ...r,
+      evidenceOk: probeEvidenceOk(r, twin, probeEvidenceOpts),
+    }));
+    const snapshotAfter = whitelistSnapshot(ROOT, FILE_WHITELIST);
+    const filesUnchanged = snapshotBefore.size === snapshotAfter.size
+      && [...snapshotBefore].every(([f, st]) => {
+        const after = snapshotAfter.get(f);
+        return after && after.mtimeMs === st.mtimeMs && after.size === st.size;
+      });
+    if (!filesUnchanged) {
+      console.warn(yellow("\n⚠ Whitelist-Dateien wurden während der Gegenprüfung verändert – Gate: Prüf-Basis unverändert, KEINE Freigabe."));
+    }
+    // Deterministisches Gate (die EINZIGE WRITE-Quelle, P0): entscheidet NUR
+    // aus Resultaten + Evidence + bestehenden harten Gates (structural,
+    // Divergenz-Anker, Dateien unverändert). Fail-closed: alles andere ist
+    // PLAN mit Grundliste – kein „nicht prüfbar“-Ausnahme, kein Override.
+    const gate = computeVerdict({
+      parseError: probeParse.ok ? null : probeParse.error,
+      validation: probeValidation,
+      results: probeResults,
+      structuralBlocks: structural,
+      divergence: anchor.divergence,
+      filesUnchanged,
+    });
+    if (gate.verdict === "WRITE") {
+      console.log(green(dim(`Gegenprüfung abgeschlossen: alle ${probeResults.length} Probe(n) BESTÄTIGT mit gültiger Evidence – Freigabe durch das Gate.`)));
     } else {
-      const reason = twin.befund || twin.error || "keine belastbare Bestätigung";
-      console.warn(yellow(`\n⚠ WRITE ohne unabhängige Bestätigung (Gegenprüfung: ${twin.verdict}) – als PLAN behandelt. ${reason}`));
+      console.warn(yellow(`\n⚠ Gate: ${gate.verdict} (keine Freigabe). Gründe:\n${gate.reasons.map((r) => `  · ${r}`).join("\n")}`));
       verdict = "PLAN";
     }
   }
@@ -663,17 +757,23 @@ async function main() {
         });
         // Gegenprüfung als eigenes Finding mit Welle 'evil-twin' – Letztes
         // Finding trägt IMMER das final geltende Urteil (Invariante 4 bleibt
-        // gültig: jobs.verdict == letztes findings.verdict).
+        // gültig: jobs.verdict == letztes findings.verdict). P0: der Befund
+        // fasst die Probe-Resultate zusammen (Status-Verteilung), nicht ein
+        // Freitext-Urteil des Twins.
         if (twin) {
+          const statusCount = twin.results.reduce((acc, r) => {
+            const s = String(r?.status ?? "UNBEKANNT");
+            acc[s] = (acc[s] || 0) + 1;
+            return acc;
+          }, {});
+          const summary = Object.entries(statusCount).map(([s, n]) => `${s}=${n}`).join(", ");
           addFinding(db, {
             scopeId: scope.id,
             jobId,
             round: nextRound(db, scope.id),
             wave: "evil-twin",
             mode: job?.mode || scope.phase,
-            befund: twin.befund
-              ? `GEGENPRÜFUNG ${twin.verdict}: ${twin.befund}`
-              : `GEGENPRÜFUNG ${twin.verdict}${twin.error ? ` (${twin.error})` : ""}`,
+            befund: `GEGENPRÜFUNG Probe-Exekution (${summary})${twin.error ? ` – ${twin.error}` : ""}`,
             content: twin.content || "",
             verdict: verdict || "UNBEKANNT",
           });

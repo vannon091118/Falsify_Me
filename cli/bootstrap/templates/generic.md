@@ -25,3 +25,18 @@ Dock = sichtbare Visualisierung der laufenden FalsifyMe-Arbeit
    Exit 2/3 = Fehler -> KEINE Freigabe
 
 Bis VERDICT: WRITE bleibt der Agent READ-ONLY.
+
+## Pflichtprotokoll nach jeder Arbeit
+
+Nach jedem Plan, jeder Änderung, jedem Bugfix, jedem Refactoring, jedem Feature,
+jeder Dokumentations- und jeder Konfigurationsänderung:
+
+- `CHANGE_GATE_10X`: A1 bis A10 müssen `JA` sein; jede Antwort braucht
+  `Proof:` und `Test:`.
+- `FALSIFICATION_RECORD_10X`: F1 Coder claim, F2 User contract, F3 Scope match,
+  F4 falsifizierbare Annahme, F5 Angriff, F6 verifizierte Evidenz, F7
+  Gegenbeweise, F8 ungeprüfter Bereich, F9 Rest-Risiko, F10
+  Release-Entscheidung.
+
+Ein einziges `NEIN`, `UNBEKANNT` oder fehlender Beleg bedeutet:
+`BLOCKED – mindestens eine Invariante ist nicht nachgewiesen.`
