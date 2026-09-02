@@ -263,6 +263,11 @@ test("Anti-Self-Check-Bias: WRITE ohne Challenge-Nachweis -> UNKNOWN (keine Frei
   assert.equal(rubber("1. I see no gap and no flaw in core/verdict.mjs"), false, "Zwei Refutations-Woerter in reiner Bestaetigung = kein Angriff");
   assert.equal(rubber("1. No issues detected, all good in core/verdict.mjs"), false, "EN-Phrasen no issues/all good = kein Angriff");
   assert.equal(rubber("1. The code looks correct, no vulnerabilities in core/verdict.mjs"), false, "EN-Phrasen looks correct/no vulnerabilities = kein Angriff");
+  // Live-Probe (Checklisten-Audit 2026-09-01): komma-sequenzierte Negationen
+  // scheiterten an \s+ nach dem Nomen — "no gap, no flaw, no issue" passierte
+  // das Gate. Das optionale Suffix ist \b-gebunden, das Komma-Format blockt.
+  assert.equal(rubber("1. No gap, no flaw, no issue — the implementation is solid (core/verdict.mjs)"), false, "Komma-sequenzierte EN-Negation + solid = kein Angriff");
+  assert.equal(rubber("1. No bug, no gap (core/verdict.mjs)"), false, "Kurze Komma-Negation = kein Angriff");
   // Audit-Befund 2 (2026-09-01): Datei:Zeile mit falscher Gross-/Kleinschrift
   // darf nicht verworfen werden — resolveRel loest case-insensitiv auf.
   assert.equal(rubber("1. Widerlegt: `claimNextJob` (Artifacts/Jobs.mjs:78)"), true, "Case-insensitive Datei:Zeile wird aufgeloest");

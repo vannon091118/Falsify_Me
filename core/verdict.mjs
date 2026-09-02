@@ -69,7 +69,11 @@ const REFUTATION = /widerlegt?|widerlegung|refuted|verletzt|violates?|bricht|bre
 // Bestätigungen, aber ihre Wörter (gap, flaw, …) sind REFUTATION-Tokens und
 // liessen einen Rubber-Stamp durch. Die Senke neutralisiert sie, damit
 // hasRefutation keine Widerlegung mehr sieht.
-const NEGATION_SINK = /\b(?:kein(?:e|er|em|en)?\s+(?:fehler|gefunden|luecke|lücke|bug|problem|schwachstelle|schwaechen|risiko|anhaltspunkt|verstoss|widerspruch|gegenteil)|no\s+(?:errors?|issues?|problems?|bugs?|gaps?|flaws?|vulnerabilit(?:y|ies)|concerns?|defects?|lücken|luecken)\s+(?:found|detected|present|here)?|nothing\s+wrong|all\s+good|looks?\s+correct|seems?\s+(?:correct|fine|ok|okay|good|right)|\bis\s+(?:correct|fine|ok|okay|good|right))\b/gi;
+// Live-Probe-Fix (Checklisten-Audit 2026-09-01): Die Senke verlangte nach dem
+// Defekt-Nomen zwingend Whitespace (\s+(found|detected|…)?) — komma-sequenzierte
+// Negationen wie „no gap, no flaw, no issue — solid“ scheiterten an \s+ und
+// passierten das Gate. Das Suffix ist jetzt voll optional (\b-gebunden).
+const NEGATION_SINK = /\b(?:kein(?:e|er|em|en)?\s+(?:fehler|gefunden|luecke|lücke|bug|problem|schwachstelle|schwaechen|risiko|anhaltspunkt|verstoss|widerspruch|gegenteil)|no\s+(?:errors?|issues?|problems?|bugs?|gaps?|flaws?|vulnerabilit(?:y|ies)|concerns?|defects?|lücken|luecken)\b(?:\s+(?:found|detected|present|here|at\s+all))?|nothing\s+wrong|all\s+good|looks?\s+correct|seems?\s+(?:correct|fine|ok|okay|good|right)|\bis\s+(?:correct|fine|ok|okay|good|right|solid))\b/gi;
 
 /**
  * Widerlegungs-Zwang (RunDance-Befund 7, 2026-09-01): EIN einzelnes
