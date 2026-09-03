@@ -260,17 +260,18 @@ test('Instruction-like Daten -> Anomalie + FACTUAL_FALLBACK, keine Autoritaet', 
   rmSync(dir, { recursive: true, force: true });
 });
 
-test('DOKI 429-Sturm und Timeout -> FACTUAL_FALLBACK, reswitch_count=5, FalsifyMe unbeeinflusst', async () => {
+test('DOKI 429/Timeout -> sofortiger FACTUAL_FALLBACK, genau 1 Thinker-Call, FalsifyMe unbeeinflusst', async () => {
+  // Zielvertrag (Plan: „No multi-call reswitch chain belongs in the target
+  // narrative path“): EIN Call, Fehler -> Fallback, kein Reswitch-Sturm.
   for (const err of ['HTTP 429', 'DOKI-TIMEOUT']) {
     const { dir, fdb, dPath } = fixture();
     const ddb = openDokiDb(dPath);
-    const env = { DOKI_MAX_CALLS: '6' };
     let calls = 0;
     const modelCall = async () => { calls++; throw new Error(err); };
-    const m = await processEvent({ falsifyDb: fdb, dokiDb: ddb, eventId: 'e1', env, modelCall });
+    const m = await processEvent({ falsifyDb: fdb, dokiDb: ddb, eventId: 'e1', modelCall });
     assert.equal(m.mode, 'FACTUAL_FALLBACK');
-    assert.equal(m.reswitch_count, 5, 'reswitch_count muss 5 sein (' + err + ')');
-    assert.equal(calls, 6, 'kein 6. Reswitch-Call ueber das Limit hinaus');
+    assert.equal(m.reswitch_count, 0, 'kein Reswitch im Ein-Call-Zielvertrag (' + err + ')');
+    assert.equal(calls, 1, 'genau ein Thinker-Call, kein Reswitch-Sturm (' + err + ')');
     assert.equal(fdb.prepare('SELECT COUNT(*) c FROM loop_events').get().c, 1);
     assert.equal(fdb.prepare('SELECT loop_state FROM jobs WHERE id = ?').get('j1').loop_state, 'DONE');
     ddb.close(); fdb.close();

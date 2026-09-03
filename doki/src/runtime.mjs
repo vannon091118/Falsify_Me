@@ -41,7 +41,7 @@ function makeReport(snapshot, history, updateId) {
 }
 
 function fallback(prompt, reason='DOKI konnte keine Prosa erzeugen.') {
-  return { mode:'FACTUAL_FALLBACK', renderPath:'FACTUAL_FALLBACK', body:`${reason} Fakten bleiben erhalten.`, prompt, narratorContext: prompt.narratorContext ?? null };
+  return { mode:'FACTUAL_FALLBACK', renderPath:'FACTUAL_FALLBACK', reswitchCount:0, body:`${reason} Fakten bleiben erhalten.`, prompt, narratorContext: prompt.narratorContext ?? null };
 }
 
 function deriveCare(snapshot, report) {
