@@ -2,9 +2,10 @@ import { digestJson } from './hash.mjs';
 import { buildHistory, correlation } from './history.mjs';
 import { chooseAction, updateQ, budgetDefaults } from './qlearning.mjs';
 import { compilePrompt, detectInstructionLikeData } from './prompt.mjs';
-import { callModel, modelForAction } from './model.mjs';
+import { callModel, modelForAction, activeThinkerRunExists } from './model.mjs';
 import { DEFAULT_MAX_RESWITCH, RUNTIME_VERSION } from './contracts.mjs';
 import { inspectEventContinuity, readSnapshot } from './falsify-reader.mjs';
+import { sharedKeyWindowOpen } from './rotation.mjs';
 
 const now = () => new Date().toISOString();
 const updateIdFor = (eventId) => digestJson(`doki:${eventId}:${RUNTIME_VERSION}`);
@@ -31,22 +32,35 @@ function makeReport(snapshot, history, updateId) {
   return report;
 }
 
-async function narrate({db,report,snapshot,history,action,updateId,env}) {
-  const budget=budgetDefaults(env); const prompt=compilePrompt(report,snapshot,history,{perspective:report.correlation_status==='DIVERGENCE'?'abweichende Perspektiven explizit benennen':'neutral'});
-  db.prepare('INSERT OR REPLACE INTO prompt_runs(prompt_id,update_id,prompt_digest,report_digest,prompt_json,created_at) VALUES(?,?,?,?,?,?)').run(prompt.promptId,updateId,prompt.promptDigest,report.report_digest,JSON.stringify(prompt),now());
-  if(detectInstructionLikeData(snapshot)) return {mode:'FACTUAL_FALLBACK',renderPath:'FACTUAL_FALLBACK',reswitchCount:0,body:'DOKI hat instruction-like Daten erkannt und zeigt deshalb nur die belegten Fakten.',prompt};
+function fallback(prompt, reason='DOKI konnte keine Prosa erzeugen.') {
+  return { mode:'FACTUAL_FALLBACK', renderPath:'FACTUAL_FALLBACK', reswitchCount:0, body:`${reason} Fakten bleiben erhalten.`, prompt };
+}
+
+async function narrate({report,snapshot,history,action,updateId,env,falsifyDb,dokiDb}) {
+  const budget=budgetDefaults(env);
+  const prompt=compilePrompt(report,snapshot,history,{perspective:report.correlation_status==='DIVERGENCE'?'abweichende Perspektiven explizit benennen':'neutral'});
+  dokiDb.prepare('INSERT OR REPLACE INTO prompt_runs(prompt_id,update_id,prompt_digest,report_digest,prompt_json,created_at) VALUES(?,?,?,?,?,?)').run(prompt.promptId,updateId,prompt.promptDigest,report.report_digest,JSON.stringify(prompt),now());
+  if(detectInstructionLikeData(snapshot)){
+    dokiDb.prepare('INSERT INTO anomalies(update_id,kind,detail,created_at) VALUES(?,?,?,?)').run(updateId,'INSTRUCTION_LIKE_DATA','Narrative input contained instruction-like data; authority unchanged.',now());
+    return fallback(prompt,'DOKI hat instruction-like Daten erkannt.');
+  }
+  if(!sharedKeyWindowOpen(falsifyDb,snapshot.loop_event.id) || activeThinkerRunExists(falsifyDb)) return fallback(prompt,'DOKI Shared-Key-Fenster ist geschlossen.');
   let current=action, calls=0, reswitch=0, lastError=null;
-  while(calls<budget.maxCalls){
+  while(calls < budget.maxCalls){
+    if(!sharedKeyWindowOpen(falsifyDb,snapshot.loop_event.id) || activeThinkerRunExists(falsifyDb)) return fallback(prompt,'DOKI Kill-Switch ausgelöst.');
     try{
-      const result=await callModel(prompt.body,modelForAction(current,env),env); calls++;
+      const result=await callModel(prompt.body,modelForAction(current,env),{env,shouldAbort:()=>!sharedKeyWindowOpen(falsifyDb,snapshot.loop_event.id)||activeThinkerRunExists(falsifyDb)});
+      calls++;
+      dokiDb.prepare('INSERT OR REPLACE INTO rotation_state(id,window_key,reswitch_count,call_count,token_count,updated_at) VALUES(1,?,?,?,?,?)').run(snapshot.loop_event.job_id,reswitch,calls,0,now());
       return {mode:'NARRATIVE',renderPath:current==='RED'?'RESWITCH_THINKER_MODEL':'SMALL_MODEL',reswitchCount:reswitch,body:result.text,prompt};
     }catch(error){
       lastError=error; calls++;
       if(reswitch>=DEFAULT_MAX_RESWITCH) break;
       reswitch++; current='RED';
+      if(reswitch>DEFAULT_MAX_RESWITCH) break;
     }
   }
-  return {mode:'FACTUAL_FALLBACK',renderPath:'FACTUAL_FALLBACK',reswitchCount:reswitch,body:`DOKI konnte keine Prosa erzeugen: ${String(lastError?.message||lastError||'unbekannter Fehler')}. Fakten bleiben erhalten.`,prompt};
+  return fallback(prompt, reswitch>=DEFAULT_MAX_RESWITCH ? 'RESWITCH-Limit (5) erreicht.' : `DOKI-LLM-Fehler: ${String(lastError?.message||lastError||'unbekannter Fehler')}.`);
 }
 
 export async function processEvent({falsifyDb,dokiDb,eventId,env=process.env}){
@@ -61,8 +75,9 @@ export async function processEvent({falsifyDb,dokiDb,eventId,env=process.env}){
     dokiDb.prepare('INSERT INTO observations(update_id,loop_event_id,job_id,scope_id,event_type,from_state,to_state,snapshot_json,snapshot_digest,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(updateId,eventId,snapshot.loop_event.job_id,snapshot.loop_event.scope_id??null,snapshot.loop_event.event_type,snapshot.loop_event.from_state,snapshot.loop_event.to_state,JSON.stringify(snapshot),snapshotDigest,now());
     const history=buildHistory(dokiDb,snapshot); const report=makeReport(snapshot,history,updateId);
     dokiDb.prepare('INSERT INTO phase_reports(report_id,update_id,report_json,report_digest,created_at) VALUES(?,?,?,?,?)').run(report.report_id,updateId,JSON.stringify(report),report.report_digest,now());
-    const action=chooseAction(dokiDb,report).action; updateQ(dokiDb,report,{action,reward:report.correlation_status==='CONVERGENT'?1:0});
-    const r=await narrate({db:dokiDb,report,snapshot,history,action,updateId,env});
+    const action=chooseAction(dokiDb,report).action;
+    updateQ(dokiDb,report,{action,reward:report.correlation_status==='CONVERGENT'?1:0});
+    const r=await narrate({report,snapshot,history,action,updateId,env,falsifyDb,dokiDb});
     const message={schema:'doki_message/v1',message_id:digestJson(updateId),update_ref:updateId,phase_report_ref:report.report_id,mode:r.mode,render_path:r.renderPath,reswitch_count:r.reswitchCount,narrator_ref:r.prompt.promptId,body:r.body,evidence_refs:report.wave_refs,anomaly_refs:[],authority:'NONE'};
     dokiDb.prepare('INSERT INTO dialog_messages(message_id,update_id,message_json,created_at) VALUES(?,?,?,?)').run(message.message_id,updateId,JSON.stringify(message),now());
     dokiDb.prepare('UPDATE update_jobs SET status=\'DONE\',finished_at=? WHERE update_id=?').run(now(),updateId); return message;

@@ -1,17 +1,36 @@
-import { DEFAULT_MAX_RESWITCH } from './contracts.mjs';
+import { digestJson } from './hash.mjs';
+import { ACTIVE_STATES } from './contracts.mjs';
+
+function now() { return new Date().toISOString(); }
 
 function apiConfig(env = process.env) {
   return {
-    base: String(env.DOKI_API_BASE || '').replace(/\/$/, ''), key: String(env.DOKI_API_KEY || ''),
-    greenModel: String(env.DOKI_GREEN_MODEL || ''), thinkerModel: String(env.DOKI_THINKER_MODEL || ''),
+    base: String(env.DOKI_API_BASE || '').replace(/\/$/, ''),
+    key: String(env.DOKI_API_KEY || ''),
+    greenModel: String(env.DOKI_GREEN_MODEL || ''),
+    thinkerModel: String(env.DOKI_THINKER_MODEL || ''),
     timeoutMs: Number(env.DOKI_TIMEOUT_MS || 12000),
+    maxCalls: Number(env.DOKI_MAX_CALLS || 6),
+    tokenBudget: Number(env.DOKI_TOKEN_BUDGET || 1500),
   };
 }
 
-export async function callModel(prompt, model, env = process.env) {
+function activeThinkerRunExists(fdb) {
+  const marks = ACTIVE_STATES.map(() => '?').join(', ');
+  return Boolean(fdb.prepare(`SELECT 1 FROM jobs WHERE loop_state IN (${marks}) LIMIT 1`).get(...ACTIVE_STATES));
+}
+
+export function modelForAction(action, env = process.env) {
+  const cfg = apiConfig(env);
+  return action === 'RED' ? cfg.thinkerModel : cfg.greenModel;
+}
+
+export async function callModel(prompt, model, { env = process.env, shouldAbort = () => false } = {}) {
   const cfg = apiConfig(env);
   if (!cfg.base || !cfg.key || !model) throw new Error('DOKI API nicht konfiguriert');
-  const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
+  const controller = new AbortController();
+  const abortPoll = setInterval(() => { if (shouldAbort()) controller.abort(new Error('DOKI-KILL-SWITCH')); }, 100);
+  const timer = setTimeout(() => controller.abort(new Error('DOKI-TIMEOUT')), cfg.timeoutMs);
   try {
     const response = await fetch(`${cfg.base}/chat/completions`, {
       method: 'POST', signal: controller.signal,
@@ -22,18 +41,8 @@ export async function callModel(prompt, model, env = process.env) {
     const data = await response.json(); const text = data?.choices?.[0]?.message?.content;
     if (typeof text !== 'string' || !text.trim()) throw new Error('LLM lieferte keine Message');
     return { text: text.trim(), model };
-  } finally { clearTimeout(timer); }
+  } finally { clearTimeout(timer); clearInterval(abortPoll); }
 }
 
-export function modelForAction(action, env = process.env) {
-  const cfg = apiConfig(env); return action === 'RED' ? cfg.thinkerModel : cfg.greenModel;
-}
-
-export function resolveSwitches(decisions, { maxReswitch = DEFAULT_MAX_RESWITCH } = {}) {
-  let count = 0; let selected = 'GREEN';
-  for (const decision of decisions) {
-    selected = decision === 'RED' ? 'RED' : 'GREEN';
-    if (selected === 'RED') { if (count >= maxReswitch) return { action: 'FACTUAL_FALLBACK', reswitchCount: count }; count += 1; }
-  }
-  return { action: selected, reswitchCount: count };
-}
+export function config(env = process.env) { return apiConfig(env); }
+export { activeThinkerRunExists };

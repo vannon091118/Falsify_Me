@@ -11,9 +11,9 @@ export function readSnapshot(fdb, eventId) {
   try {
     const event = fdb.prepare('SELECT id, job_id, scope_id, handoff_id, change_digest, event_type, from_state, to_state, payload, created_at FROM loop_events WHERE id = ?').get(eventId);
     if (!event) throw new Error(`loop_event nicht gefunden: ${eventId}`);
-    const job = fdb.prepare(`SELECT loop_state, status, verdict, wave, attempt, loop_count, max_loop_count, parent_job_id, iteration_id,
+    const job = fdb.prepare(`SELECT project_id, checkout_id, loop_state, status, verdict, wave, attempt, loop_count, max_loop_count, parent_job_id, iteration_id,
       review_iteration, header_digest, change_digest, runtime_config, created_at, started_at, done_at FROM jobs WHERE id = ?`).get(event.job_id) ?? null;
-    const findings = fdb.prepare('SELECT round, wave, mode, befund, verdict FROM findings WHERE wave IN (\'scan\', \'plan\', \'evil\', \'replan\') AND job_id = ? ORDER BY round ASC').all(event.job_id);
+    const findings = fdb.prepare('SELECT round, wave, mode, befund, verdict FROM findings WHERE job_id = ? AND wave IN (\'scan\', \'plan\', \'evil\', \'replan\') ORDER BY round ASC').all(event.job_id);
     const scope = event.scope_id ? (fdb.prepare('SELECT header, phase, last_befund, open_conflicts, last_divergence, research_additions, hardened_at FROM scopes WHERE id = ?').get(event.scope_id) ?? null) : null;
     const project = job?.project_id ? (fdb.prepare('SELECT project_id, checkout_id, bound_root, anchor_digest FROM projects WHERE project_id = ?').get(job.project_id) ?? null) : null;
     const checkout = job?.checkout_id ? (fdb.prepare('SELECT project_id, checkout_id, bound_root, anchor_digest FROM checkouts WHERE checkout_id = ?').get(job.checkout_id) ?? null) : null;
