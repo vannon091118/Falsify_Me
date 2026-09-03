@@ -205,6 +205,18 @@ case "$cmd" in
   state|check)
     node "$V2_DIR/ui/worker.mjs" --"$cmd"
     ;;
+  worker)
+    # Hintergrund-Worker: `falsify worker start [1..3]` startet ui/worker.mjs
+    # detached und verifiziert die Registrierung ehrlich (kein Fake-Erfolg).
+    sub="${1:-}"; [ $# -gt 0 ] && shift
+    if [ "$sub" = "start" ]; then
+      node "$V2_DIR/cli/worker-start.mjs" "$@"
+    else
+      echo "Nutzung: falsify worker start <1..3>  – startet einen registrierten Hintergrund-Worker." >&2
+      echo "  (Sichtbarer Betrieb: Desktop-Icon \"FalsifyMe\" oder ui\\start-dock.cmd 1)" >&2
+      exit 2
+    fi
+    ;;
   history)
     node "$V2_DIR/cli/main.mjs" history "$@"
     ;;

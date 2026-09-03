@@ -195,7 +195,7 @@ test("CLI kennt sich selbst: falsify --version/-v/version liefert die package.js
   assert.equal(String(sh.stdout).trim(), pkg.version, "bash-Einstieg liefert dieselbe Version");
 });
 
-test("status QUEUED ohne lebenden Worker: ehrlicher Hinweis statt Schweigen", async () => {
+test("status/jobs QUEUED ohne lebenden Worker: ehrlicher Hinweis statt Schweigen", async () => {
   const { openDb, closeDb } = await import(pathToFileURL(path.join(ROOT, "artifacts", "db.mjs")).href);
   const { createJob } = await import(pathToFileURL(path.join(ROOT, "artifacts", "jobs.mjs")).href);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-status-"));
@@ -207,11 +207,61 @@ test("status QUEUED ohne lebenden Worker: ehrlicher Hinweis statt Schweigen", as
     const r = await runCliMain(["status", id], tmp);
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /QUEUED/);
-    assert.match(r.out, /Kein Worker-Fenster läuft/);
+    assert.match(r.out, /Kein Worker mit frischem Heartbeat/);
+    assert.match(r.out, /falsify worker start 1/);
     assert.match(r.out, /start-dock\.cmd|ui[\\/]worker\.mjs/);
-    // Zweiter Kanal: doctor nennt denselben Befund (nur bei Queue-Last hart).
+    // Zweiter Kanal: `falsify jobs` warnt ebenfalls bei Queue-Last ohne Worker.
+    const j = await runCliMain(["jobs"], tmp);
+    assert.match(j.out, /Kein Worker mit frischem Heartbeat/);
+    // Dritter Kanal: doctor nennt denselben Befund (nur bei Queue-Last hart).
     const d = await runCliMain(["doctor"], tmp);
-    assert.match(d.out, /Kein Worker-Fenster aktiv, aber 1 Job\(s\) QUEUED/);
+    assert.match(d.out, /Kein Worker aktiv, aber 1 Job\(s\) QUEUED/);
+    assert.match(d.out, /falsify worker start 1/);
+  } finally {
+    try { closeDb(); } catch { /* egal */ }
+    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 60 });
+  }
+});
+
+test("doctor erkennt registrierten Hintergrund-Worker (Headless zählt, eine Liveness-Wahrheit)", async () => {
+  const { openDb, closeDb } = await import(pathToFileURL(path.join(ROOT, "artifacts", "db.mjs")).href);
+  const { registerWorker, heartbeatWorker } = await import(pathToFileURL(path.join(ROOT, "artifacts", "jobs.mjs")).href);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-doctor-w-"));
+  process.env.FALSIFY_HOME = tmp;
+  try {
+    const db = openDb();
+    registerWorker(db, 1, process.pid); // „Headless-Worker": Registrierung + frischer Heartbeat
+    heartbeatWorker(db, 1);
+    closeDb();
+    const d = await runCliMain(["doctor"], tmp);
+    // Exit-Code ist hier egal (isoliertes Home ohne Key/Twin liefert begründet
+    // Exit 2) – entscheidend ist die ehrliche Worker-Erkennung in der Ausgabe.
+    assert.match(d.out, /Worker: 1 aktiv/);
+    assert.match(d.out, /Hintergrund- oder Dock-Fenster zählen gleichermaßen/);
+    // Status/quartiere denselben Befund ein: kein „Kein Worker"-Fehlalarm.
+    const j = await runCliMain(["jobs"], tmp);
+    assert.doesNotMatch(j.out, /Kein Worker mit frischem Heartbeat/);
+  } finally {
+    try { closeDb(); } catch { /* egal */ }
+    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 60 });
+  }
+});
+
+test("doctor: abgelaufener Heartbeat eines registrierten Workers wird ehrlich gemeldet", async () => {
+  const { openDb, closeDb } = await import(pathToFileURL(path.join(ROOT, "artifacts", "db.mjs")).href);
+  const { registerWorker } = await import(pathToFileURL(path.join(ROOT, "artifacts", "jobs.mjs")).href);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-doctor-stale-"));
+  process.env.FALSIFY_HOME = tmp;
+  try {
+    const db = openDb();
+    registerWorker(db, 1, process.pid);
+    // Herzschlag künstlich altern (> WORKER_STALE_MS = 15 s): direkt in meta.
+    const { setMeta } = await import(pathToFileURL(path.join(ROOT, "artifacts", "db.mjs")).href);
+    setMeta(db, "worker.1.ts", new Date(Date.now() - 60_000).toISOString());
+    closeDb();
+    const d = await runCliMain(["doctor"], tmp);
+    assert.match(d.out, /Herzschlag abgelaufen/);
+    assert.match(d.out, /falsify worker start 1/);
   } finally {
     try { closeDb(); } catch { /* egal */ }
     fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 60 });

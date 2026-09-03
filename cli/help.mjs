@@ -37,6 +37,9 @@ Verwendung:
                                         Auswertungsrunde (STATUS + Exit 4 = läuft
                                         noch); --abort = Job abbrechen (keine Freigabe)
   falsify abort <job-id>                  laufenden Job abbrechen (kein Fake-Verdict)
+  falsify worker start [1..3]           registrierten Hintergrund-Worker starten
+                                        (detached; verifiziert die Registrierung;
+                                        sichtbarer Betrieb: Desktop-Icon/start-dock)
   falsify ensure-home                     FALSIFY_HOME anlegen/prüfen (Keys + DB, ausserhalb des Repos)
   falsify doctor                          Runtime-Vertragsprüfung (Node, Config, Key, DB-Schema)
   falsify settings show                   effektive Runtime-Settings (Secrets maskiert)

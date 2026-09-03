@@ -11,6 +11,7 @@ import { getJob, listJobs, setJobAbort, listWorkers } from "../artifacts/jobs.mj
 const MAX_WINDOWS = Number(process.env.FALSIFY_MAX_WINDOWS || 3);
 import { exitCodeOf } from "../core/verdict.mjs";
 import { fail } from "./util.mjs";
+import { warnIfNoWorker, workerHintLines } from "./workerliveness.mjs";
 
 export function terminalExitCode(status) {
   if (String(status || "").startsWith("DONE ")) return exitCodeOf(String(status).slice(5));
@@ -60,16 +61,7 @@ export function runStatus(id) {
   // Onboarding-Moment, in dem ein neuer User orientierungslos wartet. Ehrlich
   // hinschauen statt schweigen – kein Fake-Status, nur ein Hinweis.
   if (job.status === "QUEUED") {
-    const workers = listWorkers(db, MAX_WINDOWS).filter((w) => w.alive);
-    if (!workers.length) {
-      console.log("");
-      console.log("⚠ Kein Worker-Fenster läuft – dieser Job bleibt QUEUED, bis ein Fenster ihn übernimmt.");
-      if (process.platform === "win32") {
-        console.log("  Start: Desktop-Icon \"FalsifyMe\" oder ui\\start-dock.cmd 1 (sichtbar, \"Niemals headless\").");
-      } else {
-        console.log(`  Start: FALSIFY_WINDOW=1 node ${path.join("ui", "worker.mjs")} (im Installationsverzeichnis, z. B. ~/.Falsify_Core) – Linux/macOS ohne sichtbares Fenster.`);
-      }
-    }
+    warnIfNoWorker(db, { reason: "dieser Job bleibt QUEUED, bis ein Worker ihn übernimmt" });
   }
   closeDb();
 }
@@ -78,6 +70,10 @@ export function runJobs() {
   const db = openDb();
   const all = listJobs(db);
   const q = all.filter((j) => j.status === "QUEUED");
+  if (q.length) {
+    const anyWorker = warnIfNoWorker(db, { reason: "alle gelisteten Jobs bleiben QUEUED, bis ein Worker startet" });
+    if (anyWorker) console.log("");
+  }
   const r = all.filter((j) => j.status === "RUNNING");
   const d = all.filter((j) => j.status.startsWith("DONE"));
   const e = all.filter((j) => j.status.startsWith("ERROR"));

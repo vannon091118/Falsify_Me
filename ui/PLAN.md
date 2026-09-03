@@ -1660,6 +1660,29 @@ doctor (leere Queue) → ℹ️ Info statt Fehlalarm; status QUEUED ohne Worker
 → ⚠ Hinweis mit ui\start-dock.cmd (Windows) bzw. FALSIFY_WINDOW=1 node
 ui/worker.mjs (Linux/macOS).
 
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-133
+TASK: Worker-Hinweis-Vervollständigung (Nutzer-Vorgabe 2026-09-03): doctor
+soll registrierte Hintergrund-/Headless-Worker als ECHTE Worker erkennen
+(eine Liveness-Wahrheit: Dock-Fenster und Hintergrund registrieren sich
+identisch, Frische = Heartbeat); fehlender Worker wird direkt mit dem
+Startbefehl `falsify worker start 1` gemeldet; `falsify submit` warnt
+selbst, wenn kein Worker mit frischem Heartbeat registriert ist (mit Alter
+der letzten Worker-Aktivität statt Schweigen). Neu: `falsify worker start
+[1..3]` – detached Hintergrund-Worker, verifiziert die Registrierung ehrlich
+gegen die Queue (kein Fake-Erfolg), Doppel-Start = idempotent ehrlich.
+STATUS: DONE
+DEPENDS_ON: UI-132
+VERIFY: node --test --test-concurrency=1 tests/uninstall.test.mjs (8 Tests:
+QUEUED-Hinweis auf status+jobs+doctor, Headless-Worker-Erkennung, stale
+Heartbeat-Meldung); manueller Lauf: falsify worker start 1 → Registrierung
+verifiziert, zweiter Start → „läuft bereits“, Fenster 9 → Exit 2
+RESULT: 8/8 grün; cli/workerliveness.mjs (eine Liveness-Wahrheit + Hints)
++ cli/worker-start.mjs (detached Start, keine Verdict-Hoheit);
+workerHeartbeatAgeMs in artifacts/jobs.mjs (nur Lesen); doctor unterscheidet
+frisch/stale/kein Worker (hart nur bei Queue-Last); submit/jobs/status
+warnen ehrlich mit Startbefehl.
+
 ID: UI-131
 TASK: Deinstallation vollstaendig („als waere FalsifyMe nie da gewesen"):
 uninstall.mjs entfernt zusaetzlich PATH-Marker-Zeilen von `falsify install`
