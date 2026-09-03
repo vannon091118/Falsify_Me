@@ -84,6 +84,21 @@ export async function runDoctor() {
     const q = checkQueueConsistency(db);
     if (q.ok) ok("Zustandsmodell: konsistent (hardened/GAP/Verdict/Worker – eine Wahrheit)");
     else for (const v of q.violations) bad(`Zustandsmodell: ${v}`);
+
+    // 6) Worker-Liveness (User-Test 2026-09-03): Jobs QUEUED ohne lebendes
+    // Worker-Fenster ist DER Onboarding-Moment, in dem neue Nutzer
+    // orientierungslos warten. Hartes Problem nur, wenn wirklich Jobs warten;
+    // sonst ehrlicher Hinweis (frische Installation hat bewusst kein Fenster).
+    const { listWorkers, MAX_WINDOWS, listJobs } = await import("../artifacts/jobs.mjs");
+    const workers = listWorkers(db, MAX_WINDOWS).filter((w) => w.alive);
+    const queued = listJobs(db, { status: "QUEUED" });
+    if (workers.length) {
+      ok(`Worker: ${workers.length} Fenster aktiv (${workers.map((w) => `Fenster ${w.idx}, pid ${w.pid}`).join(" · ")})`);
+    } else if (queued.length) {
+      bad(`Kein Worker-Fenster aktiv, aber ${queued.length} Job(s) QUEUED – sie bleiben hängen, bis ein Fenster startet. Windows: Desktop-Icon "FalsifyMe" oder ui\\start-dock.cmd 1 (sichtbar) · Linux/macOS: FALSIFY_WINDOW=1 node ui/worker.mjs`);
+    } else {
+      console.log("  ℹ️  Kein Worker-Fenster aktiv (Queue leer – ein Fenster wird erst beim ersten Job gebraucht. Windows: ui\\start-dock.cmd 1 · Linux/macOS: FALSIFY_WINDOW=1 node ui/worker.mjs)");
+    }
     closeDb();
   } catch (e) {
     bad(`DB: ${e.message}`);

@@ -31,15 +31,16 @@ checkout, fallback to `~/.Falsify_Core` in the installed copy), so they work on
 any machine right after installation — never paste a `C:/Users/<name>/...` path
 into a command.
 
-## Scope protocol (non-negotiable)
+## Ticket protocol (non-negotiable)
 
-1. **PLAN is always the init action.** The user's input is stored 1:1 as the scope HEADER and stays in every scope prompt. One scope per task; never mix contexts.
-2. Every job starts a fresh model conversation; only results from its own scope may be used.
-3. Loop until the scope is fulfilled — the LAST review decides:
-   - `VERDICT: PLAN` → rework the plan (keep HEADER), resubmit.
-   - `VERDICT: RESEARCH` → FalsifyMe needs more data: research read-only, add findings, resubmit.
+1. **The agent writes the job as a ticket** ("what should be done"). The user's input is passed 1:1 as `--user-input` on EVERY iteration — it becomes the scope HEADER and stays in every scope prompt. One scope per task; never mix contexts.
+2. **FalsifyMe alone determines the scope ID.** Submit passes the ticket as `--header`; FalsifyMe resolves it deterministically per checkout: no open scope → creates one (minted ID), exactly one open scope → continues it, several → fail-closed (exit 2, scope list). The agent never passes, parses, or re-supplies a scope ID. `--scope` is an operator/diagnostics flag, not an agent contract.
+3. Every job starts a fresh model conversation; only results from its own scope may be used.
+4. Loop until the scope is fulfilled — the LAST review decides:
+   - `VERDICT: PLAN` → rework the iteration, resubmit with the SAME ticket (`--user-input` 1:1).
+   - `VERDICT: RESEARCH` → FalsifyMe needs more data: research read-only, add findings, resubmit (same ticket).
    - `VERDICT: WRITE` → release: you may switch read-only → write. Implement, then submit the implementation for review in the SAME scope (WRITE/REVIEW loop).
-4. FalsifyMe stays read-only to the project (sole exception: the identity anchor `FalsifyME.md`; all runtime state lives in SQLite). Error/missing verdict = no release. Exit codes: 0 WRITE · 1 PLAN/RESEARCH · 5 ASK · 2 config/args · 3 API/runtime/no-verdict.
+5. FalsifyMe stays read-only to the project (sole exception: the identity anchor `FalsifyME.md`; all runtime state lives in SQLite). Error/missing verdict = no release. Exit codes: 0 WRITE · 1 PLAN/RESEARCH · 5 ASK · 2 config/args · 3 API/runtime/no-verdict.
 
 ## Mandatory 10x protocol after every piece of work
 
@@ -99,23 +100,23 @@ means no `WRITE` claim.
    `FalsifyMe.lnk` desktop icon, or run `ui\start-dock.cmd 1` from
    `%USERPROFILE%\.Falsify_Core` in a Windows terminal. Never start headless.
    Step 4's submit script also ensures the dock is running.
-2. **Create the scope** (PLAN init, user input 1:1 as header):
+2. **Start the ticket** (optional but visible; binds the job without submitting):
    ```bash
-   node ~/.Falsify_Core/cli/main.mjs scope new "<user input exactly as given>"
+   falsify start "<user input exactly as given>"
    ```
+   FalsifyMe reports whether it created a new scope or continues the open one — the ID is FalsifyMe's business, not yours.
 3. **Write the plan** to a file (short, concrete, file-level).
-4. **Submit** via the bundled skill script (it ensures windows, claims, polls, prints the verdict):
+4. **Submit** via the bundled skill script (it ensures windows, claims, polls, prints the verdict). The SAME command starts and continues — the ticket (`--user-input` 1:1) is the identity:
    ```bash
    bash ~/.agents/skills/falsifyme/agent-skill-falsify.sh \
-     --scope <scope-id> \
+     --user-input "<user input exactly as given>" \
      --plan plan.txt \
      --root <absolute project root> \
      --files "src/a.py,src/b.py"
    ```
    `--files` is the whitelist of model access (read-only tools: list_dir, read_file, glob). No `..`, absolute escapes, or symlink escapes.
-   On first submission omit `--scope` and pass `--user-input "<user input 1:1>"` instead — the script creates the scope.
-5. **Act on the verdict** per the loop above. On WRITE: implement, then resubmit a review plan in the same scope. The final review's verdict is what counts.
-6. Useful CLI: `falsify scope show <id>` · `jobs` · `status <job>` · `log <job>` · `answer <job>` · `state`. Settings: `falsify settings show|set` (provider/apiBase/model/apiKey — keys live only in `FALSIFY_HOME/.env`, never in repos).
+5. **Act on the verdict** per the loop above. On WRITE: implement, then resubmit a review plan with the same ticket (`--user-input` 1:1). The final review's verdict is what counts.
+6. Useful CLI: `falsify resume [--header "<ticket>"]` (re-engage the last open job) · `falsify history [--scope <id>]` (what happened & how FalsifyMe affected the project) · `jobs` · `status <job>` · `log <job>` · `answer <job>` · `state`. Settings: `falsify settings show|set` (provider/apiBase/model/apiKey — keys live only in `FALSIFY_HOME/.env`, never in repos).
 
 ## Hard rules
 

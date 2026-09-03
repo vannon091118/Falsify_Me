@@ -9,12 +9,17 @@
 # Fenster) zu stoeren. Bis zu 3 Worker-Fenster verarbeiten die Queue parallel.
 #
 #   falsify install                          global in PATH einhaengen (einmalig)
+#   falsify start "<ticket>" [--root <dir>]  Auftrag starten: Ticket 1:1 binden; FalsifyMe
+#                                            bestimmt die Scope-ID automatisch (nie der Agent)
+#   falsify resume [--header "<ticket>"]     letzten offenen Auftrag wieder aufnehmen (ohne IDs)
 #   falsify run [--submit|--falsiflow] <args>  EINHEITLICHER Einstieg: Direkt-Run,
 #                                            Job-Einreichung (--submit) oder kompletter
 #                                            Flow bis zum Verdict (--falsiflow)
-#   falsify scope new "<user-input>"         Scope anlegen (HEADER = User-Input 1:1)
-#   falsify submit --scope <id> --plan-file plan.txt --root <dir> --files "a.js,b.js" [--diff-file d.patch] [--agent-intent "..."] [--affected "a.js,b.js"]
-#             FLOW-ALIAS für `falsify run --falsiflow` (Generalisierung 2026-09-01)
+#   falsify submit --header "<ticket 1:1>" --plan-file plan.txt --root <dir> --files "a.js,b.js" [--diff-file d.patch] [--agent-intent "..."] [--affected "a.js,b.js"]
+#             FLOW-ALIAS für `falsify run --falsiflow` (Generalisierung 2026-09-01).
+#             Die Scope-ID bestimmst du NIE: --header ist das Ticket (User-Input 1:1);
+#             FalsifyMe legt den Scope an oder setzt die Fortsetzung automatisch.
+#             --scope <id> ist Operator-/Diagnose-Flag, KEIN Agent-Vertrag.
 #             BLOCKIERT bis zum Verdict (Exit 0=WRITE 1=PLAN/RESEARCH 5=ASK 3=Fehler):
 #             Agents duerfen erst nach VERDICT: WRITE (Freigabe) schreiben.
 #             --no-wait NUR fuer interaktive Tools (danach: falsify wait <id>)
@@ -25,7 +30,7 @@
 #   falsify anchor init|check|rebind|clone|record [--root <dir>]
 #   falsify scope trace <id>                 GAP-Loop je Runde: Welle/Verdict/Intent/Befund + Loop-Ausgang
 #   falsify log <job-id> | falsify answer <job-id> [--file pfad]
-#   falsify history [--last n]
+#   falsify history [--last n]              Verlauf & Auswirkung (--scope <id> = Detail)
 #   falsify run <Plan-Text...> [Optionen]    direkter API-Lauf (ohne Worker-Fenster)
 #   falsify ensure-home                      FALSIFY_HOME anlegen/prüfen
 #   falsify settings show|set key=value …   Runtime-Settings (provider-neutral)
@@ -34,6 +39,7 @@
 #   falsify onboard [--skip-dock]            interaktive Ersteinrichtung
 #   falsify abort <job-id>                   laufenden Job abbrechen (keine Freigabe)
 #   falsify uninstall [--dry-run]            vollständige Deinstallation
+#   falsify --version                        Version des installierten Pakets
 #   falsify help
 #
 #   falsify wait <job-id> [--ping|--abort]   --ping = EINE Auswertungsrunde
@@ -75,6 +81,13 @@ cmd="${1:-help}"
 fail() { echo "FEHLER: $*" >&2; exit 2; }
 
 case "$cmd" in
+  --version|-v|version)
+    # User-Test 2026-09-03: jedes CLI kennt --version – das Werkzeug muss
+    # sich selbst kennen (Version aus der package.json des Pakets).
+    # MSYS-Quirk: natives node kann /c/...-Pfade nicht lesen → cygpath -m.
+    _pkg="$(cygpath -m "$V2_DIR/package.json" 2>/dev/null || echo "$V2_DIR/package.json")"
+    node -e "try{console.log(JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8')).version)}catch{console.log('unbekannt')}" "$_pkg"
+    exit 0 ;;
   install)
     line="export PATH=\"$V2_DIR/cli:\$PATH\"  # Falsify-CLI v2 (falsify submit|wait|scope|jobs|state|...)"
     marker="# Falsify-CLI v2 (falsify submit|wait|scope|jobs|state|...) – automatisch ergaenzt"
@@ -195,6 +208,12 @@ case "$cmd" in
   history)
     node "$V2_DIR/cli/main.mjs" history "$@"
     ;;
+  start)
+    node "$V2_DIR/cli/main.mjs" start "$@"
+    ;;
+  resume)
+    node "$V2_DIR/cli/main.mjs" resume "$@"
+    ;;
   log)
     id="${1:-}"
     [ -n "$id" ] || fail "Nutzung: falsify log <job-id>"
@@ -248,7 +267,7 @@ case "$cmd" in
     node "$V2_DIR/uninstall.mjs" "$@"
     ;;
   help|-h|--help)
-    sed -n '2,34p' "$0"
+    sed -n '2,46p' "$0"
     ;;
   *)
     fail "Unbekannter Befehl: $cmd (falsify help)"

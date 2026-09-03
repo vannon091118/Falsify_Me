@@ -11,15 +11,18 @@ export FALSIFYME_SKILLS_DIR="{{SKILLS}}"
 export FALSIFYME_FALSIFLOW_SKILL="{{FALSIFLOW_SKILL}}"
 export FALSIFYME_CORE_DIR="{{CORE}}"
 
+# TICKET-WORKFLOW: --user-input ist das Ticket (User-Input 1:1) und bei JEDER
+# Iteration Pflicht. Die SCOPE-ID bestimmt FalsifyMe automatisch – der Agent
+# verwaltet keine IDs und nutzt nie --scope (Operator-Flag).
 falsifyme_check() {
-  local user_input="" plan_file="" root_dir="" files="" scope_id=""
+  local user_input="" plan_file="" root_dir="" files=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --user-input) user_input="$2"; shift 2 ;;
       --plan) plan_file="$2"; shift 2 ;;
       --root) root_dir="$2"; shift 2 ;;
       --files) files="$2"; shift 2 ;;
-      --scope) scope_id="$2"; shift 2 ;;
+      --scope) echo "FEHLER: --scope ist Operator-Flag, kein Agent-Vertrag (Ticket = --user-input 1:1)." >&2; return 2 ;;
       *) shift ;;
     esac
   done
@@ -31,8 +34,7 @@ falsifyme_check() {
     --user-input "$user_input" \
     --plan "$plan_file" \
     --root "$root_dir" \
-    --files "$files" \
-    --scope "$scope_id"
+    --files "$files"
   return $?
 }
 

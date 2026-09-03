@@ -25,14 +25,16 @@ Bis dahin ist der Agent READ-ONLY.
      --root {{ROOT}} \
      --files "app.js,lib/auth.js"
 
-3. Das Skill-Skript legt den Scope an (PLAN = Init, User-Input 1:1 als
-   HEADER), stellt das sichtbare Dock sicher, reicht den Job ein,
+3. Das Skill-Skript reicht das TICKET (--user-input = User-Input 1:1) als
+   --header ein; FalsifyMe bestimmt die Scope-ID automatisch (neu angelegt
+   oder Fortsetzung — der Agent verwaltet keine IDs und nutzt nie --scope).
+   Es stellt das sichtbare Dock sicher, reicht den Job ein,
    best\xE4tigt den Dock-Claim und wartet blockierend auf das Verdict.
 
 4. Verdict-Routing:
-   Exit 0 = WRITE  -> Freigabe, implementieren, dann Review im selben Scope
-   Exit 1 = PLAN/RESEARCH -> Plan \xFCberarbeiten bzw. read-only recherchieren,
-            erneut einreichen (gleicher Scope)
+   Exit 0 = WRITE  -> Freigabe, implementieren, dann Review im selben Auftrag
+   Exit 1 = PLAN/RESEARCH -> Iteration \xFCberarbeiten bzw. read-only
+            recherchieren, erneut einreichen (gleiches Ticket)
    Exit 2/3 = Fehler -> KEINE Freigabe
 
 ## Regeln

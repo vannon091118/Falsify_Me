@@ -19,9 +19,13 @@ Dock = sichtbare Visualisierung der laufenden FalsifyMe-Arbeit
      --root {{ROOT}} \
      --files "app.js,lib/auth.js"
 
+   Die SCOPE-ID bestimmt FalsifyMe automatisch ueber das Ticket
+   (--user-input = User-Input 1:1, bei JEDER Iteration) – der Agent
+   verwaltet keine IDs und nutzt nie --scope (Operator-Flag).
+
 3. Verdict-Routing:
-   Exit 0 = WRITE  -> Freigabe, implementieren, dann Review im selben Scope
-   Exit 1 = PLAN/RESEARCH -> Loop fortsetzen (gleicher Scope)
+   Exit 0 = WRITE  -> Freigabe, implementieren, dann Review im selben Auftrag
+   Exit 1 = PLAN/RESEARCH -> Loop fortsetzen (gleiches Ticket = --user-input 1:1)
    Exit 2/3 = Fehler -> KEINE Freigabe
 
 Bis VERDICT: WRITE bleibt der Agent READ-ONLY.

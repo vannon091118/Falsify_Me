@@ -47,6 +47,10 @@ const WRITERS = [
 const ALLOWED_CALLERS = new Set([
   "artifacts/jobs.mjs", "artifacts/scopes.mjs",
   "cli/run.mjs", "ui/worker.mjs", "cli/jobs.mjs", "cli/scope.mjs",
+  // cli/start.mjs: Ticket-Einstieg (UI-127) — legt den Scope ausschliesslich
+  // via artifacts/scopes.mjs:createScope an (Auto-Anlage bei neuem Ticket),
+  // wie cli/scope.mjs (scope new); keine eigene Queue/INSERT.
+  "cli/start.mjs",
   // artifacts/handoff.mjs: Handoff-Orchestrator (TASK-012) — erzeugt
   // Re-Review-Jobs AUSSCHLIESSLICH via jobs.mjs:createJob (keine eigene
   // Queue/INSERT, RISK-003); der statische Scan prüft das hier mit.

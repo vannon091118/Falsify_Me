@@ -1,9 +1,12 @@
 #!/usr/bin/env node
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runScope } from "./scope.mjs";
 import { runStatus, runJobs, runPing, runAbort } from "./jobs.mjs";
 import { runHistory } from "./history.mjs";
+import { runStart } from "./start.mjs";
+import { runResume } from "./resume.mjs";
 import { runStats } from "./stats.mjs";
 import { runLog } from "./log.mjs";
 import { runAnswer } from "./answer.mjs";
@@ -37,6 +40,8 @@ async function main() {
     case "ping": runPing(args[1]); break;
     case "abort": runAbort(args[1]); break;
     case "history": runHistory(args.slice(1)); break;
+    case "start": runStart(args.slice(1)); break;
+    case "resume": runResume(args.slice(1)); break;
     case "scope": runScope(args.slice(1)); break;
     case "anchor": runAnchor(args.slice(1)); break;
     case "handoff": {
@@ -78,6 +83,12 @@ async function main() {
     case "settings": await runSettings(args.slice(1)); break;
     case "models": await runModels(args.slice(1)); break;
     case "help": case "-h": case "--help": console.log(HELP_TEXT); break;
+    case "--version": case "-v": case "version": {
+      // User-Test 2026-09-03: sich selbst kennen (auch auf dem node-Einstieg).
+      const pkg = JSON.parse(fs.readFileSync(path.join(RUNTIME_ROOT, "package.json"), "utf8"));
+      console.log(pkg.version);
+      break;
+    }
     default: fail(`Unbekannter Befehl: ${cmd} (falsify help)`);
   }
 }

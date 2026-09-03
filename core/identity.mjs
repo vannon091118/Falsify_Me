@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { isSelfReviewRoot } from "./selfreview.mjs";
 
 export const ANCHOR_FILE = "FalsifyME.md";
 export const ANCHOR_VERSION = "1";
@@ -187,6 +188,10 @@ function gitIgnoreBody() {
 
 export function ensureAnchorGitIgnored(root) {
   try {
+    // Selbstpruefung des FalsifyMe-Repos: NIE das eigene .gitignore mutieren
+    // (Tests/CI ankern das Produkt-Repo selbst; der Ignore-Block gehoert nur
+    // in USER-Projekte, nicht in das FalsifyMe-Repo).
+    if (isSelfReviewRoot(root)) return { ok: true, skipped: "self-review-root" };
     const resolved = canonicalRoot(root);
     const file = path.join(resolved, ".gitignore");
     let existing = "";

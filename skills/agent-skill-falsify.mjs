@@ -20,11 +20,15 @@
 //   5. Nach dem finalen Review endet der Modellkontext; der nächste Scope
 //      startet frisch im selben Fenster (getrennt, kein Vermischen).
 //
-// Verwendung (Agent-intern):
+// TICKET-PROTOKOLL (nicht verhandelbar): Der Agent schreibt den Job als
+// TICKET (User-Input 1:1) und liefert es bei JEDER Iteration – FalsifyMe
+// bestimmt die Scope-ID automatisch (neuer Scope/Fortsetzung). scopeId ist
+// Operator-/Diagnose-Flag, im Agent-Pfad VERBOTEN.
+//
+// Verwendung (Agent-intern, JEDE Iteration – ein Pfad):
 //   import { falsifyMandatoryCheck } from './agent-skill-falsify.mjs';
 //   const result = await falsifyMandatoryCheck({
-//     scopeId: 'scope-…',            // Pflicht bei Loop-Fortsetzung
-//     userInput: '…',                // Pflicht beim Scope-Start (1:1 als HEADER)
+//     userInput: '…',                // Ticket = User-Input 1:1 (HEADER) – IMMER Pflicht
 //     planFile: 'plan.txt',
 //     rootDir: '/path/to/project',
 //     files: ['app.js', 'lib/auth.js'],
@@ -66,15 +70,14 @@ const V2_DIR = resolveV2Dir();
  * @property {string[]} files - Zugriffs-Whitelist (PFLICHT)
  * @property {string} [diffFile] - Pfad zur Diff-Datei (optional)
  * @property {string} [lang] - Sprache: 'de' oder 'en' (optional, default: 'de')
- * @property {string} [scopeId] - Scope-ID (Pflicht bei Loop-Fortsetzung)
- * @property {string} [userInput] - User-Input 1:1 – wird HEADER (Pflicht beim Scope-Start)
+ * @property {string} [userInput] - TICKET = User-Input 1:1, wird HEADER (bei JEDER Iteration Pflicht)
  */
 
 /**
  * @typedef {Object} FalsifyCheckResult
  * @property {boolean} passed - true nur bei VERDICT: WRITE (Freigabe)
  * @property {string} jobId - ID des Jobs
- * @property {string} scopeId - ID des Scopes
+ * @property {string|null} scopeId - ID des Scopes (nur Info; die Zuordnung bestimmt FalsifyMe)
  * @property {string} verdict - 'WRITE', 'PLAN', 'RESEARCH', 'ERROR' oder 'UNBEKANNT'
  * @property {string} reason - Begründung aus der Kritik / Datenbedarf
  * @property {string} protocolPath - Hinweis auf das Protokoll (DB: falsify log <job-id>)
@@ -154,19 +157,15 @@ async function ensureDockWindow() {
   throw new Error('Falsify-Worker konnte nicht gestartet werden');
 }
 
-// ── Scope sicherstellen: PLAN ist IMMER die Init-Aktion ────────────────────
-async function ensureScope(scopeId, userInput, rootDir) {
-  if (scopeId) return scopeId;
-  if (!userInput) {
-    throw new Error('Beim Scope-Start ist userInput Pflicht (User-Input 1:1 – wird zum HEADER). Bei Loop-Fortsetzung scopeId angeben.');
+// ── Ticket sicherstellen (Agent-Pfad): userInput ist bei JEDER Iteration
+// Pflicht (Ticket = User-Input 1:1). Die Scope-ID bestimmt FalsifyMe ueber
+// --header beim Submit (Auto-Anlage/Fortsetzung) – der Agent waehlt nichts.
+// scopeId im Agent-Pfad wird abgelehnt (Operator-Flag, kein Agent-Vertrag).
+async function ensureTicket(userInput) {
+  if (!userInput || !String(userInput).trim()) {
+    throw new Error('userInput ist bei JEDER Iteration Pflicht (Ticket = User-Input 1:1, der HEADER des Scopes).');
   }
-  if (!rootDir) throw new Error('Beim Scope-Start ist rootDir Pflicht; Scope wird nicht ohne Projekt-Root angelegt.');
-  log('step', 'PLAN = Init: Scope anlegen – User-Input wird 1:1 zum HEADER...');
-  const r = await runNode([path.join(V2_DIR, 'cli', 'main.mjs'), 'scope', 'new', userInput, '--root', path.resolve(rootDir)], { capture: true });
-  const m = r.stdout.match(/SCOPE_ID=(\S+)/);
-  if (!m) throw new Error(`Scope konnte nicht angelegt werden: ${r.stdout || r.stderr}`);
-  log('ok', `Scope angelegt: ${m[1]} (HEADER = User-Input 1:1)`);
-  return m[1];
+  return String(userInput).trim();
 }
 
 // ── Hauptfunktion ──────────────────────────────────────────────────────────
@@ -176,7 +175,7 @@ async function ensureScope(scopeId, userInput, rootDir) {
  * @returns {Promise<FalsifyCheckResult>}
  */
 export async function falsifyMandatoryCheck(options) {
-  const { planFile, rootDir, files, diffFile, lang = 'de', scopeId, userInput } = options;
+  const { planFile, rootDir, files, diffFile, lang = 'de', userInput } = options;
 
   if (!planFile || !rootDir || !files || files.length === 0) {
     throw new Error('planFile, rootDir und files sind Pflicht');
@@ -188,11 +187,11 @@ export async function falsifyMandatoryCheck(options) {
   // ── 0. Fenster sicherstellen (bis zu 3, IMMER offen!) ─────────────────────
   await ensureDockWindow();
 
-  // ── 0b. Scope: beim Start anlegen (PLAN = Init, HEADER = User-Input 1:1) ──
-  const scope = await ensureScope(scopeId, userInput, rootDir);
+  // ── 0b. Ticket (User-Input 1:1) – Scope bestimmt FalsifyMe automatisch ───
+  const header = await ensureTicket(userInput);
 
   log('step', 'FalsifyMe Pflicht-Check wird gestartet...');
-  log('info', `Scope: ${scope}`);
+  log('info', `Ticket (HEADER 1:1): ${header}`);
   log('info', `Plan: ${planFile}`);
   log('info', `Root: ${rootDir}`);
   log('info', `Dateien: ${files.join(', ')}`);
@@ -207,7 +206,7 @@ export async function falsifyMandatoryCheck(options) {
     '--plan-file', planFile,
     '--root', rootDir,
     '--files', files.join(','),
-    '--scope', scope,
+    '--header', header,
   ];
   if (diffFile) checkArgs.push('--diff-file', diffFile);
 
@@ -238,22 +237,27 @@ export async function falsifyMandatoryCheck(options) {
   if (!reason) reason = submitOutput.split('\n').filter(Boolean).slice(-6).join('\n');
 
   if (passed) {
-    log('ok', `VERDICT: WRITE → Freigabe: READ-ONLY → WRITE (Scope ${scope})`);
+    log('ok', 'VERDICT: WRITE → Freigabe: READ-ONLY → WRITE (Scope wird von FalsifyMe verwaltet)');
     log('info', `Protokoll: falsify log ${jobId}`);
   } else if (verdict === 'RESEARCH') {
-    log('warn', 'VERDICT: RESEARCH → FalsifyMe braucht weitere Daten. Read-only recherchieren, Befunde ergänzen, erneut einreichen.');
+    log('warn', 'VERDICT: RESEARCH → FalsifyMe braucht weitere Daten. Read-only recherchieren, Befunde ergänzen, erneut einreichen – mit DEMSELBEN Ticket (userInput 1:1).');
     log('info', `Datenbedarf/Kritik: falsify log ${jobId}`);
   } else if (verdict === 'PLAN') {
-    log('error', 'VERDICT: PLAN → Iteration überarbeiten (HEADER behalten), erneut einreichen.');
+    log('error', 'VERDICT: PLAN → Iteration überarbeiten und erneut einreichen (gleiches Ticket = userInput 1:1).');
     log('info', `Kritik: falsify log ${jobId}`);
   } else {
     log('error', `VERDICT: ${verdict} → nicht freigegeben.`);
   }
 
+  // scopeId = null: die Zuordnung bestimmt FalsifyMe (Ticket-Identität). Der
+  // Rueckgabewert bleibt fuer Kompatibilitaet erhalten, traegt aber KEINE
+  // Entscheidungsmacht – der Agent nutzt ihn nie zum Weiterschalten.
+  const scopeIdMatch = submitOutput.match(/Scope automatisch bestimmt: (scope-\S+)/);
+
   return {
     passed,
     jobId,
-    scopeId: scope,
+    scopeId: scopeIdMatch ? scopeIdMatch[1] : null,
     verdict,
     reason,
     protocolPath: `(SQLite) falsify log ${jobId}`,
@@ -268,16 +272,16 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (args.includes('--help') || args.includes('-h')) {
     console.log(`AGENT SKILL: FalsifyMe Pflicht-Check (Node.js) · FalsifyMe 2.0
 
-SCOPE-PROTOKOLL: PLAN ist IMMER Init (User-Input 1:1 als HEADER). Loop bis Scope
-erfuellt: PLAN → überarbeiten · RESEARCH → read-only recherchieren · WRITE → Freigabe.
+TICKET-PROTOKOLL: Der Agent schreibt den Job als Ticket (User-Input 1:1).
+FalsifyMe bestimmt die Scope-ID automatisch (Start UND Fortsetzung = EIN Pfad).
+Loop: PLAN → überarbeiten · RESEARCH → read-only recherchieren · WRITE → Freigabe.
 
-Verwendung:
-  node agent-skill-falsify.mjs --user-input "<User-Input 1:1>" --plan plan.txt --root /path --files "a.js,b.js"
-  node agent-skill-falsify.mjs --scope <scope-id> --plan plan.txt --root /path --files "a.js,b.js"   (Loop)
+Verwendung (JEDE Iteration):
+  node agent-skill-falsify.mjs --user-input "<User-Input 1:1 / Ticket>" --plan plan.txt --root /path --files "a.js,b.js"
 
 Optionen:
-  --user-input <text>  User-Input 1:1 – wird HEADER des Scopes (beim Start Pflicht)
-  --scope <id>         Scope-ID (bei Loop-Fortsetzung Pflicht)
+  --user-input <text>  Ticket = User-Input 1:1 (HEADER) – bei JEDER Iteration Pflicht;
+                       FalsifyMe legt den Scope an oder setzt die Fortsetzung automatisch
   --plan <datei>       Plan-/Iterations-Datei (PFLICHT)
   --root <verz>        Arbeitsverzeichnis (PFLICHT)
   --files <liste>      Zugriffs-Whitelist, kommagetrennt (PFLICHT)
@@ -289,7 +293,7 @@ Exit-Codes: 0=WRITE (Freigabe) · 1=PLAN/RESEARCH (Loop) · 3=Fehler`);
     process.exit(0);
   }
 
-  const options = { planFile: null, rootDir: null, files: [], diffFile: null, lang: 'de', scopeId: null, userInput: null };
+  const options = { planFile: null, rootDir: null, files: [], diffFile: null, lang: 'de', userInput: null };
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--plan': options.planFile = args[++i]; break;
@@ -297,8 +301,11 @@ Exit-Codes: 0=WRITE (Freigabe) · 1=PLAN/RESEARCH (Loop) · 3=Fehler`);
       case '--files': options.files = args[++i].split(',').map(f => f.trim()).filter(Boolean); break;
       case '--diff': options.diffFile = args[++i]; break;
       case '--lang': options.lang = args[++i]; break;
-      case '--scope': options.scopeId = args[++i]; break;
       case '--user-input': options.userInput = args[++i]; break;
+      case '--scope':
+      case '--header':
+        console.error('FEHLER: --scope/--header sind hier nicht erlaubt. Der Agent liefert das Ticket ueber --user-input (1:1); die Scope-ID bestimmt FalsifyMe automatisch (--scope ist Operator-Flag).');
+        process.exit(2);
     }
   }
 

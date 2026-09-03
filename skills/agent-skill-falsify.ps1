@@ -1,26 +1,27 @@
 ﻿# ─────────────────────────────────────────────────────────────────────────────
 # AGENT SKILL: FalsifyMe Pflicht-Check (PowerShell) · FalsifyMe 2.0
 # -----------------------------------------------------------------------------
-# SCOPE-PROTOKOLL (nicht verhandelbar):
-#   1. PLAN ist IMMER die Init-Aktion eines Scopes. User-Input 1:1 wird zum
-#      HEADER des Prompts (falsify scope new) und bleibt in allen Scope-Prompts.
-#   2. 1 Scope = 1 Artefakt (SQLite), von FalsifyMe aktualisiert: User-Input,
-#      letzter vollständiger zusammenfassender Befund, ALLE Befunde.
-#      Jeder Job startet das Modell NEU (Context = nur 1 Scope).
-#   3. Loop bis Scope erfuellt (das LETZTE Review entscheidet):
-#      - VERDICT: PLAN     -> Plan ueberarbeiten (HEADER behalten), erneut einreichen
+# TICKET-PROTOKOLL (nicht verhandelbar):
+#   1. Der Agent schreibt den Job als TICKET („was soll gemacht werden“) und
+#      liefert es bei JEDER Iteration 1:1 als -UserInput (HEADER, nie
+#      umformuliert). Er verwaltet KEINE Scope-ID – FalsifyMe bestimmt die
+#      Scope-Zuordnung automatisch (neuer Scope beim ersten Ticket, sonst
+#      Fortsetzung desselben Tickets). Ein Aufrufpfad fuer Start UND Loop.
+#   2. 1 Scope = 1 Artefakt (SQLite), von FalsifyMe aktualisiert. Jeder Job
+#      startet das Modell NEU (Context = nur 1 Scope).
+#   3. Loop bis der Scope erfuellt ist (das LETZTE Review entscheidet):
+#      - VERDICT: PLAN     -> Iteration ueberarbeiten, erneut einreichen
+#                             (immer mit DEMSELBEN Ticket = -UserInput 1:1)
 #      - VERDICT: RESEARCH -> FalsifyMe braucht weitere Daten: read-only
 #                             recherchieren, Befunde ergaenzen, erneut einreichen
 #      - VERDICT: WRITE    -> FREIGABE: READ-ONLY -> WRITE. Jetzt umsetzen, dann
 #                             die Umsetzung erneut reviewen (WRITE-/REVIEW-Loop)
 #   4. FalsifyMe selbst bleibt read-only zum Projekt (einzige Schreibausnahme:
 #      der identitätstragende FalsifyME.md-Anker – nie Scopes/Verdicts/Regeln).
-#   5. Nach dem finalen Review endet der Modellkontext; der naechste Scope
-#      startet frisch (getrennt, kein Vermischen).
+#   5. -ScopeId ist ein OPERATOR-/DIAGNOSE-Flag und im Agent-Pfad VERBOTEN.
 #
-# Verwendung:
-#   .\agent-skill-falsify.ps1 -UserInput "<User-Input 1:1>" -PlanFile "plan.txt" -RootDir "C:\projekt" -Files "app.js,lib/auth.js"
-#   .\agent-skill-falsify.ps1 -ScopeId <scope-id> -PlanFile "plan.txt" -RootDir "C:\projekt" -Files "app.js,lib/auth.js"   (Loop)
+# Verwendung (JEDE Iteration – Start UND Fortsetzung sind EIN Pfad):
+#   .\agent-skill-falsify.ps1 -UserInput "<User-Input 1:1 / Ticket>" -PlanFile "plan.txt" -RootDir "C:\projekt" -Files "app.js,lib/auth.js"
 # ─────────────────────────────────────────────────────────────────────────────
 
 param(
@@ -35,9 +36,6 @@ param(
 
     [Parameter(Mandatory=$false)]
     [string]$DiffFile,
-
-    [Parameter(Mandatory=$false)]
-    [string]$ScopeId,
 
     [Parameter(Mandatory=$false)]
     [string]$UserInput,
@@ -98,29 +96,16 @@ function Ensure-FalsifyDock {
     return $false
 }
 
-# ── Scope sicherstellen: PLAN ist IMMER die Init-Aktion ─────────────────────
-function Ensure-FalsifyScope {
-    param([string]$ScopeId, [string]$UserInput, [string]$RootDir)
+# ── Ticket sicherstellen (Agent-Pfad): -UserInput ist bei JEDER Iteration
+# Pflicht (Ticket = User-Input 1:1). Die Scope-ID bestimmt FalsifyMe ueber
+# --header beim Submit (Auto-Anlage/Fortsetzung) – der Agent waehlt nichts.
+function Ensure-FalsifyTicket {
+    param([string]$UserInput)
 
-    if ($ScopeId) { return $ScopeId }
-
-    if (-not $UserInput) {
-        throw "Beim Scope-Start ist -UserInput Pflicht (User-Input 1:1 -> HEADER). Bei Loop-Fortsetzung -ScopeId angeben."
+    if (-not $UserInput -or -not $UserInput.Trim()) {
+        throw "-UserInput ist bei JEDER Iteration Pflicht (Ticket = User-Input 1:1, der HEADER des Scopes)."
     }
-
-    if (-not $RootDir) { throw "Beim Scope-Start ist -RootDir Pflicht; Scope wird nicht ohne Projekt-Root angelegt." }
-    Write-Step "PLAN = Init: Scope anlegen - User-Input wird 1:1 zum HEADER..."
-    $out = & node (Join-Path $V2Dir "cli\main.mjs") scope new $UserInput --root $RootDir 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "Scope konnte nicht angelegt werden: $out" }
-
-    $scopeId = ""
-    foreach ($line in $out) {
-        if ($line -match "^SCOPE_ID=(.+)") { $scopeId = $Matches[1].Trim(); break }
-    }
-    if (-not $scopeId) { throw "Scope konnte nicht angelegt werden: $out" }
-
-    Write-OK "Scope angelegt: $scopeId (HEADER = User-Input 1:1)"
-    return $scopeId
+    return $UserInput.Trim()
 }
 
 # ── Hauptfunktion: Pflicht-Check ────────────────────────────────────────────
@@ -139,9 +124,6 @@ function Invoke-FalsifyCheck {
         [string]$DiffFile,
 
         [Parameter(Mandatory=$false)]
-        [string]$ScopeId,
-
-        [Parameter(Mandatory=$false)]
         [string]$UserInput
     )
 
@@ -154,11 +136,11 @@ function Invoke-FalsifyCheck {
         return @{ Passed = $false; Verdict = "UNBEKANNT"; ExitCode = 2 }
     }
 
-    # ── 0b. Scope: beim Start anlegen (PLAN = Init, HEADER = User-Input 1:1) ──
-    $scope = Ensure-FalsifyScope -ScopeId $ScopeId -UserInput $UserInput -RootDir $RootDir
+    # ── 0b. Ticket (User-Input 1:1) – Scope bestimmt FalsifyMe automatisch ───
+    $header = Ensure-FalsifyTicket -UserInput $UserInput
 
     Write-Step "FalsifyMe Pflicht-Check wird gestartet..."
-    Write-Info "Scope: $scope"
+    Write-Info "Ticket (HEADER 1:1): $header"
     Write-Info "Plan: $PlanFile"
     Write-Info "Root: $RootDir"
     Write-Info "Dateien: $($Files -join ', ')"
@@ -174,7 +156,7 @@ function Invoke-FalsifyCheck {
         "--plan-file", $PlanFile,
         "--root", $RootDir,
         "--files", $filesString,
-        "--scope", $scope
+        "--header", $header
     )
     if ($DiffFile) { $submitArgs += @("--diff-file", $DiffFile) }
 
@@ -207,28 +189,31 @@ function Invoke-FalsifyCheck {
     $passed = $verdict -eq "WRITE"
 
     if ($passed) {
-        Write-OK "VERDICT: WRITE → Freigabe: READ-ONLY → WRITE (Scope $scope)"
+        Write-OK "VERDICT: WRITE → Freigabe: READ-ONLY → WRITE (Scope wird von FalsifyMe verwaltet)"
         Write-Info "Protokoll: falsify log $jobId"
     }
     elseif ($verdict -eq "RESEARCH") {
         Write-Warn "VERDICT: RESEARCH → FalsifyMe braucht weitere Daten!"
-        Write-Warn "Read-only recherchieren (Dateien lesen, Befunde sammeln), Artefakt ergänzen, erneut einreichen."
+        Write-Warn "Read-only recherchieren (Dateien lesen, Befunde sammeln), Artefakt ergänzen, erneut einreichen – mit DEMSELBEN Ticket (-UserInput 1:1)."
         Write-Info "Datenbedarf/Kritik: falsify log $jobId"
     }
     elseif ($verdict -eq "PLAN") {
-        Write-Error2 "VERDICT: PLAN → Iteration überarbeiten (HEADER behalten), erneut einreichen."
+        Write-Error2 "VERDICT: PLAN → Iteration überarbeiten und erneut einreichen (gleiches Ticket = -UserInput 1:1)."
         Write-Error2 "Kritik: falsify log $jobId"
     }
     else {
         Write-Error2 "VERDICT: $verdict → nicht freigegeben."
     }
 
-    return @{ Passed = $passed; JobId = $jobId; ScopeId = $scope; Verdict = $verdict; Reason = $reason; ExitCode = $submitExit }
+    # ScopeId nur als Info (Zuordnung bestimmt FalsifyMe); kein Zurueckreichen.
+    $scopeInfo = $null
+    if ($outText -match "Scope automatisch bestimmt: (scope-\S+)") { $scopeInfo = $Matches[1] }
+    return @{ Passed = $passed; JobId = $jobId; ScopeId = $scopeInfo; Verdict = $verdict; Reason = $reason; ExitCode = $submitExit }
 }
 
 # ── Export-Funktionen (nur beim Import als Modul, nicht beim -File-Aufruf) ──
 if ($MyInvocation.InvocationName -eq '.') {
-    Export-ModuleMember -Function Invoke-FalsifyCheck, Ensure-FalsifyDock, Ensure-FalsifyScope
+    Export-ModuleMember -Function Invoke-FalsifyCheck, Ensure-FalsifyDock, Ensure-FalsifyTicket
 }
 
 # ── CLI-Modus ──────────────────────────────────────────────────────────────
@@ -236,17 +221,17 @@ if ($Help) {
     Write-Host @"
 AGENT SKILL: FalsifyMe Pflicht-Check (PowerShell) · FalsifyMe 2.0
 
-SCOPE-PROTOKOLL: PLAN ist IMMER Init (User-Input 1:1 als HEADER).
+TICKET-PROTOKOLL: Der Agent schreibt den Job als Ticket (User-Input 1:1).
+FalsifyMe bestimmt die Scope-ID automatisch (Start UND Fortsetzung = EIN Pfad).
 Loop: PLAN → überarbeiten · RESEARCH → read-only recherchieren · WRITE → Freigabe.
 
-VERWENDUNG:
-  .\agent-skill-falsify.ps1 -UserInput "<User-Input 1:1>" -PlanFile "plan.txt" -RootDir "C:\projekt" -Files "app.js,lib/auth.js"
-  .\agent-skill-falsify.ps1 -ScopeId <scope-id> -PlanFile "plan.txt" -RootDir "C:\projekt" -Files "app.js,lib/auth.js"   (Loop)
+VERWENDUNG (JEDE Iteration):
+  .\agent-skill-falsify.ps1 -UserInput "<User-Input 1:1 / Ticket>" -PlanFile "plan.txt" -RootDir "C:\projekt" -Files "app.js,lib/auth.js"
   .\agent-skill-falsify.ps1 -EnsureDock  # Nur Fenster starten/prüfen
 
 OPTIONEN:
-  -UserInput <text>   User-Input 1:1 – wird HEADER des Scopes (beim Start Pflicht)
-  -ScopeId <id>       Scope-ID (bei Loop-Fortsetzung Pflicht)
+  -UserInput <text>   Ticket = User-Input 1:1 (HEADER) – bei JEDER Iteration Pflicht;
+                      FalsifyMe legt den Scope an oder setzt die Fortsetzung automatisch
   -PlanFile <pfad>    Plan-/Iterations-Datei (PFLICHT)
   -RootDir <verz>     Arbeitsverzeichnis (PFLICHT)
   -Files <liste>      Zugriffs-Whitelist, kommagetrennt (PFLICHT)
@@ -290,6 +275,6 @@ if ($MyInvocation.InvocationName -ne '.') {
 
     $filesArray = $Files -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
 
-    $result = Invoke-FalsifyCheck -PlanFile $PlanFile -RootDir $RootDir -Files $filesArray -DiffFile $DiffFile -ScopeId $ScopeId -UserInput $UserInput
+    $result = Invoke-FalsifyCheck -PlanFile $PlanFile -RootDir $RootDir -Files $filesArray -DiffFile $DiffFile -UserInput $UserInput
     exit $result.ExitCode
 }

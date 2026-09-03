@@ -223,6 +223,14 @@ function migrate(db) {
   ]) {
     try { db.exec(sql); } catch { /* existiert */ }
   }
+  // UI-127 (Ticket-Workflow): Lookup-Index (checkout_id, header) für die
+  // automatische Scope-Auflösung. MUSS NACH den ALTER-Migrationen laufen
+  // (alte Bestands-DBs bekommen checkout_id erst dort); fail-closed: ein
+  // fehlschlagender Index blockiert das Öffnen der DB nicht (Lookup bleibt
+  // ohne Index korrekt, nur langsamer bei sehr vielen Scopes).
+  try {
+    db.exec("CREATE INDEX IF NOT EXISTS idx_scopes_checkout_header ON scopes(checkout_id, header)");
+  } catch { /* Index nicht möglich – Auflösung bleibt korrekt (Full Scan) */ }
 
   // ── Schema-Version 6/7: unveränderlicher Job-Laufzeit-Snapshot + Retry ───
   // Nur nicht-geheime Konfiguration wird gespeichert. Ein Settings-Wechsel

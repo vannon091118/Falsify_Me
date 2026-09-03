@@ -31,6 +31,28 @@ export function getScope(db, id) {
   return db.prepare("SELECT * FROM scopes WHERE id = ?").get(id);
 }
 
+/**
+ * UI-127 (Ticket-Workflow, 2026-09-03): Scope-Zuordnung bestimmt AUSSCHLIESSLICH
+ * FalsifyMe – der Agent liefert nur das Ticket (= HEADER, User-Input 1:1) und
+ * niemals eine Scope-ID. Auflösung deterministisch über (checkout_id, header):
+ *  - 0 aktive Scopes mit exakt diesem HEADER  → { kind: "new" }        (Auto-Anlage)
+ *  - 1 aktiver Scope                          → { kind: "continue", scope }
+ *  - >=2 aktive Scopes (identisches Ticket,   → { kind: "ambiguous", scopes }
+ *    parallele offene Läufe)                    (fail-closed, nie raten)
+ * Terminale Scopes (hardened/done) zählen NICHT: ein abgeschlossenes Ticket
+ * startet bei identischer Einreichung bewusst frisch (kein Phantom-Reopen).
+ * Byte-identischer Vergleich (SQL =) – dieselbe 1:1-Disziplin wie der
+ * HEADER-Digest; keine Normalisierung, keine Fuzzy-Logik.
+ */
+export function resolveScopeForCheckout(db, checkoutId, header) {
+  const rows = db.prepare(
+    "SELECT * FROM scopes WHERE checkout_id = ? AND header = ? AND status = 'active' ORDER BY created_at DESC"
+  ).all(checkoutId, header);
+  if (!rows.length) return { kind: "new" };
+  if (rows.length === 1) return { kind: "continue", scope: rows[0] };
+  return { kind: "ambiguous", scopes: rows };
+}
+
 export function listScopes(db, { onlyActive = true } = {}) {
   // 'hardened' und 'done' gelten als abgeschlossen; onlyActive zeigt nur
   // laufende ('active') Scopes.
