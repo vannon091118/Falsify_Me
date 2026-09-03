@@ -7,7 +7,10 @@ description: Pflichtprüfung vor jeder Code-Änderung mit FalsiFlow. Bei Install
 
 Dieser Skill startet den FalsiFlow für die aktuelle Agent-Session. Er sorgt
 für eine nachvollziehbare Prüfung vor Änderungen; er ist keine versteckte
-Steuerung und schreibt niemals in das geprüfte Projekt.
+Steuerung. FalsifyMe bleibt read-only zum geprüften Projekt — die einzige
+Schreibausnahme ist der physische `FalsifyME.md`-Projektanker (Identität und
+bestätigte Decision-Records, einmal beim Bootstrap/`anchor init`, keine Scopes,
+keine Verdicts, keine Regeln).
 
 ## Session-Start
 
@@ -66,7 +69,7 @@ jeder Dokumentations- und jeder Konfigurationsänderung:
    Evidenz, Root-/Scope-Bindung, fail-closed WRITE, Twin-Isolation,
    Fehler-/Ausfallverhalten, ausführbaren Testbeleg und feindselige Agents.
 2. **FALSIFICATION_RECORD_10X:** Der unabhängige Reviewer dokumentiert F1
-   Coder-Behauptung, F2 User-Vertrag, F3 Scope-Abgleich, F4 falsifizierbare
+   User-Agent-Ausgangsbehauptung, F2 User-Vertrag, F3 Scope-Abgleich, F4 falsifizierbare
    Annahme, F5 Angriff, F6 verifizierte Datei:Zeile/Symbol/Probe, F7
    Gegenbeweise, F8 ungeprüften Bereich, F9 Rest-Risiko und F10
    Release-Entscheidung.
@@ -84,7 +87,9 @@ bestehenden Falsifikationspipeline.
 
 ## Sicherheitsgrenzen
 
-- Der Skill prüft, aber schreibt nicht in das Zielprojekt.
+- Der Skill prüft, aber schreibt nicht in das Zielprojekt (einzige Ausnahme:
+  der identitätstragende `FalsifyME.md`-Anker — keine Scopes, Findings,
+  Verdicts oder Regeln; der Laufzeitzustand bleibt ausschließlich in SQLite).
 - `--files` ist eine verpflichtende Whitelist relativ zum Root.
 - Keine Pfade außerhalb des Roots, absoluten Ausweichpfade, `..`-Traversals
   oder Symlink-Escapes.

@@ -54,7 +54,7 @@ test("Evil-Twin-Vertrag: Gegenrolle + Output-Vertrag in beiden Sprachen", () => 
 });
 
 test("F-8: fester Falsifikations-Task liegt als eigenes Runtime-Template vor (DE/EN)", () => {
-  // Nutzer-Prinzip: der Coding-Agent bestimmt die Aufgabe NIE – sie liegt als
+  // Nutzer-Prinzip: der USER AGENT bestimmt die Aufgabe NIE – sie liegt als
   // festes Prompt-Template in der Runtime (verbatim, eigene Daten-Datei).
   assert.match(TASK_FALSIFIKATION_DE, /FESTE FALSIFIKATIONS-AUFGABE/);
   assert.match(TASK_FALSIFIKATION_DE, /WIEDERLEGE KRITISCH, BRUTAL und GNADENLOS/);

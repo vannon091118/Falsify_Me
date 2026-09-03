@@ -5,7 +5,7 @@ description: Run the FalsiFlow mandatory falsification workflow before code chan
 
 # FalsifyMe / FalsiFlow Session Workflow
 
-FalsifyMe is an external, read-only falsification gateway: Coding Agent → CLI → SQLite job/scope → visible worker → falsification agent → findings → verdict → exit code for you. It never writes into the checked project; you stay read-only until it releases you.
+FalsifyMe is an external, read-only falsification gateway: Coding Agent → CLI → SQLite job/scope → visible worker → falsification agent → findings → verdict → exit code for you. It never writes into the checked project — the one explicit exception is the physical `FalsifyME.md` project anchor (identity + user-confirmed decision records, created once at bootstrap/`falsify anchor init`; it never holds scopes, findings, verdicts, or rules). You stay read-only until FalsifyMe releases you.
 
 ## Install locations (resolve — never hardcode a username)
 
@@ -16,8 +16,8 @@ under the user's home. The exact paths of the last install are recorded in
 - Program: `~/.Falsify_Core` (Windows: `%USERPROFILE%\.Falsify_Core`) — CLI entry
   `node cli/main.mjs`, worker check `node ui/worker.mjs --check`, dock start
   `ui/start-dock.cmd`
-- Private data: `~/.Falsify_Private` (logs); runtime home `~/.Falsify`
-  (config.json, .env, falsify.db)
+- Private data + runtime home: `~/.Falsify_Private` (FALSIFY_HOME: logs,
+  config.json, .env, falsify.db)
 - Agent skills (installed): `~/.agents/skills/falsifyme`
   (`agent-skill-falsify.sh/.mjs/.ps1`) and this skill
   (`~/.agents/skills/falsifyme-falsiflow`)
@@ -39,7 +39,7 @@ into a command.
    - `VERDICT: PLAN` → rework the plan (keep HEADER), resubmit.
    - `VERDICT: RESEARCH` → FalsifyMe needs more data: research read-only, add findings, resubmit.
    - `VERDICT: WRITE` → release: you may switch read-only → write. Implement, then submit the implementation for review in the SAME scope (WRITE/REVIEW loop).
-4. FalsifyMe stays absolutely read-only to the project. Error/missing verdict = no release. Exit codes: 0 WRITE · 1 PLAN/RESEARCH · 2 config/args · 3 API/runtime/no-verdict.
+4. FalsifyMe stays read-only to the project (sole exception: the identity anchor `FalsifyME.md`; all runtime state lives in SQLite). Error/missing verdict = no release. Exit codes: 0 WRITE · 1 PLAN/RESEARCH · 5 ASK · 2 config/args · 3 API/runtime/no-verdict.
 
 ## Mandatory 10x protocol after every piece of work
 
@@ -73,7 +73,7 @@ BLOCKED – mindestens eine Invariante ist nicht nachgewiesen.
 The independent reviewer records for every plan, change, and iteration:
 
 ```text
-F1: coder claim
+F1: User-Agent-Ausgangsbehauptung
 F2: user contract
 F3: exact scope match or divergence
 F4: falsifiable assumption

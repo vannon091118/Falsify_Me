@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createUiState, SLOT_TERMINAL } from "./state.mjs";
+import { createUiState, SLOT_TERMINAL, LOOP_LABEL, LOOP_COLOR } from "./state.mjs";
 import { apply, focusSlot, tick, SOFT_CAP_MS } from "./events.mjs";
 import { WORD } from "./boot.mjs";
 
@@ -278,4 +278,31 @@ test("boot word: FALSIFY_ME mit Unterstrich (Spec §5)", () => {
   // Stellt sicher, dass das Boot-Intro das Wort mit Unterstrich zeigt.
   assert.equal(WORD, "FALSIFY_ME");
   assert.equal(WORD.length, 10);
+});
+
+// ── UI-123: Loop-Zustands-Anzeige (Presentation-only) ────────────────────────
+test("loop: bekannter Zustand wird gespiegelt, unbekannter ehrlich ignoriert", () => {
+  const s = createUiState();
+  apply(s, { t: "job", id: "job-loop-1", slot: 1 }, t0);
+  assert.equal(apply(s, { t: "loop", s: "WRITE_AUTHORIZED" }, t0 + 1), true);
+  assert.equal(s.slots[0].loopState, "WRITE_AUTHORIZED");
+  assert.equal(s.loopState, "WRITE_AUTHORIZED", "Fokus-Slot-Spiegel");
+  // Unbekannter Zustand → kein Fake (null).
+  assert.equal(apply(s, { t: "loop", s: "ETWAS_ANDERES" }, t0 + 2), true);
+  assert.equal(s.slots[0].loopState, null);
+  // Reset bei neuem Job (Slot 1 ist belegt → der neue Job nimmt den freien
+  // Slot 2; jeder frische Slot startet ohne Loop-Zustand).
+  apply(s, { t: "loop", s: "WAITING_FOR_AGENT" }, t0 + 3);
+  apply(s, { t: "job", id: "job-loop-2", slot: 1 }, t0 + 4);
+  assert.equal(s.slots[1].loopState, null, "neuer Job = neuer Loop");
+  assert.equal(s.slots[0].loopState, "WAITING_FOR_AGENT", "alter Slot bleibt in seinem Zustand");
+});
+
+test("loop: LOOP_LABEL/LOOP_COLOR decken alle Pipeline-Zustände ab", () => {
+  for (const st of ["WRITE_AUTHORIZED", "WAITING_FOR_AGENT", "WRITE_IN_PROGRESS", "CHANGE_CAPTURED", "RE_REVIEW_QUEUED", "RE_REVIEW_RUNNING", "DONE", "LOOP_BLOCKED", "ABORTED", "ERROR"]) {
+    assert.ok(typeof LOOP_LABEL[st] === "string" && LOOP_LABEL[st].includes(st), `Label fehlt/ohne Token: ${st}`);
+    assert.ok(typeof LOOP_COLOR[st] === "string", `Farbe fehlt: ${st}`);
+  }
+  // Maschinennahe Tokens bleiben im Label sichtbar (Vertrag: exakte Namen).
+  assert.match(LOOP_LABEL.LOOP_BLOCKED, /LOOP_BLOCKED/);
 });

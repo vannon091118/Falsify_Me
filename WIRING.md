@@ -11,10 +11,10 @@ und neue Integrationsaufgaben stehen verbindlich in `ui/PLAN.md`.
 
 ## 0. KERNPRINZIP (unverhandelbar)
 
-Die Kernfunktion ist die **FALSIFIKATION der Coder-Annahmen** – eine kritische
-Peer-Review durch einen unabhängigen Betrachter: Coder und FalsifyMe pruefen
-UNABHAENGIG voneinander dieselben Daten; FalsifyMe versucht, die Annahmen des
-Coders zu WIDERLEGEN. Die Divergenz der beiden abschliessenden Urteile ist der
+Die Kernfunktion ist die **FALSIFIKATION der USER-AGENT-Ausgangsbehauptungen** – eine kritische
+Peer-Review durch einen unabhängigen Betrachter: USER AGENT und FalsifyMe pruefen
+UNABHAENGIG voneinander dieselben Daten; FalsifyMe versucht, die Behauptungen des
+USER AGENT zu WIDERLEGEN. Die Divergenz der beiden abschliessenden Urteile ist der
 **GAP**, den der Loop schliesst. `RESEARCH` ist nur ein MODUL der
 Datenbeschaffung fuer die Falsifikation, nie der Kern.
 
@@ -52,11 +52,23 @@ ui/                        ← Terminal-UI (Phase 1+2, live verdrahtet)
   tui/                     ← Bausteine (1 Modul = 1 Verantwortung, siehe §5)
 core/settings.mjs          ← Runtime-Provider/Model/Key + live /models-Abfrage
 core/feasibility.mjs       ← Umsetzbarkeits-Puffer (Intent→Execution, §14)
+core/identity.mjs         ← FalsifyME.md-Anchor: Root-/Digest-Prüfung, Records (read/explicit lifecycle write)
+artifacts/projects.mjs    ← SQLite-Owner für PROJECT/CHECKOUT-Bindungen; Pre-Session-Identity-Gate
+cli/anchor.mjs            ← expliziter Anchor-Lifecycle: init/check/rebind/clone/record
 core/probes.mjs            ← Probe-Vertrag (P0-Cutover, §16): splitRequirement /
                              parseProbeSet / validateProbeSet / computeVerdict
 core/twin.mjs              ← Unabhängige Gegenprüfung (Evil Twin, Regel 6, §15)
                              + Probe-Exekution (runProbeExecution)
 core/verdict.mjs            ← Loop-Anker: parseScopeDivergence (Regel 7, §15, UI-107)
+core/handoff.mjs           ← Versionierter v1-Handoff (§18): buildHandoff /
+                             validateHandoff / renderCoderBrief (pure, fail-closed)
+core/changes.mjs           ← Content-Snapshots/Digests (§18): snapshotRoot /
+                             compareSnapshots / validateChangeReport (kein mtime)
+core/protocols.mjs         ← 10X-Protokoll-Validatoren (§18): A1–A10 / F1–F10
+                             (implementiert + getestet, NICHT im Release-Pfad)
+artifacts/loops.mjs        ← EINZIGER Loop-Übergangs-Owner (§18): loop_state /
+                             completeHandoff / Idempotenz / loop_events (Schema v9)
+cli/handoff.mjs            ← falsify handoff brief|complete (§18)
 cli/settings.mjs           ← settings show/set + models (siehe §6)
   tui/views/               ← React/Ink Views (NUR Darstellung, stateless)
 worker.mjs                 ← PRODUKT: TUI-Host (createTui + Parser-Feed, Phase 2)
@@ -334,13 +346,22 @@ node --test tests/research-additions.test.mjs  # extractResearchAdditions (Pfad-
 ## 9. OFFENE UND AUFGESCHOBENE TASKS
 
 `ui/PLAN.md` ist die maßgebliche Aufgabenliste. Dokumentiert offen bleiben
-`UI-073` (API-Key-Abfrage beim Install/Bootstrap) sowie die noch nicht
-abgeschlossenen Runtime-Erweiterungen aus dem aktuellen Audit:
-Job-Snapshot-Verbrauch im Worker, vollständige Retry-Ausführung, per-Run-
-Override-Weitergabe, optionale Web-Recherche und Uninstall-/Doctor-Härtung.
-Die vorhandenen Spalten und Konfigurationswerte dafür sind **Grundlage, keine
-fertige Produktionsfunktion**. Bis UI-073 umgesetzt ist, bleiben README
-„API-Key / .env manuell einrichten" und `falsify onboard` der ehrliche Weg.
+`UI-073` (API-Key-Abfrage beim Install/Bootstrap), `UI-119`/`UI-124`
+(Brench-Event-Vertrag + Loop-E2E-Sichtbarkeit) sowie die Uninstall-/Doctor-
+Härtung (HANDOFF.md). Der Job-Snapshot wird inzwischen konsumiert (Submit
+friert ein, Job-Start lädt `configFromSnapshot`); die 10X-Protokoll-Gates
+(`core/protocols.mjs`) sind implementiert + getestet,
+aber bewusst NICHT im Release-Pfad (Prompt-Vorbedingung — siehe §18 und
+`plan/feature-runtime-loop-production-1.md`). Bis UI-073 umgesetzt ist,
+bleiben README „API-Key / .env manuell einrichten" und `falsify onboard`
+der ehrliche Weg.
+
+Die Projekt-/Checkout-Identität ist in `ui/PLAN.md` als UI-118 dokumentiert.
+Sie ergänzt die bestehende Queue lediglich um eine fail-closed Bindung:
+`FalsifyME.md` trägt nur Anchor-Metadaten und bestätigte Decision-Records,
+SQLite bleibt Owner von Scopes, Findings, Jobs, Verdicts und Laufzeitstatus.
+Die externe Brench-UI ist als UI-119 vorgemerkt und darf ausschließlich den
+bestehenden Worker-/FM-EVT-Vertrag visualisieren.
 
 Die Phase-2-Integration in Worker/CLI ist umgesetzt und via
 `npm run test:phase2` verifiziert (BLOCK 6 in `ui/PLAN.md`); die sichtbare
@@ -364,7 +385,7 @@ getrennte Nachweise:
   `WRITE`, Evil-Twin-Isolation, Ausfallverhalten, ausführbaren Testbeleg und
   feindselige Agents.
 - `FALSIFICATION_RECORD_10X`: Der unabhängige Reviewer beantwortet F1
-  Coder-Behauptung, F2 User-Vertrag, F3 Scope-Abgleich, F4 falsifizierbare
+  User-Agent-Ausgangsbehauptung, F2 User-Vertrag, F3 Scope-Abgleich, F4 falsifizierbare
   Annahme, F5 Angriff, F6 verifizierte Evidenz, F7 Gegenbeweise, F8 ungeprüften
   Bereich, F9 Rest-Risiko und F10 Release-Entscheidung.
 
@@ -374,7 +395,7 @@ nachgewiesen.` Diese Nachweise sind Agenten-/Review-Dokumentation, keine neue
 Queue und kein zweiter Verdict-Pfad; `WRITE` bleibt bei der bestehenden
 Falsifikationspipeline.
 
-- **KERNPRINZIP §0:** Falsifikation der Coder-Annahmen; eine Job/Scope-Queue;
+- **KERNPRINZIP §0:** Falsifikation der USER-AGENT-Ausgangsbehauptungen; eine Job/Scope-Queue;
   Verdict-Hoheit nur beim Falsifikations-Agent; Wissen lokal für den Nutzer.
   Neue Systeme sind begründungspflichtig — kein zweiter Verteilweg, keine
   zweite Orchestrierungsebene, kein zweiter Status-/Verdict-Pfad.
@@ -632,7 +653,51 @@ konsistenter Zustand, verletzte Ableitungen, Phase-Stabilität UNBEKANNT).
 
 ---
 
-## 16. P0-CUTOVER – PROBE-BASIERTE WRITE-ENTScheidung (Revision 5, 2026-09-02)
+## 16. PROJEKT-/CHECKOUT-IDENTITAET UND `FalsifyME.md` (UI-118, 2026-09-02)
+
+`FalsifyME.md` ist ein physischer Identitaetsanker, keine zweite Queue und kein
+Regel-/Verdict-Speicher. Seine einzige autoritaere Datenklasse sind die
+stabilen, einmalig geminteten `PROJECT_ID`/`CHECKOUT_ID`, die kanonische
+Root-Bindung und Digest-Pruefungen sowie explizit bestaetigte Decision-Records.
+Scope-Header, Findings, Jobs, Verdicts, Worker, Retries und dynamischer Verlauf
+bleiben ausschliesslich in SQLite (`FALSIFY_HOME/falsify.db`). `AGENTS.md`
+bleibt der Workflow-Vertrag fuer den externen USER AGENT; der Anker ersetzt ihn
+nicht und fuehrt keine neue Modellrolle oder Schreibinstanz ein.
+
+### Daten- und Schreibgrenzen
+
+- `core/identity.mjs` liest und validiert den Anker; `initAnchor` schreibt nur
+  beim expliziten Lifecycle-Start, `appendDecisionRecord` nur nach expliziter
+  Bestaetigung und unter einer exklusiven `.lock`-Datei.
+- `artifacts/projects.mjs` ist der einzige Owner fuer `projects`/`checkouts`.
+  `scopes.checkout_id` und `jobs.checkout_id` sind nur Fremdschluessel; sie
+  bleiben in ihren bestehenden Owner-Modulen.
+- `requireProjectIdentity` laeuft beim Submit, beim Direktlauf und erneut beim
+  gebundenen Joblauf, bevor ein API-Key-/Modellpfad startet. Fehlender,
+  kopierter, manipulierter, verschobener oder SQLite-widerspruechlicher Anker
+  ist fail-closed.
+- `falsify anchor init|check|rebind|clone|record` sind die einzigen expliziten
+  Anchor-Lifecycle-Kommandos. `clone` erzeugt bei gleicher PROJECT_ID eine
+  neue physische CHECKOUT_ID; ein impliziter Historien-Merge findet nicht statt.
+- Decision-Records werden als `UNTRUSTED CONTEXT` in den Thinker-Prompt gegeben.
+  Sie koennen weder HEADER, Falsifikationsaufgabe noch Verdict ueberschreiben.
+
+### Verifikation
+
+```bash
+node --test tests/identity.test.mjs
+node --test tests/foreign-project.test.mjs tests/probe-e2e.test.mjs tests/research-additions.test.mjs tests/selfreview.test.mjs
+npm test
+```
+
+`tests/identity.test.mjs` beweist Root-/Digest-Tampering, kopierte Anker,
+Newline-/Confirmation-Injection, getrennte Checkouts, Parser-Fehler und
+Projektkonsistenz. Ein alter, direkt per Modul angelegter Scope/Job darf als
+Legacy-`UNBOUND` gelesen werden; neue CLI-Sessions muessen gebunden sein.
+
+---
+
+## 17. P0-CUTOVER – PROBE-BASIERTE WRITE-ENTScheidung (Revision 5, 2026-09-02)
 
 Prosa-Evidenz (`hasChallengeEvidence`, Regel 2 alt) suchte Evidenz im Fließtext –
 Form-Slop („widerlegt“ + existierender Pfad ohne inhaltlichen Angriff) passierte
@@ -661,3 +726,28 @@ Tests: `node --test tests/probes.test.mjs` (Splitter byte-identisch/IDs=Spans,
 Kappe, vager Ein-Satz; Validator-Formen inkl. Coverage-Härte und Target-Härte;
 Cutover-Matrix + P7-Attack-Fixtures in `computeVerdict`) + `tests/twin.test.mjs`
 (Probe-Fixtures) + `tests/queue.test.mjs` (E2E-Fixtures WRITE/PLAN/vager Header).
+
+## 18. PRODUKTIONS-LOOP (2026-09-03, Schema v9)
+
+Die Loop-Kette `THINKER → EVIL TWIN → GATE → WRITE_AUTHORIZED → externer
+Coder → CHANGE_CAPTURED → RE_REVIEW_QUEUED → THINKER` ist ausführbar und
+e2e-getestet. Abschluss-Record: `plan/feature-runtime-loop-production-1.md`.
+
+| Modul | Verantwortung (EIN Owner je Wahrheit) |
+|---|---|
+| `artifacts/loops.mjs` | EINZIGER Übergangs-Owner: 12 `loop_state`-Werte, legale Übergänge (`applyTransition`/`transitionLoop`), transaktionale `completeHandoff` (Child nur via `jobs.createJob`), Idempotenz `(handoff_id, change_digest, scope_id)` IN der Transaktion, Loop-Limit → `LOOP_BLOCKED`, append-only `loop_events` (Audit, nie Entscheidungsinstanz) |
+| `core/handoff.mjs` | v1-Handoff-Vertrag: `buildHandoff` (nur nach Gate), `validateHandoff` (strikt, SEC-001-Secret-Scan), `renderCoderBrief` (pure Ableitung der Coder-Arbeitsanweisung, fail-closed) |
+| `core/changes.mjs` | Gemessene Wahrheit über Repo-Zustände: `snapshotRoot` (Content+Git-HEAD, KEIN mtime), `compareSnapshots`, `validateChangeReport` (Report-Korrelation + Whitelist) |
+| `core/protocols.mjs` | Strukturierte A1–A10/F1–F10-Validatoren — bewusst NICHT im Release-Pfad (Prompt-Vorbedingung: die System-Prompts erzeugen noch keine Records; Schaltung = TASK-017-Rest) |
+| `cli/handoff.mjs` | `falsify handoff brief --job-id <id>` (Coder konsumiert) + `falsify handoff complete --file report.json --root <dir>` (Completion → automatisches Re-Review) |
+| `cli/run.mjs` | Submit/Direkt-Run: `header_digest` + Basis-`change_digest` eingefroren; WRITE-Pfad: Handoff nur nach `computeVerdict`, Evidence-Prüfung pro Probe im Handoff reproduziert |
+
+Korrelationspflicht des Childs: `parent_job_id`, `handoff_id`, `iteration_id`,
+`change_digest`, `header_digest`, `review_iteration`, `loop_count` — alle
+gesetzt in `completeHandoff`, bewiesen in `tests/full-loop-e2e.test.mjs`.
+Fail-closed-Pfade (alle getestet in `tests/full-loop-negative.test.mjs`):
+NO_CHANGE → `LOOP_BLOCKED`; Loop-Limit → `LOOP_BLOCKED`; ABORTED → terminal;
+unautorisierte/fremde/ungültige Reports → Exit 3 ohne Child; Header-Drift →
+Job-Abweisung ohne Modell-Call. Idempotenz: 100 identische Reports → 1 Child
+(`tests/loop.test.mjs`). TUI spiegelt Zustände nur (`loop`-Event, UI-123,
+CON-004: kein UI-eigener Zustand).

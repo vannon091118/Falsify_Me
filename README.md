@@ -1,6 +1,6 @@
 ![FalsifyMe Banner](falsifyme-banner.svg)
 
-# FALSIFYME — Beta (`0.7.0-beta`)
+# FALSIFYME — Beta (`0.8.0-beta`)
 
 Zwischen einer Behauptung und einer Freigabe sitze ich. Ich bin Falsify_ME —
 das **read-only Falsifikations-Gateway für Coding-Agenten**, und der Name ist
@@ -9,7 +9,7 @@ jedem Coding-Agenten an. Ein Agent behauptet, deine Änderung sei sicher? Ich
 versuche nicht, ihm recht zu geben. Ich versuche, seine Behauptung
 kaputtzumachen. Was meine Falsifikationsversuche übersteht, darf der Agent
 umsetzen — und nur ich sage, ob er schreiben darf. **Kernfunktion: Ich
-falsifiziere die Annahmen des Coders** (unabhängige Prüfung derselben Daten;
+falsifiziere die Ausgangsbehauptungen des USER AGENT** (unabhängige Prüfung derselben Daten;
 die Divergenz der Urteile ist der Gap, den der Loop schließt).
 
 Ich selbst schreibe **niemals** in das zu prüfende Projekt — die einzige
@@ -60,7 +60,7 @@ Dateien, aus denen ihre eigene Planung entstand — und finden dann „keine
 Fehler". Das ist keine Prüfung. Das ist Selbstbestätigung.
 
 Ich bin die Gegeninstanz: ein zweiter, **read-only** Betrachter, der die
-Behauptungen des Coders gegen die echten Dateien falsifiziert. Erst nach
+Behauptungen des USER AGENT gegen die echten Dateien falsifiziert. Erst nach
 bestandener Prüfung erlaubt die Pipeline den Schreibschritt. Ohne
 Challenge-Nachweis gibt es kein `VERDICT: WRITE`. Kein Fake-Verdict, keine
 Freigabe aus Höflichkeit.
@@ -82,7 +82,7 @@ read-only-Check, ob die Einreichung überhaupt umsetzbar ist — Whitelist-
 Dateien müssen unter dem Root existieren, Pfade dürfen nicht aus dem
 Arbeitsverzeichnis ausbrechen, und der Plan muss den Kopf des Auftrags
 adressieren (kein Literalismus-Drift). Die Hinweise gehen als KONTEXT an mich
-— den Falsifikations-Agent (Thinker) —, der die Coder-Annahmen selbst gegen
+— den Falsifikations-Agent (THINKER) —, der die Ausgangsbehauptungen des USER AGENT selbst gegen
 die echten Dateien prüft (`core/feasibility.mjs`). Der Check erteilt selbst
 **kein** Verdict und schließt keinen Job (Verdict-Hoheit bleibt beim Thinker).
 Dadurch blocke ich fehlerhafte Absichten, ohne das System zu stören. Dieser
@@ -102,6 +102,28 @@ Meine Antworten sind kurz — Absicht. Alles andere ist keine Antwort.
 
 Auch eine Prüfung, die sauber durchläuft, darf mit `PLAN` enden. Das ist
 kein Defekt — das ist der Befund.
+
+### Der Loop (Freigabe → Umsetzung → erneute Prüfung)
+
+Bei `WRITE` gibt dir FalsifyMe die Freigabe als **versionierten Handoff**
+(`FALSIFY_HOME/logs/handoff-<job>.json`) und hält den Job im
+`WRITE_AUTHORIZED`-Zustand fest. Der Ablauf bis zurück ins Denken:
+
+1. `falsify handoff brief --job-id <id>` — die Arbeitsanweisung für den
+   Coding-Agent: erlaubte Dateien, Basiszustand, Gegenprüfungs-Ergebnis.
+2. Der Coding-Agent (einziger Writer) setzt die Änderung um.
+3. `falsify handoff complete --file report.json --root <projekt>` —
+   FalsifyMe misst selbst nach (Content-Digests, Whitelist, Korrelation) und
+   reichte das **Re-Review automatisch** als neuen Job ein
+   (`RE_REVIEW_QUEUED`) — kein manueller Re-Submit.
+
+Fail-closed ohne Ausnahme: keine echte Änderung (`NO_CHANGE`), Änderungen
+außerhalb der Whitelist, fremde/korrupte Reports oder das erreichte
+Loop-Limit beenden den Loop als `LOOP_BLOCKED`/`ABORTED` statt ein Re-Review
+zu starten. Wiederholtes Einreichen desselben Reports ist idempotent (ein
+Re-Review, kein zweites). `RESEARCH` läuft als Loop mit zusätzlicher Evidenz:
+die vom Thinker nachgeforderten Dateien werden beim nächsten Submit
+automatisch in die Whitelist gemergt.
 
 ### Mein Evil Twin — die gespaltene Persönlichkeit
 
@@ -225,8 +247,14 @@ Fehlt ein Terminal für den Dialog, verweigert `falsify onboard` ehrlich
 
 ### 4 · Erster Auftrag
 
+Vor dem ersten Scope wird im Zielprojekt einmal der physische `FalsifyME.md`-
+Anker angelegt und in der privaten SQLite registriert. Der Anker enthält keine
+Scopes, Findings, Verdicts oder Regeln; er trennt nur logische Projekt-Historie
+(`PROJECT_ID`) und physische Checkout-Bindung (`CHECKOUT_ID`).
+
 ```bash
-falsify scope new "Mein Auftrag 1:1"                   # Scope mit HEADER = User-Input
+falsify anchor init --root <projekt>
+falsify scope new "Mein Auftrag 1:1" --root <projekt>  # Scope mit HEADER = User-Input
 # Plan-Datei anlegen (z.B. plan.txt), dann:
 falsify submit --scope <scope-id> --plan-file plan.txt --root <projekt> --files "app.js,lib/auth.js"
 ```
@@ -369,7 +397,7 @@ Sicherheit gegen literalistische oder kaputte Agents.
 Der unabhängige Reviewer beantwortet zusätzlich den `FALSIFICATION_RECORD_10X`:
 
 ```text
-F1: Coder claim – was wurde konkret behauptet?
+F1: User-Agent-Ausgangsbehauptung – was wurde konkret behauptet?
 F2: User contract – was verlangt der unveränderte Auftrag?
 F3: Scope match – stimmen Behauptung und Auftrag exakt überein?
 F4: Falsifiable assumption – welche Annahme könnte falsch sein?
@@ -427,7 +455,7 @@ automatisch um die Prüf-Kernkomponenten (`Selbstprüfung erkannt: …`) — der
 Prüfmechanismus ist nie unsichtbar. Fremdprojekte bleiben unverändert.
 
 **Rollen:** FalsifyMe = unabhängiger read-only Falsifizierungs-Agent ·
-Coding-Agent = eigentliche Arbeits-/Write-Instanz ·
+USER AGENT = externe Arbeits-/Write-Instanz ·
 Dock = sichtbare Visualisierung der laufenden FalsifyMe-Arbeit ·
 Installation = aktiviert die FalsifyMe-Workflow-Integration.
 
@@ -480,20 +508,28 @@ API-Keys werden VORHER nach `~/.Falsify.env.uninstall-backup` gesichert.
 
 ```bash
 falsify ensure-home | doctor
-falsify scope new "<user-input>" | scope show <id> | scope list
+falsify anchor init|check|rebind|clone|record [--root <dir>]
+falsify scope new "<user-input>" [--root <dir>] | scope show <id> | scope list
 falsify submit --scope <id> --plan-file plan.txt --root <dir> --files "a,b"
-falsify wait <job-id> [--ping|--abort] | status <job-id> | jobs | state
+falsify wait <job-id> [--ping|--abort] | status <job-id> | jobs | stats
 #   --ping = eine Auswertungsrunde (STATUS <zustand> <sek>; Exit 4 = läuft noch,
-#   der Coder wertet selbst aus) · --abort = Job abbrechen (keine Freigabe)
+#   der USER AGENT wertet selbst aus) · --abort = Job abbrechen (keine Freigabe)
 falsify abort <job-id>          # CLI-Abbruch: setzt Flag, Worker killt den Job echt
 falsify log <job-id> | answer <job-id> | history
 falsify onboard [--skip-dock]   # interaktive Ersteinrichtung (Dialog)
 falsify uninstall [--dry-run]   # vollständige Deinstallation
 ```
 
+`FalsifyME.md` ist ein Identitätsanker, kein dynamischer Zustands- oder
+Regelspeicher. `falsify anchor rebind` ist die einzige explizite Operation für
+einen bewusst verschobenen Checkout; `anchor clone` erzeugt einen neuen
+physischen Checkout mit derselben logischen PROJECT_ID, ohne Historien-Merge.
+Decision-Records werden nur mit `--confirm` akzeptiert und gehen als
+untrusted Prüfkontext an den Thinker.
+
 `--files` ist die Whitelist des Modellzugriffs. `falsify wait` hat **keinen
 festen Timeout** — Laufzeiten sind anbieterabhängig; `--ping` pollt den Job
-und übergibt die Auswertung an den Coder.
+und übergibt die Auswertung an den USER AGENT.
 
 ---
 
@@ -508,7 +544,7 @@ npm run doctor                  # Umgebungs-/Config-Checks ("bash falsify doctor
 npm run test:phase2             # FM-EVT-Verdrahtung (tests/phase2.test.mjs): Marker-Gate,
                                 # Parser→UI-State, Worker-Loop headless
 
-# Terminal-UI (105/105 grün):
+# Terminal-UI (125/125 grün):
 node --test --test-force-exit --test-concurrency=1 "ui/tui/*.test.mjs" ui/tui.test.mjs ui/demo-agent.test.mjs
 ```
 
@@ -524,14 +560,19 @@ Verdrahtung gehört zu `WIRING.md` + `ui/PLAN.md`, nie nur in eine Antwort.
 ## Projektstruktur
 
 ```text
-artifacts/   SQLite (WAL), Scopes, Findings, Jobs, atomarer Worker-Claim
-core/        Agent, Prompts, Verdict, Config, Keys, Sandbox, Rate-Limit
-cli/         CLI-Kommandos und Bash-Forwarder (falsify)
-tests/       Security- und Regressionstests
+artifacts/   SQLite (WAL), Scopes, Findings, Jobs, atomarer Worker-Claim,
+             Loop-Zustände/-Übergänge (loops.mjs, Schema v9)
+core/        Agent, Prompts, Verdict, Config, Keys, Sandbox, Rate-Limit,
+             Handoff-Vertrag, Change-Digests, 10X-Protokoll-Validatoren
+cli/         CLI-Kommandos und Bash-Forwarder (falsify),
+             falsify handoff brief|complete (Loop-Übergabepunkt)
+tests/       Security- und Regressionstests (inkl. Full-Loop-E2E + Negative-Matrix)
 ui/          Terminal-UI (Phase 1+2, live verdrahtet) + Worker-Fenster +
              Teststarter/Beobachtung (tui-demo.mjs nur für Tests/Demo)
 skills/      Agent-Integrationen für Bash, Node.js und PowerShell
 WIRING.md    Integrations-/Modul-Landkarte (Einstieg für Agents)
+plan/        Konsolidierte Ausführungspläne (Loop-Record:
+             feature-runtime-loop-production-1.md)
 ```
 
 ## Technik

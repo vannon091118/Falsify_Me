@@ -170,14 +170,21 @@ function executorConfirm({ line = 2, quote = "  return a + b;" } = {}) {
 // ── Gemeinsamer E2E-Lauf: Scope + Direkt-Job gegen den Fake-Server ──────────
 async function runE2E({ responder, header, plan }) {
   const { openDb, closeDb } = await mod("artifacts/db.mjs");
-  const scopes = await mod("artifacts/scopes.mjs");
-  const home = withTempHome();
-  const project = tempProject();
+    const scopes = await mod("artifacts/scopes.mjs");
+    const identity = await mod("core/identity.mjs");
+    const projects = await mod("artifacts/projects.mjs");
+    const home = withTempHome();
+    const project = tempProject();
+    const anchor = identity.initAnchor(project);
+    assert.equal(anchor.ok, true, anchor.message);
+    const identityDb = openDb();
+    projects.bindAnchor(identityDb, anchor, project);
+    closeDb();
   const server = await fakeApi(responder);
   const apiBase = `http://127.0.0.1:${server.address().port}/v1`;
   try {
     const db = openDb();
-    const scope = scopes.createScope(db, header);
+    const scope = scopes.createScope(db, header, { checkoutId: anchor.value.checkoutId });
     closeDb();
     const cli = runCli({
       home: home.tmp,

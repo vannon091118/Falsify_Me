@@ -326,7 +326,7 @@ test("computeVerdict: UNKLAR/WIDERSPRUCH/Evidence-fail je Probe → PLAN (P7: al
 test("computeVerdict: harte Gates – structural, Divergenz, Dateiänderung → PLAN", async () => {
   const { computeVerdict } = await mod("core/probes.mjs");
   assert.equal(computeVerdict({ validation: VALID_VALIDATION, results: [BEST_RESULT], structuralBlocks: ["Diff berührt core/nope.mjs (außerhalb der Whitelist)"] }).verdict, "PLAN");
-  assert.equal(computeVerdict({ validation: VALID_VALIDATION, results: [BEST_RESULT], divergence: "Coder zielt auf andere Datei als der Header." }).verdict, "PLAN");
+  assert.equal(computeVerdict({ validation: VALID_VALIDATION, results: [BEST_RESULT], divergence: "USER AGENT zielt auf andere Datei als der Header." }).verdict, "PLAN");
   assert.equal(computeVerdict({ validation: VALID_VALIDATION, results: [BEST_RESULT], filesUnchanged: false }).verdict, "PLAN");
   // Kombiniert: alle Gates grün trotz WRITE-Verdict des Thinkers.
   const all = computeVerdict({

@@ -15,6 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { isWorkerAlive, workerPid } from "./jobs.mjs";
 import { verdictToPhase } from "./scopes.mjs";
+import { checkProjectConsistency } from "./projects.mjs";
 
 /**
  * Prüft die Konsistenz des Zustandsmodells.
@@ -115,6 +116,11 @@ export function checkQueueConsistency(db) {
   for (const j of db.prepare("SELECT id, status, verdict FROM jobs WHERE verdict IS NOT NULL AND status NOT LIKE 'DONE %' AND status NOT LIKE 'ERROR %'").all()) {
     violations.push(`job ${j.id}: verdict=${j.verdict} gesetzt, aber status=${j.status} (verdict ohne Statusquelle)`);
   }
+
+  // ── 7. Projekt-/Checkout-Identität: Binding-Wahrheit bleibt in SQLite,
+  //      niemals in scopes/jobs oder einer zweiten Queue. ───────────────────
+  const project = checkProjectConsistency(db);
+  violations.push(...project.violations);
 
   return { ok: violations.length === 0, violations };
 }

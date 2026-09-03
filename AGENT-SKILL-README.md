@@ -73,7 +73,7 @@ Der unabhängige Reviewer dokumentiert bei jedem Plan, jeder Änderung und jeder
 Iteration konkret:
 
 ```text
-F1: Coder claim
+F1: User-Agent-Ausgangsbehauptung
 F2: User contract
 F3: Scope match oder konkrete Divergenz
 F4: falsifizierbare Annahme
@@ -94,7 +94,10 @@ eine neue Modell-Konversation; Scopes werden niemals vermischt.
 
 ## Sicherheitsvertrag
 
-FalsifyMe schreibt nicht in das Zielprojekt. Der Modellzugriff besteht nur aus
+FalsifyMe schreibt nicht in das Zielprojekt — einzige Ausnahme ist der
+identitätstragende `FalsifyME.md`-Anker (einmal beim Bootstrap/`falsify
+anchor init`; keine Scopes, Findings, Verdicts oder Regeln — Laufzeitzustand
+ausschließlich in SQLite). Der Modellzugriff besteht nur aus
 `list_dir`, `read_file` und `glob` und wird auf Root und Whitelist beschränkt.
 Absolute Pfade, `..`, Symlink-Escapes und nicht erlaubte Dateien werden blockiert.
 Persistenz liegt ausschließlich in `FALSIFY_HOME` außerhalb des Repositories.

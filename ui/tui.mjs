@@ -14,7 +14,7 @@ import React from "react";
 import { EventEmitter } from "node:events";
 import { render as inkRender } from "ink";
 import {
-  createUiState, STATE_LABEL, STATE_COLOR, ANIMATED, ACTIVITY_STALE_MS,
+  createUiState, STATE_LABEL, STATE_COLOR, ANIMATED, ACTIVITY_STALE_MS, LOOP_LABEL, LOOP_COLOR, loopLabelOf,
   activeSlotOf, busySlots, globalIdle, SLOT_TERMINAL,
 } from "./tui/state.mjs";
 import { apply, tick } from "./tui/events.mjs";
@@ -179,6 +179,11 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
       stateLabel: bootFailed ? "INIT-FEHLER"
         : startupIntro ? "STARTING"
         : idleNow ? "WARTE AUF EINGABE" : slotLabel(focused),
+      // UI-123: Loop-Zustand des Fokus-Slots (Presentation-only, Spiegel des
+      // persistierten jobs.loop_state; keine UI-eigene Zustandswahrheit).
+      loopState: state.loopState ?? null,
+      loopLabel: loopLabelOf(focused) ?? (state.loopState ? LOOP_LABEL[state.loopState] ?? null : null),
+      loopColor: focused.loopState ? LOOP_COLOR[focused.loopState] ?? "gray" : null,
       stateColor: bootFailed ? "red"
         : startupIntro ? STATE_COLOR.STARTING
         : idleNow ? "gray" : STATE_COLOR[focused.state],
@@ -200,6 +205,9 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
         twinActive: s.state === "VERIFYING",
         stateLabel: slotLabel(s),
         stateColor: STATE_COLOR[s.state],
+        loopState: s.loopState ?? null,
+        loopLabel: loopLabelOf(s),
+        loopColor: s.loopState ? LOOP_COLOR[s.loopState] ?? "gray" : null,
         jobId: s.jobId,
         scopeId: s.scopeId,
         verdict: verdict.view(s, now),
@@ -213,6 +221,9 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
         twinActive: s.state === "VERIFYING",
         stateLabel: slotLabel(s),
         stateColor: STATE_COLOR[s.state],
+        loopState: s.loopState ?? null,
+        loopLabel: loopLabelOf(s),
+        loopColor: s.loopState ? LOOP_COLOR[s.loopState] ?? "gray" : null,
         jobId: s.jobId,
         scopeId: s.scopeId,
         verdict: verdict.view(s, now),

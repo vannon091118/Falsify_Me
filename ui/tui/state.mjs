@@ -95,6 +95,10 @@ const makeSlot = (idx) => ({
   phases: createPhases(),
   activity: null, // { label, tool, file } | null
   model: null,    // { thinker, twin, who: "thinker"|"twin" } | null (UI-Traceability)
+  // Loop-Zustand (UI-123): NUR Anzeige des persistierten jobs.loop_state
+  // (Produktions-Loop, artifacts/loops.mjs). Kein UI-eigener Zustand, keine
+  // Transition-Logik — das UI spiegelt, es entscheidet nicht (CON-004).
+  loopState: null, // "WRITE_AUTHORIZED" | "WAITING_FOR_AGENT" | ... | null
   files: 0,
   filesList: [], // echte Scan-Dateien (files-Event mit list)
   events: createRing(80),  // strukturierte Aktivitaets-Events des Slots
@@ -132,6 +136,7 @@ export const createUiState = () => {
     phases: slots[0].phases,
     activity: null,
     model: null,
+    loopState: null, // UI-123: Spiegel des aktiven Slots
     files: 0,
     filesList: [],
     events: slots[0].events,
@@ -147,6 +152,38 @@ export const createUiState = () => {
     stats: null,
   };
 };
+
+// ── Loop-Zustands-Anzeige (UI-123) ────────────────────────────────────────
+// Maschinennahe Tokens bleiben unverändert (Vertrag: exakte State-Namen);
+// Labels/Farben sind NUR Darstellung.LOOP_BLOCKED/ABORTED = rot (Blockade
+// sichtbar), RE_REVIEW_* = cyan (Kind in der Queue), WRITE_AUTHORIZED =
+// grün (Freigabe), WAITING_FOR_AGENT = yellow (wartet auf den externen
+// Writer), CHANGE_CAPTURED = magenta (Änderung erfasst).
+export const LOOP_LABEL = Object.freeze({
+  WRITE_AUTHORIZED: "LOOP: FREIGABE (WRITE_AUTHORIZED)",
+  WAITING_FOR_AGENT: "LOOP: WARTE AUF WRITER (WAITING_FOR_AGENT)",
+  WRITE_IN_PROGRESS: "LOOP: WRITER AKTIV (WRITE_IN_PROGRESS)",
+  CHANGE_CAPTURED: "LOOP: ÄNDERUNG ERFASST (CHANGE_CAPTURED)",
+  RE_REVIEW_QUEUED: "LOOP: RE-REVIEW EINGEREICHT (RE_REVIEW_QUEUED)",
+  RE_REVIEW_RUNNING: "LOOP: RE-REVIEW LÄUFT (RE_REVIEW_RUNNING)",
+  DONE: "LOOP: ABGESCHLOSSEN (DONE)",
+  LOOP_BLOCKED: "LOOP: GEBLOCKT (LOOP_BLOCKED)",
+  ABORTED: "LOOP: ABGEBROCHEN (ABORTED)",
+  ERROR: "LOOP: FEHLER (ERROR)",
+});
+export const LOOP_COLOR = Object.freeze({
+  WRITE_AUTHORIZED: "green",
+  WAITING_FOR_AGENT: "yellow",
+  WRITE_IN_PROGRESS: "yellow",
+  CHANGE_CAPTURED: "magenta",
+  RE_REVIEW_QUEUED: "cyan",
+  RE_REVIEW_RUNNING: "cyan",
+  DONE: "green",
+  LOOP_BLOCKED: "red",
+  ABORTED: "red",
+  ERROR: "red",
+});
+export const loopLabelOf = (s) => (s?.loopState ? (LOOP_LABEL[s.loopState] ?? null) : null);
 
 export const shortId = (s) => {
   if (!s) return null;

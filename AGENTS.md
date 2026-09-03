@@ -74,7 +74,7 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   Orphan).
 - `falsify wait` hat **keinen festen Timeout** (Laufzeiten sind
   anbieterabhängig): `--ping` pollt den Job und übergibt die Auswertung an den
-  Coder (der Agent entscheidet selbst über Abbruch via `--abort`/`falsify
+  USER AGENT (der externe Agent entscheidet selbst über Abbruch via `--abort`/`falsify
   abort`). `--abort` setzt ein Flag; der Worker pollt es und killt den
   Kindprozess echt (kein Fake-Verdict, Abort-Race-Guard in `ui/worker.mjs`).
 - Status-API (`worker.mjs --check`/`--state`) liest NUR die Queue: ein
@@ -89,12 +89,14 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   `blocks`/`findings` gehen als KONTEXT an den Thinker (`run.mjs`: Warnungen +
   Validierungs-Hinweise im User-Content) — **kein Verdict, kein Job-Ende**;
   RESEARCH bedeutet: FalsifyMe fordert Research-Daten an und der Thinker
-  scannt sie **unabhängig vor dem Coder** — die Divergenz der beiden Urteile
+  scannt sie **unabhängig NACH dem USER AGENT** (der Agent muss erst seine
+  Whitelist fertigstellen und einen ersten Entwurf umsetzen — nur dann gibt
+  es etwas zu falsifizieren) — die Divergenz der beiden Urteile
   ist der GAP, den der Loop schließt. `addFinding`/`jobDone` werden von
   feasibility nie aufgerufen (nur `cli/run.mjs` schließt Jobs).
 - `scopes.last_gap` ist NUR der FalsifyMe-Befund bei PLAN/RESEARCH (null bei
-  WRITE) — keine gespeicherte Divergenz zweier Urteile: das Coder-Urteil wird
-  nirgends erfasst, „Divergenz Coder-Urteil vs. Falsifikation" ist Label.
+  WRITE) — keine gespeicherte Divergenz zweier Urteile: das USER-AGENT-Urteil wird
+  nirgends erfasst, „Divergenz USER-AGENT-Urteil vs. Falsifikation" ist Label.
 - WRITE-Challenge-Gate (UI-098/UI-102, Regel 2 seit 2026-09-01): WRITE
   braucht den Abschnitt `## Falsifikationsversuche` MIT mind. einem
   substanziellen Versuch (>10 Zeichen), der eine WIDERLEGUNG mit VERIFIZIERTER
@@ -120,7 +122,7 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   `open_conflicts` bleiben, Status active, Exit 5 — Exit-Codes zentral in
   `core/verdict.mjs exitCodeOf()` (0 WRITE · 1 PLAN/RESEARCH · 5 ASK · 3 sonst).
 - Loop-Anker (Regel 7, UI-107, Schema v4): `scopes.last_divergence` hält die
-  deklarierte Divergenz zwischen Coder-agent_intent und dem UNABHÄNGIGEN
+  deklarierte Divergenz zwischen USER-AGENT-`agent_intent` und dem UNABHÄNGIGEN
   `## Umsetzungsverstaendnis (FalsifyMe)`-Abschnitt des Thinkers (Pflicht
   DIREKT VOR `## Falsifikationsversuche`, sonst schneidet das `##` den
   Challenge-Abschnitt ab!). `SCOPE-DIVERGENZ: <Grund>` (≥20 Zeichen) ⇒ WRITE
@@ -292,7 +294,7 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   Datei; UI-075 im Batch-Commit 2026-09-01 umgesetzt).
 - Kernprinzip: FalsifyMe = kritische Peer-Review durch einen unabhängigen
   Betrachter („Thinker-with-files", eigene Konversation, Kontext getrennt,
-  Anti-Self-Check-Bias): Alles wird unabhängig geprüft, bevor der Coder
+  Anti-Self-Check-Bias): Alles wird unabhängig geprüft, bevor der USER AGENT
   schreibt; ohne Challenge-Nachweis gibt es kein `VERDICT: WRITE`.
 - Deinstallation muss vollständig rückabwickeln (uninstall.mjs: Worker,
   Core, Private, Skills, Instructions, Profil-Marker, AGENTS.md-Block,
@@ -368,7 +370,7 @@ fest, was der unabhängige Reviewer tatsächlich geprüft hat. Jede Antwort muss
 auf konkrete zugängliche Evidenz zeigen:
 
 ```text
-F1: <Coder claim – konkrete Behauptung und betroffene Dateien/Verhalten>
+F1: <User-Agent-Ausgangsbehauptung – konkrete Behauptung und betroffenes Verhalten>
 F2: <User contract – ursprüngliche Anforderung oder unveränderter Scope-Header>
 F3: <Scope match – exakte Übereinstimmung oder konkrete Divergenz>
 F4: <Falsifiable assumption – eine Annahme, die falsch sein könnte>
@@ -424,6 +426,47 @@ nachgewiesen.`
   erfasst mtime+Größe der Whitelist VOR der Twin-Exekution, danach verglichen
   – eine während der Prüfung veränderte Basis trägt keine Freigabe.
 
+## Produktions-Loop (Schema v9, 2026-09-03)
+
+- Die Loop-Kette `THINKER → EVIL TWIN → GATE → WRITE_AUTHORIZED →
+  externer Coder → CHANGE_CAPTURED → RE_REVIEW_QUEUED → THINKER` ist
+  ausführbar und e2e-getestet (Abschluss-Record:
+  `plan/feature-runtime-loop-production-1.md`; Modul-Karte: WIRING §18).
+- `artifacts/loops.mjs` ist der EINZIGE Loop-Übergangs-Owner (12 Zustände,
+  `applyTransition` fail-closed, Terminale unumkehrlich). Child-Jobs
+  entstehen NUR via `completeHandoff` → `jobs.createJob` — der Writer-Scan
+  in `tests/invariants.test.mjs` hat `artifacts/loops.mjs` als registrierten
+  Orchestrierer (RISK-003: keine zweite Queue).
+- `completeHandoff` ist EINE Transaktion: Report-/Handoff-/Change-
+  Korrelation, Übergänge und GENAU EIN Child mit voller Korrelation
+  (`parent_job_id`, `handoff_id`, `iteration_id`, `change_digest`,
+  `header_digest`). Idempotenz `(handoff_id, change_digest, scope_id)` wird
+  INNERHALB der Transaktion geprüft (Race-Fix: der Vorab-Check allein liesse
+  zwei gleichzeitige Completions je ein Child erzeugen).
+- `header_digest` + Basis-`change_digest` werden bei Submit UND Direkt-Run
+  eingefroren; HEADER-Drift weist den Job vor jedem Modell-Call ab.
+- `core/handoff.mjs`: v1-Handoff NUR nach `computeVerdict` (Modellprosa
+  autorisiert nie); `validateHandoff` lehnt Secrets (SEC-001) und
+  WIDERSPRUCH/UNKLAR-Proben ab. `renderCoderBrief` ist reine Ableitung —
+  der Coder konsumiert (REQ-004), FalsifyMe schreibt nie.
+- E2E-Befund (2026-09-03): der Handoff baute `probeResults` aus den Raw-
+  Twin-Results OHNE `evidenceOk` — ein Gate-freigegebener WRITE erzeugte
+  ein vom eigenen Validator abgelehntes Handoff. Lektion: Evidence-Prüfung
+  (`probeEvidenceOk`) muss am Übergabepunkt reproduziert werden, nicht nur
+  im Gate; der E2E-Test rendert jetzt den Coder-Brief gegen das echte
+  Pipeline-Handoff.
+- Fail-closed-Matrix (alle getestet): NO_CHANGE → `LOOP_BLOCKED`, Loop-Limit
+  → `LOOP_BLOCKED`, ABORTED → terminal, fremde/unautorisierte Reports →
+  Exit 3 ohne Child, 100 identische Reports → 1 Child.
+- Die 10X-Protokoll-Gates sind bewusst NICHT im Release-Pfad: die
+  System-Prompts erzeugen noch keine strukturierten A1–A10/F1–F10-Records;
+  naive Schaltung würde jeden WRITE unmöglich machen. Schaltung =
+  TASK-017-Rest mit Prompt-Vorbedingung (Konvergenzschutz folgt mit der
+  Schaltung — nicht als separater Pfad davor).
+- TUI spiegelt `loop_state` nur (FM-EVT `loop`, UI-123; CON-004: UI besitzt
+  keine Zustandswahrheit). `falsify handoff brief|complete` sind in
+  cli/falsify.sh + help.mjs nachgezogen.
+
 ## Test-/Verifikationspfade
 
 - Kernsuite: `node --test tests/onboard.test.mjs tests/bootstrap.test.mjs
@@ -431,11 +474,13 @@ nachgewiesen.`
   tests/feasibility.test.mjs tests/datamodel.test.mjs tests/invariants.test.mjs
   tests/selfreview.test.mjs tests/twin.test.mjs tests/prompt.test.mjs
   tests/agent.test.mjs tests/stats.test.mjs tests/research-additions.test.mjs
-  tests/probes.test.mjs tests/probe-e2e.test.mjs`
-  (Stand 2026-09-02; deckt die Regeln ab: Queue eine Wahrheit,
+  tests/probes.test.mjs tests/probe-e2e.test.mjs tests/loop.test.mjs
+  tests/full-loop-e2e.test.mjs tests/full-loop-negative.test.mjs`
+  (Stand 2026-09-03, 221/221; deckt die Regeln ab: Queue eine Wahrheit,
   list_dir-Namen-Vertrag, WRITE-Challenge-Evidenz, Self-Review-Scope,
   strukturelle Kohärenz, Evil-Twin-Gegenprüfung, Prompt-Daten,
-  P0-Probe-Vertrag/Cutover-Matrix/E2E-Fixtures).
+  P0-Probe-Vertrag/Cutover-Matrix/E2E-Fixtures, Loop-Zustände/Idempotenz/
+  Full-Loop-E2E/Negative-Matrix).
   `tests/settings.test.mjs` läuft separat.
 - Prompt-Texte sind DATEN, kein Code: Die System-Prompts leben in
   `core/prompt-text/*.md` (Loader in `core/prompt.mjs`, `promptText()`).

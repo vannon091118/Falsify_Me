@@ -5,6 +5,13 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import {
+  buildSkillManifest,
+  readSkillManifest,
+  skillManifestPath,
+  validateSkillVersionTransition,
+  writeSkillManifest,
+} from "./core/skill-version.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const home = os.homedir();
@@ -48,13 +55,31 @@ const runNpm = (args) => {
   if (npmCli) execFileSync(process.execPath, [npmCli, ...args], opts);
   else execFileSync(npm, args, opts);
 };
+const nextSkillManifest = buildSkillManifest({ sourceRoot: root });
+const previousManifestFile = skillManifestPath(coreDir);
+if (existsSync(previousManifestFile)) {
+  const previousSkillManifest = readSkillManifest(previousManifestFile);
+  const transition = validateSkillVersionTransition({
+    previousManifest: previousSkillManifest,
+    nextManifest: nextSkillManifest,
+  });
+  if (!transition.ok) throw new Error(`Installation abgebrochen: ${transition.reason}`);
+}
+
 await fs.mkdir(coreDir, { recursive: true });
 await fs.mkdir(privateDir, { recursive: true });
 await fs.mkdir(path.join(privateDir, "logs"), { recursive: true });
 await copyTree(root, coreDir);
 runNpm(["install", "--omit=dev", "--no-audit", "--no-fund"]);
 
-await fs.writeFile(path.join(coreDir, "install-location.json"), JSON.stringify({ coreDir, privateDir, installedAt: new Date().toISOString() }, null, 2));
+await writeSkillManifest({ sourceRoot: root, coreDir, packageVersion: nextSkillManifest.packageVersion });
+await fs.writeFile(path.join(coreDir, "install-location.json"), JSON.stringify({
+  coreDir,
+  privateDir,
+  skillsDir,
+  packageVersion: nextSkillManifest.packageVersion,
+  installedAt: new Date().toISOString(),
+}, null, 2));
 await fs.mkdir(skillsDir, { recursive: true });
 await copyTree(path.join(root, "skills"), path.join(skillsDir, "falsifyme"));
 // FalsiFlow-Session-Skill: eigener Skill-Ordner mit SKILL.md, damit

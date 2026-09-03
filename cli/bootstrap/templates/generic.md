@@ -3,8 +3,8 @@
 # FalsifyMe Workflow-Anweisung
 
 FalsifyMe = unabh\xE4ngiger read-only Falsifizierungs-Agent
-Coding-Agent = eigentliche Arbeits-/Write-Instanz
-Bis VERDICT: WRITE bleibt der Coding-Agent READ-ONLY.
+USER AGENT = externe Arbeits-/Write-Instanz
+Bis VERDICT: WRITE bleibt der USER AGENT READ-ONLY.
 Dock = sichtbare Visualisierung der laufenden FalsifyMe-Arbeit
 
 ## PFLICHT vor jeder Code-\xC4nderung
@@ -33,7 +33,7 @@ jeder Dokumentations- und jeder Konfigurationsänderung:
 
 - `CHANGE_GATE_10X`: A1 bis A10 müssen `JA` sein; jede Antwort braucht
   `Proof:` und `Test:`.
-- `FALSIFICATION_RECORD_10X`: F1 Coder claim, F2 User contract, F3 Scope match,
+- `FALSIFICATION_RECORD_10X`: F1 User-Agent-Ausgangsbehauptung, F2 User contract, F3 Scope match,
   F4 falsifizierbare Annahme, F5 Angriff, F6 verifizierte Evidenz, F7
   Gegenbeweise, F8 ungeprüfter Bereich, F9 Rest-Risiko, F10
   Release-Entscheidung.

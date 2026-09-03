@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // FalsifyMe · tests/queue.test.mjs – Queue-Invarianten des Batch-Refactors
 // -----------------------------------------------------------------------------
-// Deckt ab: falsify wait --ping (Coder-Auswertung, Exit 4 = laeuft noch),
+// Deckt ab: falsify wait --ping (USER-AGENT-Auswertung, Exit 4 = laeuft noch),
 // falsify abort (Flag in der Queue, kein Fake-Verdict), Worker-Status nur aus
 // frischen Heartbeats (--check liest NUR die Queue), GAP-Erfassung im Scope,
 // Anti-Self-Check-Bias (WRITE ohne Challenge -> UNKNOWN) und onTool-Art.
@@ -55,7 +55,7 @@ test.before(async () => {
   scopeModule = await mod("artifacts/scopes.mjs");
 });
 
-test("wait --ping: laufender Job -> Exit 4 (Coder wertet aus), DONE WRITE -> 0", async () => {
+test("wait --ping: laufender Job -> Exit 4 (USER AGENT wertet aus), DONE WRITE -> 0", async () => {
   const home = withTempHome();
   try {
     const { openDb, closeDb } = requireDb();
@@ -65,7 +65,7 @@ test("wait --ping: laufender Job -> Exit 4 (Coder wertet aus), DONE WRITE -> 0",
 
     const { runPing } = requireCliJobs();
     runPing(id); // QUEUED -> laeuft noch
-    assert.equal(process.exitCode, 4, "QUEUED/RUNNING = Exit 4 (Auswertung durch Coder)");
+    assert.equal(process.exitCode, 4, "QUEUED/RUNNING = Exit 4 (Auswertung durch USER AGENT)");
     process.exitCode = 0;
 
     // Job auf DONE WRITE setzen
@@ -357,7 +357,7 @@ test("Loop-Anker: parseScopeDivergence + Persistenz-Semantik (UI-107)", async ()
   const home = withTempHome();
   try {
     // Parser-Faelle.
-    const div = "## Umsetzungsverstaendnis (FalsifyMe)\n- Ich wuerde zuerst die Whitelist pruefen, dann den Diff gegen den Plan.\nSCOPE-DIVERGENZ: Der Coder will nur die Icon-Raeumung, ich wuerde zusaetzlich die Pfad-Ermittlung gegen den Bootstrap abgleichen\n## Falsifikationsversuche\n...\nVERDICT: WRITE";
+    const div = "## Umsetzungsverstaendnis (FalsifyMe)\n- Ich wuerde zuerst die Whitelist pruefen, dann den Diff gegen den Plan.\nSCOPE-DIVERGENZ: Der USER AGENT will nur die Icon-Raeumung, ich wuerde zusaetzlich die Pfad-Ermittlung gegen den Bootstrap abgleichen\n## Falsifikationsversuche\n...\nVERDICT: WRITE";
     const a = parseScopeDivergence(div);
     assert.equal(a.konform, false);
     assert.ok(a.divergence && a.divergence.length >= 20, "substanzielle Divergenz wird deklariert");
@@ -397,7 +397,7 @@ test("Loop-Anker: parseScopeDivergence + Persistenz-Semantik (UI-107)", async ()
     // Downgrade-Bedingung (die run.mjs-Integration koppelt exakt daran).
     assert.equal((parseVerdict(div) === "WRITE" && parseScopeDivergence(div).divergence ? "PLAN" : "WRITE"), "PLAN", "WRITE + Divergenz => PLAN");
     // Sichtbarkeit (UI-107-Prüfung 2026-09-01): die offene Divergenz ist im
-    // Artefakt sichtbar — der Punkt, an dem Coder- und Thinker-Vorschläge
+    // Artefakt sichtbar — der Punkt, an dem USER-AGENT- und Thinker-Vorschläge
     // auseinanderliegen, muss vor dem nächsten Submit auflösbar bleiben.
     const { artifactView } = await mod("artifacts/scopes.mjs");
     updateScopeAfterReview(db, sid, "PLAN", "Befund3", null, "Zieldatei laut Intent ist lib/x.js, Umsetzung zielt auf src/y.js");

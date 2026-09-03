@@ -1,6 +1,6 @@
 # FalsifyMe 2.0 — Terminal-UI (ui/) — PHASE 1 + 2 (live verdrahtet)
 
-**Version v0.06 Beta** (`0.6.0-beta` im `package.json`; Produkt-Runtime bleibt
+**Version v0.08 Beta** (`0.8.0-beta` im `package.json`; Produkt-Runtime bleibt
 Read-only-Gateway, Business-Logik unverändert).
 
 **Dokumentationsstand:** Phase 1 (visuelle Implementierung) abgeschlossen,
@@ -210,7 +210,7 @@ Die Darstellung und Slot-Verwaltung sind explizit getrennt:
 | `tui.mjs` | Ein Terminal-Renderer, ein Prozess/PID, Snapshot-Erzeugung und Scheduler |
 
 Siehe `PLAN.md` (persistente Task-Chain, Single Source of Truth). Stand:
-Implementierung + headless Verifikation abgeschlossen (105/105 Tests; Block 4b
+Implementierung + headless Verifikation abgeschlossen (125/125 Tests; Block 4b
 Beobachtungsmodell: WARTE-Screen, 3 Slots, Feeder, Split-Ansicht).
 
 ## Design-Check (10-Sekunden-Test, UI-038)

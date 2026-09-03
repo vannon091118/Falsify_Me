@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runScope } from "./scope.mjs";
 import { runStatus, runJobs, runPing, runAbort } from "./jobs.mjs";
@@ -10,12 +11,25 @@ import { ensureFalsifyHome } from "../artifacts/db.mjs";
 import { runDoctor } from "./doctor.mjs";
 import { runSettings, runModels } from "./settings.mjs";
 import { runOnboardCli } from "./onboard.mjs";
+import { runAnchor } from "./anchor.mjs";
 import { HELP_TEXT } from "./help.mjs";
 import { fail } from "./util.mjs";
+import { verifySkillsAtStartup, formatSkillCheck } from "../core/skill-version.mjs";
+
+const RUNTIME_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 async function main() {
   const args = process.argv.slice(2);
   const cmd = args[0] || "help";
+  // Jede Verwaltungs-CLI startet mit der Skill-Integritätsprüfung. `doctor`
+  // bleibt als Reparatur-/Diagnosepfad offen und zeigt den konkreten Befund;
+  // alle anderen Befehle fail-closed bei fehlender, veralteter oder geänderter
+  // Installation.
+  const skillCheck = verifySkillsAtStartup({ runtimeRoot: RUNTIME_ROOT });
+  if (!skillCheck.ok && cmd !== "doctor") {
+    console.error(`FEHLER: ${formatSkillCheck(skillCheck)} (falsify doctor ausführen)`);
+    process.exit(3);
+  }
   switch (cmd) {
     case "status": runStatus(args[1]); break;
     case "jobs": runJobs(); break;
@@ -24,6 +38,12 @@ async function main() {
     case "abort": runAbort(args[1]); break;
     case "history": runHistory(args.slice(1)); break;
     case "scope": runScope(args.slice(1)); break;
+    case "anchor": runAnchor(args.slice(1)); break;
+    case "handoff": {
+      const { runHandoff } = await import("./handoff.mjs");
+      await runHandoff(args.slice(1));
+      break;
+    }
     case "log": runLog(args[1]); break;
     case "answer": runAnswer(args.slice(1)); break;
     case "ensure-home": {

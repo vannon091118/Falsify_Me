@@ -39,6 +39,17 @@ const DEFAULTS = {
   twinWebSearchEnabled: false,
 };
 
+// These are the only fields allowed in a persisted job snapshot. Keeping the
+// allowlist here makes accidental secret/reasoning additions fail closed.
+const SNAPSHOT_KEYS = Object.freeze([
+  "model", "apiBase", "provider", "keyEnvNames", "maxTokens", "reasoningEffort",
+  "maxToolRounds", "maxRpm", "lang", "temperature", "timeoutMs",
+  "maxJobAttempts", "jobRetryBackoffMs", "twinModel", "twinApiBase",
+  "twinReasoningEffort", "twinMaxTokens", "twinApiKeyEnv", "twinDiversity",
+  "webSearchEnabled", "webSearchApiBase", "webSearchKeyEnv", "webSearchDomains",
+  "webSearchMaxResults", "webSearchMinIntervalMs", "twinWebSearchEnabled",
+]);
+
 function loadConfigFile() {
   const file = path.join(falsifyHome(), "config.json");
   try { return { file, data: JSON.parse(fs.readFileSync(file, "utf8")) }; }
@@ -203,16 +214,20 @@ export function loadConfig(overrides = {}) {
     // Primaerwert (bis 1e6) wuerde jede Groq-Twin-Freigabe unmöglich machen.
     // (OpenRouter-Free-Tier liegt teils noch niedriger — dann per CLI setzen.)
     twinMaxTokens: pickNum("FALSIFY_TWIN_MAX_TOKENS", data, "twinMaxTokens", Math.min(maxTokens, 16384), { min: 256, max: 1_000_000 }, overrides),
-    twinApiKeyEnv: Array.isArray(overrides.twinApiKeyEnv)
-      ? overrides.twinApiKeyEnv.map((s) => String(s).trim()).filter(Boolean)
-      : (twinApiKeyEnv ? [twinApiKeyEnv, ...(() => {
-        const base = String(pick("FALSIFY_API_KEY_ENV", data, "apiKeyEnv", DEFAULTS.apiKeyEnv, overrides))
-          .split(",").map((s) => s.trim()).filter(Boolean);
-        const named = typeof data.apiKeyName === "string" && data.apiKeyName.trim()
-          ? data.apiKeyName.trim()
-          : null;
-        return named ? [named, ...base.filter((n) => n !== named)] : base;
-      })()] : undefined),
+    // A snapshot with null means "no dedicated Twin key" and must not fall
+    // through to current settings. This explicit branch preserves that choice.
+    twinApiKeyEnv: Object.prototype.hasOwnProperty.call(overrides, "twinApiKeyEnv") && overrides.twinApiKeyEnv === null
+      ? undefined
+      : Array.isArray(overrides.twinApiKeyEnv)
+        ? overrides.twinApiKeyEnv.map((s) => String(s).trim()).filter(Boolean)
+        : (twinApiKeyEnv ? [twinApiKeyEnv, ...(() => {
+          const base = String(pick("FALSIFY_API_KEY_ENV", data, "apiKeyEnv", DEFAULTS.apiKeyEnv, overrides))
+            .split(",").map((s) => s.trim()).filter(Boolean);
+          const named = typeof data.apiKeyName === "string" && data.apiKeyName.trim()
+            ? data.apiKeyName.trim()
+            : null;
+          return named ? [named, ...base.filter((n) => n !== named)] : base;
+        })()] : undefined),
     twinDiversity: Boolean(twinModel) && twinModel !== model,
     webSearchEnabled: pickBool("FALSIFY_WEB_SEARCH_ENABLED", data, "webSearchEnabled", DEFAULTS.webSearchEnabled, overrides),
     webSearchApiBase: validateUrl(pick("FALSIFY_WEB_SEARCH_API_BASE", data, "webSearchApiBase", DEFAULTS.webSearchApiBase, overrides), "FALSIFY_WEB_SEARCH_API_BASE"),
@@ -266,29 +281,28 @@ export function configFromSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
     throw new Error("Ungültiger Job-Laufzeit-Snapshot");
   }
-  const overrides = { ...snapshot };
-  if (Array.isArray(snapshot.keyEnvNames)) {
-    overrides.keyEnvNames = [...snapshot.keyEnvNames];
-    overrides.apiKeyEnv = snapshot.keyEnvNames.join(",");
+  const actualKeys = Object.keys(snapshot).sort();
+  const expectedKeys = [...SNAPSHOT_KEYS].sort();
+  const missing = expectedKeys.filter((key) => !actualKeys.includes(key));
+  const unknown = actualKeys.filter((key) => !expectedKeys.includes(key));
+  if (missing.length || unknown.length) {
+    throw new Error(`Ungültiger Job-Laufzeit-Snapshot (fehlend: ${missing.join(", ") || "keine"}; unbekannt: ${unknown.join(", ") || "keine"})`);
   }
-  if (Object.prototype.hasOwnProperty.call(snapshot, "twinApiKeyEnv")) {
-    overrides.twinApiKeyEnv = Array.isArray(snapshot.twinApiKeyEnv)
-      ? [...snapshot.twinApiKeyEnv]
-      : [];
+  if (!Array.isArray(snapshot.keyEnvNames) || snapshot.keyEnvNames.some((name) => typeof name !== "string" || !name.trim())) {
+    throw new Error("Ungültiger Job-Laufzeit-Snapshot: keyEnvNames muss eine Namensliste sein");
   }
-  // Metadata is not a loadConfig input and must not affect resolution.
-  delete overrides.configFile;
+  if (snapshot.twinApiKeyEnv !== null && (!Array.isArray(snapshot.twinApiKeyEnv) || snapshot.twinApiKeyEnv.some((name) => typeof name !== "string" || !name.trim()))) {
+    throw new Error("Ungültiger Job-Laufzeit-Snapshot: twinApiKeyEnv muss null oder eine Namensliste sein");
+  }
+
+  // Every loadConfig input is explicitly supplied. The current process/env
+  // configuration is therefore unable to change a queued or retried job.
+  const overrides = { ...snapshot, keyEnvNames: [...snapshot.keyEnvNames] };
+  overrides.twinApiKeyEnv = snapshot.twinApiKeyEnv === null ? null : [...snapshot.twinApiKeyEnv];
   const cfg = loadConfig(overrides);
-  const comparable = [
-    "model", "apiBase", "provider", "maxTokens", "reasoningEffort",
-    "maxToolRounds", "maxRpm", "lang", "temperature", "timeoutMs",
-    "maxJobAttempts", "jobRetryBackoffMs", "twinModel", "twinApiBase",
-    "twinReasoningEffort", "twinMaxTokens", "webSearchEnabled",
-    "webSearchApiBase", "webSearchKeyEnv", "webSearchDomains",
-    "webSearchMaxResults", "webSearchMinIntervalMs", "twinWebSearchEnabled",
-  ];
-  for (const key of comparable) {
-    if (snapshot[key] !== undefined && JSON.stringify(snapshot[key]) !== JSON.stringify(cfg[key])) {
+  const normalized = snapshotConfig(cfg);
+  for (const key of SNAPSHOT_KEYS) {
+    if (JSON.stringify(normalized[key]) !== JSON.stringify(snapshot[key])) {
       throw new Error(`Job-Laufzeit-Snapshot konnte bei ${key} nicht unverändert geladen werden`);
     }
   }

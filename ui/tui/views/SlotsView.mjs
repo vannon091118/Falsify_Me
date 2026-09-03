@@ -48,6 +48,16 @@ export default function SlotsView({ snap, cols, rows }) {
       h(Text, { color: "gray" }, "│"),
     ));
 
+    // Loop-Zustand (UI-123): Spiegel des persistierten jobs.loop_state —
+    // nur angezeigt, wenn die Pipeline ihn gemeldet hat (kein Fake-Zustand).
+    if (p.loopLabel) {
+      els.push(h(Box, { key: `l${i}`, width: cols },
+        h(Text, { color: "gray" }, "│"),
+        h(Text, { color: p.loopColor ?? "gray" }, truncate(` ${p.loopLabel}`, inner, "…")),
+        h(Text, { color: "gray" }, "│"),
+      ));
+    }
+
     // Findings + Aktivitaet
     const f = p.findings ?? [];
     const counts = f.map((x) => `${x.icon} ${String(x.n).padStart(2, "0")}`).join(" ");

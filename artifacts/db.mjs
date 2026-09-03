@@ -25,8 +25,9 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { DatabaseSync } from "node:sqlite";
+import { migrateLoopSchema } from "./loops.mjs";
 
-export const SCHEMA_VERSION = "7";
+export const SCHEMA_VERSION = "8";
 
 // ── FALSIFY_HOME auflösen / anlegen ─────────────────────────────────────────
 export function falsifyHome() {
@@ -93,8 +94,24 @@ function migrate(db) {
       key   TEXT PRIMARY KEY,
       value TEXT
     );
+    CREATE TABLE IF NOT EXISTS projects(
+      project_id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS checkouts(
+      checkout_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(project_id),
+      bound_root TEXT NOT NULL UNIQUE,
+      root_name TEXT NOT NULL,
+      root_binding TEXT NOT NULL,
+      anchor_digest TEXT NOT NULL,
+      records_digest TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS scopes(
       id          TEXT PRIMARY KEY,
+      checkout_id TEXT REFERENCES checkouts(checkout_id),
       header      TEXT NOT NULL,            -- User-Input 1:1 (HEADER, nie umformuliert)
       status      TEXT NOT NULL DEFAULT 'active',   -- active | hardened | done
       phase       TEXT NOT NULL DEFAULT 'plan',     -- plan | research | write
@@ -121,6 +138,7 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_findings_scope ON findings(scope_id);
     CREATE TABLE IF NOT EXISTS jobs(
       id          TEXT PRIMARY KEY,
+      checkout_id TEXT REFERENCES checkouts(checkout_id),
       scope_id    TEXT REFERENCES scopes(id),
       payload     TEXT,                     -- Iterations-Text (Plan / Recherche / Umsetzung)
       diff_text   TEXT,
@@ -183,7 +201,7 @@ function migrate(db) {
 
   // ── Schema-Version 4 (Loop-Anker): scopes.last_divergence ────────────────
   // Der Divergenz-Anker speichert den zuletzt deklarierten Unterschied
-  // zwischen dem Umsetzungsvorschlag des CODERS (agent_intent) und dem des
+  // zwischen dem Umsetzungsvorschlag des USER AGENT (agent_intent) und dem des
   // Thinkers (## Umsetzungsverstaendnis). Null = konform/kein offener
   // Anker. Wird beim Review-Commit gesetzt/geleert (Ein-Wahrheit-Pfad).
   try {
@@ -199,6 +217,14 @@ function migrate(db) {
     db.exec("ALTER TABLE scopes ADD COLUMN research_additions TEXT");
   } catch { /* existiert */ }
 
+  // ── Schema-Version 8: Projekt-/Checkout-Ankerbindung ─────────────────────
+  for (const sql of [
+    "ALTER TABLE scopes ADD COLUMN checkout_id TEXT REFERENCES checkouts(checkout_id)",
+    "ALTER TABLE jobs ADD COLUMN checkout_id TEXT REFERENCES checkouts(checkout_id)",
+  ]) {
+    try { db.exec(sql); } catch { /* existiert */ }
+  }
+
   // ── Schema-Version 6/7: unveränderlicher Job-Laufzeit-Snapshot + Retry ───
   // Nur nicht-geheime Konfiguration wird gespeichert. Ein Settings-Wechsel
   // beeinflusst weder wartende noch wiederholte Jobs; terminale Zustände
@@ -212,6 +238,12 @@ function migrate(db) {
   ]) {
     try { db.exec(sql); } catch { /* existiert */ }
   }
+
+  // ── Schema-Version 9 (Produktions-Loop): Loop-Zustände, Korrelation, ──────
+  // Idempotenz + append-only Audit. ALTER-only; die ausführbare Queue bleibt
+  // ausschließlich die jobs-Tabelle (artifacts/loops.mjs besitzt die
+  // Übergänge, RISK-003: kein zweiter Queue-Pfad).
+  migrateLoopSchema(db);
 
   setMeta(db, "schema_version", SCHEMA_VERSION);
 }

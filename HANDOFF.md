@@ -1,15 +1,48 @@
-# FalsifyMe Handoff — Audit 2026-09-02
+# FalsifyMe Handoff — Audit 2026-09-03 (supersedes 2026-09-02)
 
 ## Status
 
-This worktree contains a verified P0 probe-cutover implementation plus
-mandatory agent/reviewer documentation. The current runtime hardening pass is
-**not complete**. The queue/config additions for job snapshots and retries are
-present as groundwork, but their full execution wiring is still pending.
+This worktree contains the verified P0 probe-cutover **plus the complete
+production runtime loop** (Phases 1–5 of
+`plan/feature-runtime-loop-production-1.md`): the chain
+`THINKER → EVIL TWIN → GATE → WRITE_AUTHORIZED → external Coder →
+CHANGE_CAPTURED → RE_REVIEW_QUEUED → THINKER` is executable and e2e-tested.
+The consolidation record lives in that plan file; module ownership in
+`WIRING.md` §18.
+
+**Not yet complete (honest gaps):** UI-119/UI-124 (Brench event contract +
+loop-state E2E visibility), the runtime enforcement of the structured 10X
+protocol gates (`core/protocols.mjs` is implemented
+and tested but deliberately not wired into the release path — the system
+prompts do not yet emit structured records), full doctor/uninstall hardening
+(items 4–7 below), and the final release audit (TASK-023 remainder).
 
 The repository is intentionally left uncommitted. All current tracked changes
 and current product files are to remain available for the next agent or human;
 no files were deleted or reset during this audit.
+
+## Loop Verification (new 2026-09-03)
+
+- `artifacts/loops.mjs` is the single loop-transition owner (12 states,
+  illegal transitions and terminal rewrites fail-closed; enforced by the
+  writer scan in `tests/invariants.test.mjs` where it is a registered
+  orchestrator).
+- `completeHandoff` validates report/handoff/change correlation inside one
+  `BEGIN IMMEDIATE` transaction, creates exactly one child job with full
+  correlation (`parent_job_id`, `handoff_id`, `iteration_id`, `change_digest`,
+  `header_digest`), and is idempotent for duplicate deliveries (verified with
+  100 identical reports).
+- `header_digest` + base `change_digest` are frozen at submit and direct-run;
+  a drifted header rejects the job before any model call.
+- The external writer path (`falsify handoff brief` → change →
+  `falsify handoff complete`) is proven end-to-end in
+  `tests/full-loop-e2e.test.mjs`; the negative matrix (NO_CHANGE, loop limit,
+  unauthorized paths, forged correlation, secrets, terminal immutability) in
+  `tests/full-loop-negative.test.mjs`.
+- The coder brief (`renderCoderBrief`) is a pure derivation of the persisted
+  handoff and fails closed on any invalid handoff — it carries no authority.
+
+## What Was Verified (2026-09-02 audit, still valid)
 
 ## What Was Verified
 
@@ -40,15 +73,20 @@ Executed successfully from the repository root:
 
 ```text
 npm test
-191 tests passed, 0 failed
+221 tests passed, 0 failed   (2026-09-03; baseline 198 pre-loop, 191 at the 09-02 audit)
 
 node --check cli/run.mjs
 node --check artifacts/db.mjs
 node --check artifacts/jobs.mjs
+node --check artifacts/loops.mjs
 node --check core/config.mjs
+node --check core/handoff.mjs
+node --check core/changes.mjs
+node --check core/protocols.mjs
 node --check core/probes.mjs
 node --check core/twin.mjs
 node --check core/prompt.mjs
+node --check cli/handoff.mjs
 
 bash -n falsify.sh
 bash -n cli/falsify.sh
@@ -147,14 +185,14 @@ must not be read as proof that the behavior is complete.
 ## Audit Record
 
 ```text
-F1: Coder claim – P0 probe cutover and mandatory documentation were added; runtime snapshot/retry/web hardening is only partly present.
-F2: User contract – audit the actual work, pull documentation to truth, preserve parallel Ollama/tests, create a handoff, stage without deleting or committing.
-F3: Scope match – documentation and audit completed; pending runtime items remain explicitly unresolved.
-F4: Falsifiable assumption – green tests might conceal missing production wiring.
-F5: Attack – inspected call sites, schema consumers, worker spawn path, key path, and documentation claims; ran the complete suite and syntax checks.
-F6: Evidence – cli/run.mjs, artifacts/jobs.mjs, core/config.mjs, core/probes.mjs, core/twin.mjs, WIRING.md, ui/PLAN.md; npm test: 191 passed.
-F7: Counterevidence – searched for runtime_config consumers, retry consumers, web tools, and help guards; snapshot/retry fields exist but worker consumption and web implementation were not verified.
-F8: Unexamined area – live remote-provider execution, Windows locked-directory behavior, and real Ollama process behavior were not run in this audit.
-F9: Residual risk – documentation can still drift if pending runtime contracts are marked DONE without dedicated E2E evidence.
-F10: Release decision – BLOCKED – mindestens eine Invariante ist nicht nachgewiesen. The current tree is not a claim of full completion.
+F1: User-Agent-Ausgangsbehauptung: Die gewünschte Kette lautet USER AGENT → THINKER → EVIL TWIN → USER AGENT → REPOSITORY CHANGE → THINKER.
+F2: User contract: Prüfen, ob diese Kette bereits vollständig im ausführbaren System vorhanden ist.
+F3: Scope match oder konkrete Divergenz: THINKER und EVIL TWIN existieren; der Handoff zurück zum USER AGENT, der Repository-Write und der automatische Re-entry fehlen im Runtime-Code.
+F4: Falsifizierbare Annahme: Die dokumentierte Loop-Kette könnte vollständig implementiert sein, obwohl der Runtime-Code nur bis zum finalen Verdict führt.
+F5: Unternommener Angriff: Suche nach tatsächlichem Repository-Write, direktem Twin→USER-AGENT-Handoff, automatischer Resubmission und automatischem Re-entry in THINKER.
+F6: Tatsächlich gelesene und verifizierte Evidenz: cli/run.mjs, core/agent.mjs, core/twin.mjs, core/probes.mjs, core/tools.mjs, ui/worker.mjs und die relevanten Tests.
+F7: Gesuchte Gegenbeweise und Ergebnis: Es wurde nach Produktionspfaden für Write, Git-Änderungserkennung, automatische Resubmission und erneuten THINKER-Start gesucht. Kein solcher vollständiger automatischer Pfad wurde gefunden.
+F8: Ungeprüfter oder nur vermuteter Bereich: Das tatsächliche Verhalten eines externen USER AGENT nach Erhalt des Verdicts liegt außerhalb des Runtime-Prozesses.
+F9: Stärkstes verbleibendes Risiko: Der USER AGENT erhält kein dediziertes strukturiertes Twin-Ergebnis, sondern primär das finale Verdict, den Status und den Exit-Code.
+F10: WRITE-Entscheidung oder konkretes Hindernis: BLOCKED – die Review-Hälfte ist implementiert und getestet, die vollständige USER-AGENT → REPOSITORY CHANGE → THINKER Loop jedoch nicht.
 ```

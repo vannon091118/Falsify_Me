@@ -4,7 +4,7 @@
 // 3 Fenster-Slots koennen parallel laufen, sichtbar im EINEN Terminal (pid).
 // Business-Logik (Verdict, Jobs, Scope) bleibt ausserhalb der UI.
 // Pure, kein I/O.
-import { canTransition, shortId, MAX_SLOTS, SLOT_TERMINAL, activeSlotOf, globalIdle } from "./state.mjs";
+import { canTransition, shortId, MAX_SLOTS, SLOT_TERMINAL, activeSlotOf, globalIdle, LOOP_LABEL, loopLabelOf } from "./state.mjs";
 import * as findings from "./findings.mjs";
 import * as progress from "./progress.mjs";
 import * as verdict from "./verdict.mjs";
@@ -15,7 +15,7 @@ export const SOFT_CAP_MS = 2500;
 
 export const EVENT_TYPES = Object.freeze([
   "boot", "job", "state", "activity", "finding", "phase", "phase_done",
-  "verdict", "output", "files", "done", "focus", "selftest", "stats", "model",
+  "verdict", "output", "files", "done", "focus", "selftest", "stats", "model", "loop",
 ]);
 
 const slotOf = (state, evt) => {
@@ -38,6 +38,7 @@ export const refreshGlobal = (state, now = Date.now()) => {
   state.phases = target.phases;
   state.activity = target.activity;
   state.model = target.model;
+  state.loopState = target.loopState ?? null; // UI-123: Spiegel des Fokus-Slots
   state.files = target.files;
   state.events = target.events;
   state.output = target.output;
@@ -83,6 +84,7 @@ export const apply = (state, evt, now = Date.now()) => {
       target.verdict = null;
       target.activity = null;
       target.model = null;
+      target.loopState = null; // neuer Job = neuer Loop (UI-123)
       target.files = 0;
       target.state = "STARTING";
       target.bootAt = now;
@@ -194,6 +196,17 @@ export const apply = (state, evt, now = Date.now()) => {
       return true;
     case "output": {
       slotOf(state, evt).output.push(typeof evt.line === "string" ? evt.line : "");
+      return true;
+    }
+    case "loop": {
+      // UI-123: Spiegel des persistierten jobs.loop_state (Presentation-only,
+      // CON-004). Nur bekannte Loop-Zustände werden übernommen; alles andere
+      // ist kein Fake wert (ehrlich null statt geratener Anzeige).
+      const slot = slotOf(state, evt);
+      const known = LOOP_LABEL[evt.s];
+      slot.loopState = known ? evt.s : null;
+      slot.events.push({ t: "loop", s: slot.loopState, ts: now });
+      refreshGlobal(state, now);
       return true;
     }
     case "stats": {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# AGENT SKILL: FalsfyME Pflicht-Check (Bash - LLM-Standard) · FalsifyMe 2.0
+# AGENT SKILL: FalsifyMe Pflicht-Check (Bash - LLM-Standard) · FalsifyMe 2.0
 # -----------------------------------------------------------------------------
 # SCOPE-PROTOKOLL (nicht verhandelbar):
 #   1. PLAN ist IMMER die Init-Aktion eines Scopes. User-Input 1:1 wird zum
@@ -14,7 +14,8 @@
 #                             recherchieren, Befunde ergaenzen, erneut einreichen
 #      - VERDICT: WRITE    -> FREIGABE: READ-ONLY -> WRITE. Jetzt umsetzen, dann
 #                             die Umsetzung erneut reviewen (WRITE-/REVIEW-Loop)
-#   4. FalsifyMe selbst bleibt ABSOLUT read-only zum Projekt.
+#   4. FalsifyMe selbst bleibt read-only zum Projekt (einzige Schreibausnahme:
+#      der identitätstragende FalsifyME.md-Anker – nie Scopes/Verdicts/Regeln).
 #   5. Nach dem finalen Review endet der Modellkontext; der naechste Scope
 #      startet frisch (getrennt, kein Vermischen).
 #
@@ -95,6 +96,7 @@ ensure_dock_window() {
 ensure_scope() {
   local scope_id="$1"
   local user_input="$2"
+  local root_dir="${3:-}"
   if [ -n "$scope_id" ]; then
     echo "$scope_id"
     return 0
@@ -105,9 +107,10 @@ ensure_scope() {
   fi
   # Logs auf stderr: diese Funktion wird per Command-Substitution aufgerufen
   # (scope=$(ensure_scope ...)); stdout muss EXAKT die Scope-ID liefern.
+  [ -n "$root_dir" ] || { log_error "Beim Scope-Start ist --root Pflicht; Scope wird nicht ohne Projekt-Root angelegt." >&2; return 2; }
   log_step "PLAN = Init: Scope anlegen - User-Input wird 1:1 zum HEADER..." >&2
   local out
-  out=$(node "$V2_DIR/cli/main.mjs" scope new "$user_input" 2>&1) || { log_error "$out" >&2; return 2; }
+  out=$(node "$V2_DIR/cli/main.mjs" scope new "$user_input" --root "$root_dir" 2>&1) || { log_error "$out" >&2; return 2; }
   local id
   id=$(echo "$out" | sed -n 's/^SCOPE_ID=//p' | head -1)
   [ -n "$id" ] || { log_error "Scope konnte nicht angelegt werden: $out" >&2; return 2; }
@@ -139,9 +142,9 @@ falsify_mandatory_check() {
 
   # ── 0b. Scope: beim Start anlegen (PLAN = Init, HEADER = User-Input 1:1) ──
   local scope
-  scope=$(ensure_scope "$scope_id" "$user_input") || return $?
+  scope=$(ensure_scope "$scope_id" "$user_input" "$root_dir") || return $?
 
-  log_step "FalsfyME Pflicht-Check wird gestartet..."
+  log_step "FalsifyMe Pflicht-Check wird gestartet..."
   log_info "Scope: $scope"
   log_info "Plan: $plan_file"
   log_info "Root: $root_dir"
@@ -270,7 +273,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
       --scope)     scope_id="$2"; shift 2 ;;
       --user-input) user_input="$2"; shift 2 ;;
       -h|--help)
-        echo "AGENT SKILL: FalsfyME Pflicht-Check (Bash) · FalsifyMe 2.0"
+        echo "AGENT SKILL: FalsifyMe Pflicht-Check (Bash) · FalsifyMe 2.0"
         echo ""
         echo "SCOPE-PROTOKOLL: PLAN ist IMMER Init (User-Input 1:1 als HEADER)."
         echo "Loop: PLAN → überarbeiten · RESEARCH → read-only recherchieren · WRITE → Freigabe."

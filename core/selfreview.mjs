@@ -40,11 +40,21 @@ import path from "node:path";
 export const SELF_REVIEW_CORE = [
   // Queue-Wahrheit (einzige Persistenz-Zentrale)
   "artifacts/db.mjs", "artifacts/jobs.mjs", "artifacts/scopes.mjs", "artifacts/invariants.mjs",
+  // Produktions-Loop (Schema, Übergänge, Idempotenz) – Loop-Autorität darf
+  // nie ein blinder Selbstprüfungs-Bereich sein (Regel 1).
+  "artifacts/loops.mjs",
+  // Projekt-/Checkout-Identität (UI-118): der Anker-Lifecycle und sein SQLite-
+  // Owner sind Autoritäts-/Prüfgrenze – ohne sie bliebe die Identitäts-
+  // Schicht im Self-Review unsichtbar (kein blinder Bereich, Regel 1).
+  "core/identity.mjs", "artifacts/projects.mjs", "cli/anchor.mjs",
   // Prüf-Pipeline (Ausführung + Verdict-Hoheit)
   "cli/run.mjs", "cli/jobs.mjs", "cli/main.mjs", "cli/falsify.sh", "cli/help.mjs",
   "core/agent.mjs", "core/config.mjs", "core/feasibility.mjs", "core/keys.mjs",
   "core/prompt.mjs", "core/probes.mjs", "core/ratelimit.mjs", "core/selfreview.mjs", "core/settings.mjs",
   "core/tools.mjs", "core/twin.mjs", "core/verdict.mjs",
+  // Externe Verträge (Handoff/Change/10X-Protokolle) – die Writer-Grenze
+  // und ihre Evidenz-Validierung gehören in den Prüf-Scope.
+  "core/handoff.mjs", "core/changes.mjs", "core/protocols.mjs", "cli/handoff.mjs",
   // Prompt-Daten = die Prüf-Regeln (DE/EN + Evil-Twin + Probe-Executor) –
   // neuer Prüf-Prompt gehört hier mit auf, sonst ist der Prüfmechanismus
   // unsichtbar (Regel 1; P0-Cutover: Executor-Prompts sind Gate-Daten).

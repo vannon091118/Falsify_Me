@@ -8,6 +8,7 @@
 import { nowIso, genId, setMeta, getMeta, isProcessAlive } from "./db.mjs";
 
 const RETRYABLE_FAILURES = Object.freeze(["transient", "worker-crash"]);
+const FAILURE_KINDS = Object.freeze(["transient", "worker-crash", "permanent", "aborted"]);
 
 function isFinalStatus(status) {
   return String(status || "").startsWith("DONE") || String(status || "").startsWith("ERROR");
@@ -19,13 +20,15 @@ function parseIsoMs(value) {
 }
 
 // ── Jobs ─────────────────────────────────────────────────────────────────────
-export function createJob(db, { scopeId, payload, diffText, root, files, agentIntent = null, affected = null, wave = "scan", mode, status = "QUEUED", runtimeConfig = null, maxAttempts = 2 }) {
+export function createJob(db, { projectId = null, checkoutId = null, scopeId, payload, diffText, root, files, agentIntent = null, affected = null, wave = "scan", mode, status = "QUEUED", runtimeConfig = null, maxAttempts = 2 }) {
   const id = genId("job");
   const snapshot = runtimeConfig == null ? null : JSON.stringify(runtimeConfig);
-  const attempts = Math.max(1, Number(maxAttempts) || 2);
+  const attempts = Math.min(5, Math.max(1, Number(maxAttempts) || 2));
+  const startedAt = status === "RUNNING" ? nowIso() : null;
+  const attempt = status === "RUNNING" ? 1 : 0;
   db.prepare(
-    "INSERT INTO jobs(id, scope_id, payload, diff_text, root, files, agent_intent, affected, wave, mode, status, runtime_config, attempt, max_attempts, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-  ).run(id, scopeId ?? null, payload ?? null, diffText ?? null, root ?? null, files ?? null, agentIntent ?? null, affected ?? null, wave || "scan", mode ?? null, status, snapshot, 0, attempts, nowIso());
+    "INSERT INTO jobs(id, checkout_id, scope_id, payload, diff_text, root, files, agent_intent, affected, wave, mode, status, runtime_config, attempt, max_attempts, created_at, started_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).run(id, checkoutId ?? null, scopeId ?? null, payload ?? null, diffText ?? null, root ?? null, files ?? null, agentIntent ?? null, affected ?? null, wave || "scan", mode ?? null, status, snapshot, attempt, attempts, nowIso(), startedAt);
   return id;
 }
 
@@ -38,8 +41,9 @@ export function jobFilesList(job) {
 }
 
 export function jobToRunning(db, id, windowIdx) {
-  db.prepare("UPDATE jobs SET status = 'RUNNING', window_idx = ?, started_at = ?, attempt = attempt + 1, retry_at = NULL, failure_kind = NULL WHERE id = ? AND status = 'QUEUED'")
-    .run(windowIdx ?? null, nowIso(), id);
+  const result = db.prepare("UPDATE jobs SET status = 'RUNNING', window_idx = ?, started_at = ?, attempt = attempt + 1, retry_at = NULL, failure_kind = NULL, error = NULL WHERE id = ? AND status = 'QUEUED' AND attempt < max_attempts AND (retry_at IS NULL OR retry_at <= ?)")
+    .run(windowIdx ?? null, nowIso(), id, nowIso());
+  return Number(result?.changes || 0) === 1;
 }
 
 export function jobRuntimeConfig(job) {
@@ -68,16 +72,22 @@ export function classifyFailure(error, { aborted = false, workerCrash = false } 
 export function retryJob(db, id, error, { failureKind = "transient", backoffMs = 0 } = {}) {
   const row = getJob(db, id);
   if (!row || isFinalStatus(row.status)) return { retried: false, reason: "final" };
-  const kind = RETRYABLE_FAILURES.includes(failureKind) ? failureKind : "permanent";
-  const maxAttempts = Math.max(1, Number(row.max_attempts) || 1);
+  if (row.status !== "RUNNING") return { retried: false, reason: "not-running" };
+  const kind = FAILURE_KINDS.includes(failureKind) ? failureKind : "permanent";
+  const maxAttempts = Math.min(5, Math.max(1, Number(row.max_attempts) || 1));
   const attempt = Number(row.attempt) || 0;
   if (!RETRYABLE_FAILURES.includes(kind) || attempt >= maxAttempts) {
-    jobDone(db, id, null, error || "Lauf fehlgeschlagen", { failureKind: kind });
-    return { retried: false, reason: attempt >= maxAttempts ? "attempt-limit" : "permanent" };
+    const finalized = jobDone(db, id, null, error || "Lauf fehlgeschlagen", { failureKind: kind });
+    return { retried: false, reason: attempt >= maxAttempts ? "attempt-limit" : "permanent", finalized };
   }
-  const retryAt = new Date(Date.now() + Math.max(0, Number(backoffMs) || 0)).toISOString();
-  db.prepare("UPDATE jobs SET status = 'QUEUED', error = ?, failure_kind = ?, retry_at = ?, window_idx = NULL, started_at = NULL WHERE id = ? AND status = 'RUNNING'")
+  const delayMs = Math.max(0, Number(backoffMs) || 0) * Math.max(1, attempt);
+  const retryAt = new Date(Date.now() + delayMs).toISOString();
+  const result = db.prepare("UPDATE jobs SET status = 'QUEUED', error = ?, failure_kind = ?, retry_at = ?, window_idx = NULL, started_at = NULL WHERE id = ? AND status = 'RUNNING'")
     .run(String(error || "Lauf fehlgeschlagen"), kind, retryAt, id);
+  if (Number(result?.changes || 0) !== 1) {
+    const current = getJob(db, id);
+    return { retried: false, reason: isFinalStatus(current?.status) ? "final" : "not-running" };
+  }
   return { retried: true, reason: "retry", retryAt, attempt, maxAttempts };
 }
 
@@ -93,9 +103,9 @@ export function jobDone(db, id, verdict, error, { failureKind = null } = {}) {
   if (final && (final.status.startsWith("DONE") || final.status.startsWith("ERROR"))) {
     return false; // bereits finalisiert — unveränderlich, kein Umschreiben
   }
-  db.prepare("UPDATE jobs SET status = ?, verdict = ?, error = ?, failure_kind = ?, retry_at = NULL, done_at = ? WHERE id = ?")
+  const result = db.prepare("UPDATE jobs SET status = ?, verdict = ?, error = ?, failure_kind = ?, retry_at = NULL, done_at = ? WHERE id = ? AND status NOT LIKE 'DONE %' AND status NOT LIKE 'ERROR %'")
     .run(status, verdict ?? null, error ?? null, failureKind, nowIso(), id);
-  return true;
+  return Number(result?.changes || 0) === 1;
 }
 
 export function listJobs(db, { status } = {}) {
@@ -138,12 +148,12 @@ export function claimNextJob(db, windowIdx, preferredScopeId = null) {
     let row = null;
     if (preferred) {
       row = db.prepare(
-        "SELECT id, scope_id FROM jobs WHERE status = 'QUEUED' AND scope_id = ? ORDER BY created_at ASC LIMIT 1"
-      ).get(preferred);
+        "SELECT id, scope_id FROM jobs WHERE status = 'QUEUED' AND scope_id = ? AND attempt < max_attempts AND (retry_at IS NULL OR retry_at <= ?) ORDER BY created_at ASC LIMIT 1"
+      ).get(preferred, nowIso());
     }
     if (!row) {
       row = db.prepare(
-        "SELECT id, scope_id FROM jobs WHERE status = 'QUEUED' AND (retry_at IS NULL OR retry_at <= ?) ORDER BY created_at ASC LIMIT 1"
+        "SELECT id, scope_id FROM jobs WHERE status = 'QUEUED' AND attempt < max_attempts AND (retry_at IS NULL OR retry_at <= ?) ORDER BY created_at ASC LIMIT 1"
       ).get(nowIso());
     }
     if (!row) { db.exec("COMMIT"); return null; }
@@ -189,7 +199,7 @@ export function reapStaleJobs(db, maxWindows = 3) {
       ).all(i, i);
       for (const j of jobs) {
         if (!alive) {
-          jobDone(db, j.id, null, "Worker-Abbruch (Recovery)");
+          jobDone(db, j.id, null, "Worker-Abbruch (Recovery)", { failureKind: "worker-crash" });
           reaped.push(j.id);
         }
       }

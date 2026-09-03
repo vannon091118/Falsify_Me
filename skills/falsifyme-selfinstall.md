@@ -18,8 +18,11 @@ danach selbständig FalsifyMe als installierbares Agent-Gate. Ablauf:
 ```
 
 FalsifyMe ist ein read-only Falsifikations-Gateway. Es schreibt **niemals** in
-das geprüfte Projekt. Bis `VERDICT: WRITE` (Exit 0) bleibt der Coding-Agent
-read-only. Und: **Du aktivierst kein Gate still.** Die Verbindlichkeit
+das geprüfte Projekt — die einzige Ausnahme ist der physische
+`FalsifyME.md`-Projektanker (Identität + vom Nutzer bestätigte Decision-
+Records, einmal beim Bootstrap/`falsify anchor init`; er enthält nie Scopes,
+Findings, Verdicts oder Regeln). Bis `VERDICT: WRITE` (Exit 0) bleibt der
+Coding-Agent read-only. Und: **Du aktivierst kein Gate still.** Die Verbindlichkeit
 (PFLICHT oder optional) ist eine ausdrückliche Nutzer-Entscheidung.
 
 ## Warum das wichtig ist
@@ -153,7 +156,7 @@ kein erfundener Exit-Code.
 
 ### 5. API-Key (nur wenn ein echter Falsifikations-Lauf gewünscht ist)
 
-`falsify doctor` zeigt `Kein API-Key`, wenn `~/.Falsify/.env` nur die leere
+`falsify doctor` zeigt `Kein API-Key`, wenn `~/.Falsify_Private/.env` nur die leere
 Vorlage enthält (`ensureFalsifyHome()` schreibt `NVIDIA_API_KEY=`,
 `OPENAI_API_KEY=`, `FALSIFY_API_KEY=` **ohne Wert**).
 
@@ -164,7 +167,7 @@ Vorlage enthält (`ensureFalsifyHome()` schreibt `NVIDIA_API_KEY=`,
   # oder non-interaktiv (Agents):
   node ~/.Falsify_Core/cli/main.mjs settings set apiKeyName="NVIDIA_API_KEY" apiKey="<wert>"
   ```
-  Keys gehören ausschließlich in `~/.Falsify/.env` (Rechte 0600) — nie ins
+  Keys gehören ausschließlich in `~/.Falsify_Private/.env` (Rechte 0600) — nie ins
   Repo, nie in chat/Logs ausgeben.
 - **Kein Key vorhanden?** → Installationsziel ist erreicht; ehrlich sagen:
   „Ohne API-Key endet jeder echte Job mit Exit 3 (keine Freigabe). Key kann
@@ -200,8 +203,8 @@ node uninstall.mjs
 Was `uninstall.mjs` entfernt: laufende Worker-Fenster, `~/.Falsify_Core`,
 `~/.Falsify_Private`, `~/.agents/skills/falsifyme*`, `~/.falsifyme-instructions.{sh,ps1}`,
 Marker-Zeilen aus `~/.bashrc` und PowerShell-Profil, `FALSIFYME-WORKFLOW.md`-/`AGENTS.md`-Block
-im Zielprojekt, `~/.Falsify` (FALSIFY_HOME: Keys → Backup, DB, Logs) und
-npm-Global-Shims. Flags: `--keep-env` behält `~/.Falsify`, `--dry-run` zeigt nur.
+im Zielprojekt, `~/.Falsify_Private` (FALSIFY_HOME: Keys → Backup, DB, Logs) und
+npm-Global-Shims. Flags: `--keep-env` behält `~/.Falsify_Private`, `--dry-run` zeigt nur.
 
 **Nach der Deinstallation** verifizierst du ehrlich: `~/.Falsify_Core` weg,
 keine `falsify`-Shims auf dem PATH, kein RUNNING-Worker, keine Skill-Ordner
@@ -211,8 +214,9 @@ API-Keys (falls welche da waren) unter `~/.Falsify.env.uninstall-backup` liegen.
 ## Grenzen (nicht verhandelbar)
 
 - FalsifyMe bleibt read-only; die Installation ändert nie Dateien im
-  Zielprojekt des Users.
+  Zielprojekt des Users — einzige Ausnahme: der `FalsifyME.md`-Anker
+  (Identität, keine Scopes/Verdicts/Regeln; Laufzeitzustand nur in SQLite).
 - Keine Pfade außerhalb `~/.Falsify_Core`, `~/.Falsify_Private`,
-  `~/.agents/skills/…` und `~/.Falsify` (FALSIFY_HOME) anfassen.
+  `~/.agents/skills/…` und `FALSIFY_HOME` (Default `~/.Falsify_Private`) anfassen.
 - Keine Keys, keine Secrets im Klartext ausgeben oder committen.
 - Bei Fehlern: wörtliche Meldung übernehmen, nicht raten, nicht „War schon so".

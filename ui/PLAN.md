@@ -4,7 +4,7 @@ Spezifikation: `ui/PLAN.md`-Version (Rev. 4) = UI-Rev. 3 (Research-Digest, Archi
 absolute Modularitaet, Boot-Intro, Live-UI, Abort, Performance) + persistente Task-Chain.
 
 Regeln:
-- STATUS ausschliesslich: TODO | IN_PROGRESS | DONE | BLOCKED
+- STATUS: TODO | IN_PROGRESS | DONE | BLOCKED
 - DONE erst nach Implementierung + Test + erfolgreicher Verifikation (RESULT dokumentiert den Erfolg).
 - Kein Task beginnt, solange DEPENDS_ON-Tasks nicht DONE sind.
 - Entdeckte Zusatzarbeit wird als neuer Task angehaengt (nie nebenbei erledigt).
@@ -869,7 +869,7 @@ der Benutzerinstallation als Gegenstueck zu install.mjs: Worker stoppen
 (PIDs aus ui/worker.mjs --check), ~/.Falsify_Core + ~/.Falsify_Private
 entfernen, ~/.agents/skills/falsifyme* + Instruction-Dateien + Profil-Marker
 entfernen, markierter Instruction-Block aus AGENTS.md/FALSIFYME-WORKFLOW.md
-(ueber --project-root oder cwd), ~/.Falsify (FALSIFY_HOME) mit Key-Backup
+(ueber --project-root oder cwd), ~/.Falsify_Private (FALSIFY_HOME) mit Key-Backup
 nach ~/.Falsify.env.uninstall-backup (--keep-env behaelt FALSIFY_HOME),
 npm-Global-Shims. Flags: --dry-run, --keep-env, --project-root. package.json:
 npm run uninstall:user. Konvention: Installation rueckabwickeln so vollstaendig,
@@ -927,7 +927,7 @@ jobDone/addFinding/Exit-1-Pfad). blocks/findings gehen als
 "Validierungs-Hinweise" in buildUserContent -> der Falsifikations-Agent
 (Thinker) falsifiziert selbst und entscheidet. RESEARCH bleibt ein
 Falsifikations-Modul der Datenbeschaffung (FalsifyMe scannt Research-Daten
-unabhaengig vor dem Coder), nie ein Urteil des Pre-Checks.
+unabhaengig vor dem USER AGENT), nie ein Urteil des Pre-Checks.
 WICHTIG: --dry-run NICHT mit echter Deinstallation verwechseln - der echte
 Lauf entfernt FALSIFY_HOME inkl. verbliebener .env erst nach Backup.
 Hinweis: Agent-Entscheid Reichweite/Betriebsmodus (PFLICHT=Gate) ist
@@ -984,13 +984,13 @@ ehrlichen Key-Dialog (@ Step 5 API-Key).
 
 ## BLOCK 10 — Batch-Refactor (Architektur-Drift-Aufloesung, Kernprinzip §0)
 
-Ein Commit (2026-09-01): Falsifikation der Coder-Annahmen als Kernfunktion,
+Ein Commit (2026-09-01): Falsifikation der USER-AGENT-Ausgangsbehauptungen als Kernfunktion,
 eine Job/Scope-Queue als einzige Wahrheit, Wissen lokal in
 ~/.Falsify_Private, keine Parallelsysteme (WIRING §0/§10).
 
 ID: UI-081
 TASK: falsify wait --ping/--abort + falsify abort - Poll-Ping mit
-Coder-Auswertung statt festem Timeout (Denkdauer anbieterabhaengig).
+USER-AGENT-Auswertung statt festem Timeout (Denkdauer anbieterabhaengig).
 STATUS: DONE
 DEPENDS_ON: UI-054
 VERIFY: node --test tests/queue.test.mjs (runPing-Exit 4/0/1/3; runAbort
@@ -1016,7 +1016,7 @@ DEPENDS_ON: UI-078
 VERIFY: node --test tests/feasibility.test.mjs tests/phase2.test.mjs
 RESULT: PASS - run.mjs fuehrt feasibility-Notes in buildUserContent ein;
 RESEARCH = Falsifikations-Modul (FalsifyMe scannt Research-Daten unabhaengig
-vor dem Coder); Verdict-Hoheit beim Modell.
+vor dem USER AGENT); Verdict-Hoheit beim Modell.
 
 ID: UI-084
 TASK: Anti-Self-Check-Bias: WRITE nur mit Challenge-Nachweis (Struktur
@@ -1028,7 +1028,7 @@ RESULT: PASS - core/verdict.mjs: enforceWriteChallenge/findingSeverity;
 run.mjs behandelt Rubber-Stamp-WRITE als keine Freigabe.
 
 ID: UI-085
-TASK: GAP-Erfassung im Scope (Divergenz Coder-Urteil vs. Falsifikation).
+TASK: GAP-Erfassung im Scope (Divergenz USER-AGENT-Urteil vs. Falsifikation).
 STATUS: DONE
 DEPENDS_ON: UI-061
 VERIFY: node --test tests/queue.test.mjs (last_gap offen/geschlossen)
@@ -1423,7 +1423,7 @@ RESULT: PASS - 9/9 grün; Selbstzertifizierung deckte die qualifier-Lücke
 (jobs.jobDone) auf und der Scan wurde nachgeschärft; Gesamtsuite grün.
 
 ID: UI-107
-TASK: Loop-Anker: Die Umsetzungsvorschlaege beider Agents (Coder-agent_intent vs. Thinker-Umsetzungsverstaendnis) werden an EINEM Punkt dividiert; SCOPE-DIVERGENZ-Deklaration blockt WRITE deterministisch (PLAN) und persistiert scopes.last_divergence als Praezisierungs-Anker fuer die naechste Iteration.
+TASK: Loop-Anker: Die Umsetzungsvorschlaege beider Seiten (USER-AGENT-`agent_intent` vs. Thinker-Umsetzungsverstaendnis) werden an EINEM Punkt dividiert; SCOPE-DIVERGENZ-Deklaration blockt WRITE deterministisch (PLAN) und persistiert scopes.last_divergence als Praezisierungs-Anker fuer die naechste Iteration.
 STATUS: DONE
 DEPENDS_ON: UI-090 (agent_intent), UI-103 (structural gate)
 VERIFY: node --test tests/queue.test.mjs (Loop-Anker-Test) + Prompt-Daten-Vertrag in system-de/en.md; live: Submit MIT --agent-intent zeigt SCOPE-DIVERGENZ/KONFORM und den Anker im naechsten Lauf.
@@ -1486,7 +1486,7 @@ VERIFY: node --test tests/stats.test.mjs (Spawn-Integrationstest: IDLE + PROGRES
 RESULT: ui/worker.mjs --state-Pfad: nach IDLE/BUSY-Zeilen PROGRESSION jobs=… tasks=… errorsCaught=… releases=… modelCalls=… (maschinenlesbar) + ANCHOR <progressionStatement> (User-Wortlaut); try/catch (Statistik ist Anzeige, kein kritischer Pfad). Persistenz bleibt EINE Quelle (SQLite-Queue), kein zweites Speichersystem.
 
 ID: UI-116
-TASK: Loop-Trace — `falsify scope trace <id>` leitet den GAP-Loop je Runde aus der Queue ab: Jobs mit Welle/Verdict/Laufzeit, Coder-Intent, Befund, Fehler, offene Konflikte, Divergenz-Anker und ehrlichem Loop-Ausgang (GESCHLOSSEN bei hardened/done, sonst OFFEN mit nächstem Schritt).
+TASK: Loop-Trace — `falsify scope trace <id>` leitet den GAP-Loop je Runde aus der Queue ab: Jobs mit Welle/Verdict/Laufzeit, USER-AGENT-Intent, Befund, Fehler, offene Konflikte, Divergenz-Anker und ehrlichem Loop-Ausgang (GESCHLOSSEN bei hardened/done, sonst OFFEN mit nächstem Schritt).
 STATUS: DONE
 DEPENDS_ON: UI-090 (Queue/Etage-2-Felder), UI-115 (Ableitungs-Prinzip)
 VERIFY: node --test tests/stats.test.mjs (Spawn-Integrationstest über cli/main.mjs: LOOP-TRACE-Kopf, Zähler, Welle+Verdict je Runde, Intent/Befund sichtbar, Loop-Ausgang OFFEN, zweiter Lauf byte-identisch = reine Ableitung); live gegen echte E2E-Queue (12 Jobs lesbar inkl. Recovery-ERROR und Abort); 103/103 Kernsuite grün.
@@ -1498,3 +1498,51 @@ STATUS: DONE
 DEPENDS_ON: UI-090 (Queue), UI-104 (Twin-Gate), UI-111/UI-112 (twinEvidenceOk/twinOwnFalsificationOk), UI-107 (Loop-Anker)
 VERIFY: node --test tests/probes.test.mjs tests/twin.test.mjs tests/prompt.test.mjs tests/probe-e2e.test.mjs; volle Kernsuite + Schutznetz (settings, exit-code-authority, tool-evidence, agent-stream-output, foreign-project, keys, scope-trace, stream-wrap, verdict, tui-regime) + ui/demo-agent.test.mjs.
 RESULT: core/probes.mjs (splitRequirement/renderRequirementList/parseProbeSet/validateProbeSet/probeEvidenceOk/computeVerdict); cli/run.mjs Schnitt 1+2 (validateProbeSet + runProbeExecution, Gate via computeVerdict, whitelistSnapshot-Dateien-unverändert); core/twin.mjs runProbeExecution; Prompt-Daten system-probe-executor-de/en.md + Thinker-Probe-Set-Block (system-de/en.md); core/prompt.mjs requirementList; core/selfreview.mjs (+probes.mjs +probe-executor-Prompts in SELF_REVIEW_CORE). 145/145 Kernsuite + 46/46 Schutznetz + 4/4 demo-agent grün.
+
+ID: UI-118
+TASK: Projekt-/Checkout-Identitaet und `FalsifyME.md` als reine Identitaets- und Decision-Record-Schicht integrieren. Der Anchor enthaelt nur einmalig gemintete PROJECT_ID/CHECKOUT_ID, kanonische Root-Bindung, Digests und explizit bestaetigte Records. SQLite bleibt alleiniger Owner von Scopes, Findings, Jobs, Verdicts, Workern, Retries und Verlauf; `projects` beschreibt logische Historie, `checkouts` physische Root-Bindungen, und `scopes`/`jobs` tragen nur den Checkout-Fremdschluessel. Neue CLI-Sessions passieren den Read-only-Pre-Session-Gate vor dem Modell; Worker prueft bound Jobs vor dem Kindprozess. Kopien erhalten per `anchor clone` eine neue CHECKOUT_ID bei gleicher PROJECT_ID, ein impliziter Historien-Merge findet nicht statt.
+STATUS: DONE
+DEPENDS_ON: UI-090 (Queue-Datenmodell), UI-099 (Zustandsinvarianten), UI-103 (Strukturelle Gate-Regeln), UI-117 (P0-Probe-Gate)
+VERIFY: node --test tests/identity.test.mjs tests/foreign-project.test.mjs tests/probe-e2e.test.mjs tests/research-additions.test.mjs tests/selfreview.test.mjs; node --test tests/invariants.test.mjs tests/datamodel.test.mjs; node --check core/identity.mjs artifacts/projects.mjs cli/anchor.mjs cli/run.mjs ui/worker.mjs; git diff --check
+RESULT: PASS — `core/identity.mjs` validiert Anchor-/Root-/Record-Digests und erzwingt Confirmation/Newline-Schutz unter exklusiver Record-Sperre; `artifacts/projects.mjs` persistiert Bindings atomar und prüft Projekt-/Scope-/Job-Konsistenz; `cli/anchor.mjs` bietet init/check/rebind/clone/record; Submit, Direkt-Run und Worker prüfen die Identitaet vor Modellstart. Adversarial- und E2E-Tests grün; Vollsuite nach Abschluss dieses Sprints verifiziert.
+
+ID: UI-119
+TASK: Externe Brench-UI ausschliesslich als Darstellungsschicht gegen den bestehenden Worker-/FM-EVT-Vertrag integrieren; keine eigene Queue, Verdict-Hoheit, Modellinstanz oder Repository-Schreibinstanz.
+STATUS: TODO
+DEPENDS_ON: UI-118
+VERIFY: Nach Brench-Integration Event-/Worker-Contract, Queue-Ein-Wahrheit und fehlende Schreib-/Modellpfade mit UI-Tests prüfen.
+RESULT: —
+
+ID: UI-123
+TASK: Loop-Zustands-Anzeige (Produktions-Loop): das Dock/TUI spiegelt den
+persistierten jobs.loop_state (WRITE_AUTHORIZED, WAITING_FOR_AGENT,
+WRITE_IN_PROGRESS, CHANGE_CAPTURED, RE_REVIEW_QUEUED, RE_REVIEW_RUNNING,
+DONE, LOOP_BLOCKED, ABORTED, ERROR) als eigene Anzeigezeile im Slot-Panel
+und im Header-Snapshot. Presentation-only: das UI erfindet keinen Zustand,
+besitzt keine Transition-Logik und bleibt Consumer der Queue-Wahrheit
+(CON-004). Neues FM-EVT 'loop' (t: loop, s: <LOOP_STATE>) von cli/run.mjs
+(WRITE_AUTHORIZED nach Handoff) und cli/handoff.mjs (Zustand nach der
+Completion, ehrlich auch LOOP_BLOCKED/ABORTED).
+STATUS: DONE
+DEPENDS_ON: UI-090 (Queue), UI-118 (Identität), Produktions-Loop
+(artifacts/loops.mjs, Schema v9)
+VERIFY: node --test ui/tui/events.test.mjs ui/tui/state.test.mjs
+(Reihenfolge der Zustaende, false-Verweigerung); Kern-Suite node --test.
+RESULT: ui/tui/state.mjs (slot.loopState + LOOP_LABEL/LOOP_COLOR als
+reine Anzeige-Maps), ui/tui/events.mjs ('loop'-Event, reset bei 'job',
+Fokus-Slot-Spiegel in refreshGlobal), ui/tui.mjs (loopState/loopLabel/
+loopColor in snap + slots + slotPanels), ui/tui/views/SlotsView.mjs
+(Loop-Zeile nur bei gemeldetem Zustand — kein Fake), cli/run.mjs +
+cli/handoff.mjs (FM-EVT loop, nur FALSIFY_UI=1). UI bleibt lese-only:
+kein Schreibpfad, keine Übergänge, keine Queue.
+
+ID: UI-124
+TASK: Loop-E2E-Sichtbarkeit: ein echter WRITE-Lauf + Handoff-Completion
+(FALSIFY_UI=1) zeigt WRITE_AUTHORIZED → (nach Completion) RE_REVIEW_QUEUED
+im Dock-Event-Strom; ein NO_CHANGE-Report zeigt LOOP_BLOCKED. Beweis, dass
+die Anzeige aus echten Pipeline-Zuständen speist, nicht aus Test-Fixtures.
+STATUS: TODO
+DEPENDS_ON: UI-123
+VERIFY: tests/full-loop-e2e.test.mjs mit FALSIFY_UI=1 erweitern (FM-EVT
+loop-Zeilen im stdout behaupten); negative Pfade analog.
+RESULT: —

@@ -113,17 +113,17 @@ test("scope trace: fehlendes Finding bleibt ehrlich und ordnet Jobs nach Erstell
 test("scope trace: Divergenz-Anker wird als Grund des offenen Loops priorisiert", async () => {
   const { tmp, scope } = await seedHome(async ({ db, scopeMod, jobMod }) => {
     const scope = scopeMod.createScope(db, "Divergenter Scope");
-    const job = jobMod.createJob(db, { scopeId: scope.id, payload: "p", wave: "plan", mode: "plan", agentIntent: "Coder versteht Änderung A" });
+    const job = jobMod.createJob(db, { scopeId: scope.id, payload: "p", wave: "plan", mode: "plan", agentIntent: "USER AGENT versteht Änderung A" });
     jobMod.jobDone(db, job, "PLAN", null);
     scopeMod.addFinding(db, { scopeId: scope.id, jobId: job, round: 1, wave: "plan", mode: "plan", befund: "Falsifikation versteht Änderung B", content: "c", verdict: "PLAN" });
-    scopeMod.updateScopeAfterReview(db, scope.id, "PLAN", "Falsifikation versteht Änderung B", null, "Coder und Falsifikation meinen unterschiedliche Änderungen", null);
+    scopeMod.updateScopeAfterReview(db, scope.id, "PLAN", "Falsifikation versteht Änderung B", null, "USER AGENT und Falsifikation meinen unterschiedliche Änderungen", null);
     return scope;
   });
   try {
     const result = runScopeTrace(scope.id, tmp);
     assert.equal(result.status, 0);
     const out = String(result.stdout);
-    assert.match(out, /Offene Divergenz \(Loop-Anker\): Coder und Falsifikation meinen unterschiedliche Änderungen/);
+    assert.match(out, /Offene Divergenz \(Loop-Anker\): USER AGENT und Falsifikation meinen unterschiedliche Änderungen/);
     assert.match(out, /Loop-Ausgang: OFFEN — die Scope-Divergenz hält den Loop offen/);
     assert.match(out, /Divergenz-Anker präzisieren/);
   } finally {

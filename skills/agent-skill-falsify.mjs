@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ─────────────────────────────────────────────────────────────────────────────
-// AGENT SKILL: FalsfyME Pflicht-Check (Node.js Modul) · FalsifyMe 2.0
+// AGENT SKILL: FalsifyMe Pflicht-Check (Node.js Modul) · FalsifyMe 2.0
 // -----------------------------------------------------------------------------
 // SCOPE-PROTOKOLL (nicht verhandelbar):
 //   1. PLAN ist IMMER die Init-Aktion eines Scopes. Der Agent zitiert den
@@ -15,7 +15,8 @@
 //                            recherchieren, Befunde ergänzen, erneut einreichen
 //      - VERDICT: WRITE    → FREIGABE: READ-ONLY → WRITE. Jetzt umsetzen, dann
 //                            die Umsetzung erneut reviewen (WRITE-/REVIEW-Loop)
-//   4. FalsifyMe selbst bleibt ABSOLUT read-only zum Projekt.
+//   4. FalsifyMe selbst bleibt read-only zum Projekt (einzige Schreibausnahme:
+//      der identitätstragende FalsifyME.md-Anker – nie Scopes/Verdicts/Regeln).
 //   5. Nach dem finalen Review endet der Modellkontext; der nächste Scope
 //      startet frisch im selben Fenster (getrennt, kein Vermischen).
 //
@@ -154,13 +155,14 @@ async function ensureDockWindow() {
 }
 
 // ── Scope sicherstellen: PLAN ist IMMER die Init-Aktion ────────────────────
-async function ensureScope(scopeId, userInput) {
+async function ensureScope(scopeId, userInput, rootDir) {
   if (scopeId) return scopeId;
   if (!userInput) {
     throw new Error('Beim Scope-Start ist userInput Pflicht (User-Input 1:1 – wird zum HEADER). Bei Loop-Fortsetzung scopeId angeben.');
   }
+  if (!rootDir) throw new Error('Beim Scope-Start ist rootDir Pflicht; Scope wird nicht ohne Projekt-Root angelegt.');
   log('step', 'PLAN = Init: Scope anlegen – User-Input wird 1:1 zum HEADER...');
-  const r = await runNode([path.join(V2_DIR, 'cli', 'main.mjs'), 'scope', 'new', userInput], { capture: true });
+  const r = await runNode([path.join(V2_DIR, 'cli', 'main.mjs'), 'scope', 'new', userInput, '--root', path.resolve(rootDir)], { capture: true });
   const m = r.stdout.match(/SCOPE_ID=(\S+)/);
   if (!m) throw new Error(`Scope konnte nicht angelegt werden: ${r.stdout || r.stderr}`);
   log('ok', `Scope angelegt: ${m[1]} (HEADER = User-Input 1:1)`);
@@ -169,7 +171,7 @@ async function ensureScope(scopeId, userInput) {
 
 // ── Hauptfunktion ──────────────────────────────────────────────────────────
 /**
- * Führt einen FalsfyME Pflicht-Check durch (Scope-Protokoll).
+ * Führt einen FalsifyMe Pflicht-Check durch (Scope-Protokoll).
  * @param {FalsifyCheckOptions} options
  * @returns {Promise<FalsifyCheckResult>}
  */
@@ -187,9 +189,9 @@ export async function falsifyMandatoryCheck(options) {
   await ensureDockWindow();
 
   // ── 0b. Scope: beim Start anlegen (PLAN = Init, HEADER = User-Input 1:1) ──
-  const scope = await ensureScope(scopeId, userInput);
+  const scope = await ensureScope(scopeId, userInput, rootDir);
 
-  log('step', 'FalsfyME Pflicht-Check wird gestartet...');
+  log('step', 'FalsifyMe Pflicht-Check wird gestartet...');
   log('info', `Scope: ${scope}`);
   log('info', `Plan: ${planFile}`);
   log('info', `Root: ${rootDir}`);
@@ -264,7 +266,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
 
   if (args.includes('--help') || args.includes('-h')) {
-    console.log(`AGENT SKILL: FalsfyME Pflicht-Check (Node.js) · FalsifyMe 2.0
+    console.log(`AGENT SKILL: FalsifyMe Pflicht-Check (Node.js) · FalsifyMe 2.0
 
 SCOPE-PROTOKOLL: PLAN ist IMMER Init (User-Input 1:1 als HEADER). Loop bis Scope
 erfuellt: PLAN → überarbeiten · RESEARCH → read-only recherchieren · WRITE → Freigabe.

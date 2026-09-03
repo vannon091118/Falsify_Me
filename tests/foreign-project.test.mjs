@@ -5,6 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { openDb, closeDb } from "../artifacts/db.mjs";
+import { initAnchor } from "../core/identity.mjs";
+import { bindAnchor } from "../artifacts/projects.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -15,6 +18,21 @@ function cli(args, env = {}) {
     env: { ...process.env, ...env },
     timeout: 30000,
   });
+}
+
+function registerAnchor(target, home) {
+  const previous = process.env.FALSIFY_HOME;
+  process.env.FALSIFY_HOME = home;
+  try {
+    const anchor = initAnchor(target);
+    assert.equal(anchor.ok, true, anchor.message);
+    const db = openDb();
+    bindAnchor(db, anchor, target);
+    closeDb();
+  } finally {
+    if (previous === undefined) delete process.env.FALSIFY_HOME;
+    else process.env.FALSIFY_HOME = previous;
+  }
 }
 
 function foreignProject() {
@@ -44,6 +62,7 @@ test("foreign files are resolved inside target and prompt reports foreign contex
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-home-"));
   const plan = path.join(target, "plan.txt");
   fs.writeFileSync(plan, "Prüfe app");
+  registerAnchor(target, home);
   try {
     const result = cli(["run", "--submit", "--root", target, "--files", "src/app.js", "--plan-file", plan], { FALSIFY_HOME: home });
     assert.equal(result.status, 0, result.stderr);

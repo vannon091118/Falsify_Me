@@ -27,9 +27,12 @@ import {
   claimNextJob, getJob, jobDone, reapStaleJobs,
   registerWorker, unregisterWorker, heartbeatWorker,
   workerPid, isWorkerAlive, listWorkers, listJobs,
-  isAbortRequested, clearJobAbort,
+  isAbortRequested, clearJobAbort, jobRuntimeConfig,
 } from "../artifacts/jobs.mjs";
 import { enforceQueueConsistency } from "../artifacts/invariants.mjs";
+import { requireProjectIdentity, assertScopeCheckout } from "../artifacts/projects.mjs";
+import { getScope } from "../artifacts/scopes.mjs";
+import { configFromSnapshot } from "../core/config.mjs";
 import { collectStats } from "../artifacts/stats.mjs";
 import { progressionStatement } from "../artifacts/stats.mjs";
 // ── Phase 2: Terminal-UI im Worker-Fenster ───────────────────────────────────
@@ -376,6 +379,28 @@ async function main() {
 
     // Scope-Affinität setzt claimNextJob ATOMAR in der Claim-Transaktion
     // (E2E-Befund 5) – hier kein separater Schreibvorgang mehr.
+    // Neue CLI-Jobs tragen eine Checkout-Identität. Der Worker prüft den
+    // Anker vor dem Kindprozess erneut; ein kaputter Bound-Job darf niemals
+    // bis zum Modell gelangen. Historische ungebundene Modul-Fixtures bleiben
+    // als UNBOUND-Legacy-Daten lesbar.
+    if (job.checkout_id) {
+      try {
+        const identity = requireProjectIdentity(db, job.root);
+        if (job.scope_id) {
+          const scope = getScope(db, job.scope_id);
+          if (!scope) throw new Error(`Scope nicht gefunden: ${job.scope_id}`);
+          assertScopeCheckout(scope, identity.checkout.checkout_id);
+        }
+        if (job.runtime_config) configFromSnapshot(jobRuntimeConfig(job));
+      } catch (error) {
+        const message = `Projektidentität nicht verifiziert: ${error.message}`;
+        jobDone(db, job.id, null, message);
+        uiEvt({ t: "job", id: job.id, scope: job.scope_id || null });
+        uiEvt({ t: "state", s: "ERROR" });
+        say(`✖ JOB ${job.id} wird nicht verarbeitet: ${message}`);
+        continue;
+      }
+    }
     title(`Falsify-Dock ${WINDOW_IDX} · ${job.scope_id || "ohne Scope"} · ${job.id}`);
     uiEvt({ t: "job", id: job.id, scope: job.scope_id || null });
     uiEvt({ t: "state", s: "CLAIMING" });

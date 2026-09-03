@@ -36,6 +36,17 @@ async function mod(p) {
   return import(pathToFileURL(path.join(ROOT, p)).href);
 }
 
+async function registerAnchor(root) {
+  const identity = await mod("core/identity.mjs");
+  const projects = await mod("artifacts/projects.mjs");
+  const anchor = identity.initAnchor(root);
+  assert.equal(anchor.ok, true, anchor.message);
+  const db = (await mod("artifacts/db.mjs")).openDb();
+  projects.bindAnchor(db, anchor, root);
+  (await mod("artifacts/db.mjs")).closeDb();
+  return anchor;
+}
+
 test("extractResearchAdditions: parst konkrete Datei-Referenzen aus RESEARCH-Antwort", async () => {
   const { extractResearchAdditions } = await mod("core/verdict.mjs");
   const content = [
@@ -125,14 +136,15 @@ test("Submit-Merge: RESEARCH-Nachforderung ergaenzt die Whitelist automatisch", 
   try {
     const { openDb, closeDb } = await mod("artifacts/db.mjs");
     const { createScope, updateScopeAfterReview } = await mod("artifacts/scopes.mjs");
-    const db = openDb();
 
     // Fremdes Ziel-Projekt mit einer realen, aber nicht genannten Datei.
     const proj = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-radd-proj-"));
     fs.mkdirSync(path.join(proj, "core"), { recursive: true });
     fs.writeFileSync(path.join(proj, "core", "tools.mjs"), "export const x = 1;\n");
+    const anchor = await registerAnchor(proj);
+    const db = openDb();
 
-    const s = createScope(db, "Task");
+    const s = createScope(db, "Task", { checkoutId: anchor.value.checkoutId });
     updateScopeAfterReview(db, s.id, "RESEARCH", "Ich brauche core/tools.mjs", "sub", undefined, ["core/tools.mjs", "ghost.mjs"]);
 
     const planFile = path.join(h.tmp, "plan.txt");

@@ -22,14 +22,15 @@
 //            2 = Konfig-Fehler · 3 = API-Fehler/kein Verdict
 // ─────────────────────────────────────────────────────────────────────────────
 import fs from "node:fs";
+import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDb, closeDb, falsifyHome } from "../artifacts/db.mjs";
-import { createJob, getJob, jobFilesList, jobDone, jobToRunning, registerWorker, heartbeatWorker, reapStaleJobs } from "../artifacts/jobs.mjs";
+import { createJob, getJob, jobFilesList, jobDone, jobToRunning, registerWorker, heartbeatWorker, reapStaleJobs, jobRuntimeConfig, classifyFailure } from "../artifacts/jobs.mjs";
 import { enforceQueueConsistency } from "../artifacts/invariants.mjs";
 import { getScope, updateScopeAfterReview, addFinding, getFindings, nextRound } from "../artifacts/scopes.mjs";
 import { loadApiKey, loadApiKeyForNames, keyEnvFile, keyNames } from "../core/keys.mjs";
-import { loadConfig } from "../core/config.mjs";
+import { loadConfig, snapshotConfig, configFromSnapshot, isLocalApiBase } from "../core/config.mjs";
 import { enforceRateLimit } from "../core/ratelimit.mjs";
 import { SYSTEM_DE_FULL, SYSTEM_EN_FULL, buildUserContent } from "../core/prompt.mjs";
 import { parseVerdict, parseBefund, parseSubPrompt, findingSeverity, parseScopeDivergence, enforceResearchContract, extractResearchAdditions, exitCodeOf } from "../core/verdict.mjs";
@@ -38,17 +39,44 @@ import { parseProbeSet, validateProbeSet, splitRequirement, renderRequirementLis
 import { runAgent } from "../core/agent.mjs";
 import { checkFeasibility } from "../core/feasibility.mjs";
 import { resolveProjectContext, validateProjectFiles } from "../core/project-context.mjs";
+import { requireProjectIdentity, assertScopeCheckout } from "../artifacts/projects.mjs";
+import { snapshotRoot } from "../core/changes.mjs";
+import { buildHandoff, serializeHandoff } from "../core/handoff.mjs";
+import { recordLoopEvent } from "../artifacts/loops.mjs";
+
+// TASK-005: header_digest bindet den exakten Scope-HEADER-Bytes an den Job.
+// Ein geänderter/fehlender HEADER vor THINKER-Start oder Re-Review-Creation
+// wird abgelehnt (fail-closed).
+function headerDigest(header) {
+  return header == null ? null : crypto.createHash("sha256").update(String(header), "utf8").digest("hex");
+}
 
 // ── Umsetzbarkeits-Puffer (Intent → Execution, UI-078, revidiert) ───────────
 // Deterministischer read-only Pre-Check VOR dem API-Call. Er erteilt KEIN
 // Verdict und schliesst KEINEN Job: blocks/findings gehen als KONTEXT an den
-// Falsifikations-Agent (Thinker), der die Coder-Annahmen selbst gegen die
+// Falsifikations-Agent (Thinker), der die Ausgangsbehauptungen des USER AGENT selbst gegen die
 // echten Dateien falsifiziert. RESEARCH bleibt damit ein Falsifikations-Modul
 // (Datenbeschaffung), nie ein Urteil des Pre-Checks. Verdict-Hoheit liegt
 // ausschliesslich beim Thinker (Modellpfad).
 
 // Provider-neutrale Konfiguration (Env → FALSIFY_HOME/config.json → Defaults).
-const CFG = loadConfig();
+// Delayed loading is essential for --job-id: a persisted job snapshot must
+// remain runnable even when current settings drift or become invalid.
+const HELP_DEFAULTS = Object.freeze({
+  model: "nvidia/nemotron-3-ultra-550b-a55b",
+  lang: "de",
+  maxRpm: 40,
+  keyEnvNames: ["NVIDIA_API_KEY", "OPENAI_API_KEY", "FALSIFY_API_KEY"],
+});
+let currentConfig = null;
+function loadCurrentConfig() {
+  if (!currentConfig) currentConfig = loadConfig();
+  return currentConfig;
+}
+function configForHelp() {
+  try { return loadCurrentConfig(); }
+  catch { return HELP_DEFAULTS; }
+}
 
 // ── UI-Events (Phase 2): FM-EVT:-Marker für die Terminal-UI ──────────────────
 // Nur mit FALSIFY_UI=1 ausgeben (setzt der Worker-Fenster-Starter). Ohne das
@@ -74,7 +102,8 @@ const cyan = (s) => C(36, s);
 
 // ── CLI-Argumente ────────────────────────────────────────────────────────────
 function usage() {
-  console.log(`FalsifyMe 2.0 – Falsifizierungs-Agent (OpenAI-kompatibel · ${CFG.model})
+  const cfg = configForHelp();
+  console.log(`FalsifyMe 2.0 – Falsifizierungs-Agent (OpenAI-kompatibel · ${cfg.model})
 
 Verwendung:
   node cli/run.mjs "Plan-Text..." [Optionen]
@@ -90,9 +119,9 @@ Optionen:
   --root <dir>         Arbeitsverzeichnis für den Agent-Datenzugriff (Default: cwd)
   --files <liste>      Zugriffs-Whitelist (kommagetrennt, relativ zu --root) – PFLICHT bei --submit und fremdem --root
   --scope <id>         Scope-ID (HEADER = User-Input 1:1 aus dem Scope-Artefakt)
-  --model <id>         Modell-ID (Default: ${CFG.model})
-  --lang de|en         Sprache der Kritik (Default: ${CFG.lang})
-  --max-rpm <n>        Rate-Limit (Default: ${CFG.maxRpm})
+  --model <id>         Modell-ID (Default: ${cfg.model})
+  --lang de|en         Sprache der Kritik (Default: ${cfg.lang})
+  --max-rpm <n>        Rate-Limit (Default: ${cfg.maxRpm})
   --no-wait            Rate-Limit-Wartezeit überspringen
   --submit             Job für die Worker-Fenster einreichen (kein API-Call) –
                        Agents muessen danach MIT falsify wait <id> blockierend
@@ -103,8 +132,8 @@ Optionen:
 Provider/Ziel (Env oder FALSIFY_HOME/config.json):
   FALSIFY_API_BASE     z. B. https://integrate.api.nvidia.com/v1 (NVIDIA NIM),
                        https://api.openai.com/v1 (OpenAI), http://localhost:11434/v1 (Ollama)
-  FALSIFY_MODEL        Modell-ID (Default: ${CFG.model})
-  FALSIFY_API_KEY_ENV  Key-Namen, kommagetrennt (Default: ${CFG.keyEnvNames.join(",")})
+  FALSIFY_MODEL        Modell-ID (Default: ${cfg.model})
+  FALSIFY_API_KEY_ENV  Key-Namen, kommagetrennt (Default: ${cfg.keyEnvNames.join(",")})
 
 Exit-Codes: 0=WRITE (Freigabe)  1=PLAN/RESEARCH (nicht freigegeben, Loop)
             2=Konfig-Fehler  3=API-Fehler/kein Verdict  5=ASK (Aufgabe mehrdeutig,
@@ -123,9 +152,9 @@ let activeJobId = null;
 let planText = "";
 let planFile = null;
 let diffFile = null;
-let model = CFG.model;
-let lang = CFG.lang;
-let maxRpm = CFG.maxRpm;
+let model = null;
+let lang = null;
+let maxRpm = null;
 let noWait = false;
 let submitMode = false;
 let jobId = null;
@@ -134,9 +163,17 @@ let filesArg = null;
 let scopeArg = null;
 let agentIntent = null;
 let affectedArg = null;
+// Für neue Jobs wird dieser Wert beim Submit atomar eingefroren; bei der
+// Ausführung ersetzt ein gespeicherter Job-Snapshot die Prozess-Konfiguration.
+let runtimeConfig = null;
 
 const positional = [];
 const args = process.argv.slice(2);
+const configOverrides = () => ({
+  ...(model !== null ? { model } : {}),
+  ...(lang !== null ? { lang } : {}),
+  ...(maxRpm !== null ? { maxRpm } : {}),
+});
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   const next = () => { const v = args[++i]; if (v === undefined) { console.error(`FEHLER: ${a} braucht einen Wert`); process.exit(2); } return v; };
@@ -194,6 +231,9 @@ let diffText = "";
 if (diffFile) diffText = readFileOrExit(diffFile, "Diff-Datei").trim();
 
 const db = openDb();
+let projectIdentity = null;
+let checkoutId = null;
+let anchorRecords = [];
 
 // ── Submit-Modus: Job-ROW in SQLite anlegen (kein API-Call) ─────────────────
 if (submitMode) {
@@ -211,10 +251,29 @@ if (submitMode) {
     process.exit(2);
   }
   let scope = null;
+  let identity;
+  try {
+    identity = requireProjectIdentity(db, root);
+  } catch (error) {
+    console.error(red(`FEHLER: Projektidentität nicht verifiziert – ${error.message}`));
+    closeDb();
+    process.exit(2);
+  }
+  projectIdentity = identity;
+  checkoutId = identity.checkout.checkout_id;
+  anchorRecords = identity.anchor.records;
   if (scopeArg) {
     scope = getScope(db, scopeArg);
     if (!scope) {
       console.error(red(`FEHLER: Scope nicht gefunden: ${scopeArg} (falsify scope new "<user-input>")`));
+      closeDb();
+      process.exit(2);
+    }
+  }
+  if (scope) {
+    try { assertScopeCheckout(scope, checkoutId); }
+    catch (error) {
+      console.error(red(`FEHLER: Scope-/Projektidentität widerspricht sich – ${error.message}`));
       closeDb();
       process.exit(2);
     }
@@ -246,13 +305,13 @@ if (submitMode) {
     console.log(dim(`${skippedAdditions} nachgeforderte Datei(en) existieren nicht unter ${root} und wurden übersprungen.`));
   }
   // Loop-Anker (UI-107, Divisionspflicht): Der Thinker kann nur dann
-  // SCOPE-KONFORM/SCOPE-DIVERGENZ deklarieren, wenn er den Coder-Intent
+  // SCOPE-KONFORM/SCOPE-DIVERGENZ deklarieren, wenn er den USER-AGENT-Intent
   // kennt — ohne --agent-intent fehlt die eine Seite der Division und ein
   // offener Anker kann nie aufgelöst werden. Deshalb: ehrliche Warnung
   // (kein stiller Ausfall), solange ein Anker offen UND kein Intent
   // mitgegeben wurde.
   if (scope && scope.last_divergence && !agentIntent) {
-    console.warn(yellow(`⚠ Offener Scope-Divergenz-Anker ohne --agent-intent: der Thinker kann die Divergenz nicht gegen den Coder-Vorschlag dividieren („SCOPE-KONFORM“ wird unerreichbar). Intent der nächsten Iteration mitgeben: --agent-intent "…"\n  Offene Divergenz: ${String(scope.last_divergence).slice(0, 120)}`));
+    console.warn(yellow(`⚠ Offener Scope-Divergenz-Anker ohne --agent-intent: der Thinker kann die Divergenz nicht gegen den USER-AGENT-Vorschlag dividieren („SCOPE-KONFORM“ wird unerreichbar). Intent der nächsten Iteration mitgeben: --agent-intent "…"\n  Offene Divergenz: ${String(scope.last_divergence).slice(0, 120)}`));
   }
   if (!filesList.length) {
     console.error(red('FEHLER: --files ist Pflicht beim Einreichen (kommagetrennte Dateiliste relativ zu --root), z. B.: --files "app.js,lib/auth.js"'));
@@ -267,7 +326,12 @@ if (submitMode) {
   if (selfReview.added.length) {
     console.log(dim(`Selbstprüfung erkannt: ${selfReview.added.length} Kern-Komponenten automatisch im Prüf-Scope`));
   }
+  const submittedConfig = snapshotConfig(loadConfig(configOverrides()));
+  // TASK-005: HEADER-Digest + Basis-Snapshot vor der Einreichung einfrieren.
+  const digest = headerDigest(scope ? scope.header : planText);
+  const beforeSnapshot = snapshotRoot(root, filesList);
   const id = createJob(db, {
+    checkoutId,
     scopeId: scope ? scope.id : null,
     payload: planText,
     diffText: diffText || null,
@@ -275,8 +339,15 @@ if (submitMode) {
     affected: affectedArg || null,
     root,
     files: filesList.join(","),
+    runtimeConfig: submittedConfig,
+    maxAttempts: submittedConfig.maxJobAttempts,
     mode: scope ? scope.phase : "plan",   // PLAN ist immer Init – danach lenkt das Verdict
   });
+  // Loop-Korrelation auf dem Job persistieren (TASK-010): header_digest +
+  // change_digest des Basis-Zustands + Loop-Startzustand QUEUED.
+  db.prepare("UPDATE jobs SET header_digest = ?, change_digest = ?, loop_state = 'QUEUED' WHERE id = ?")
+    .run(digest, beforeSnapshot.digest, id);
+  recordLoopEvent(db, { jobId: id, scopeId: scope ? scope.id : null, changeDigest: beforeSnapshot.digest, eventType: "submitted", toState: "QUEUED", payload: { header_digest: digest, files: filesList } });
   console.log(`JOB_ID=${id}`);
   if (scope) console.log(`Scope: ${scope.id}  (Phase: ${scope.phase})`);
   console.log(`Plan : ${planText.length} Zeichen${diffText ? ` · Diff: ${diffText.length} Zeichen` : ""}`);
@@ -324,7 +395,14 @@ if (jobId) {
     closeDb();
     process.exit(2);
   }
-  if (job.status === "QUEUED") jobToRunning(db, jobId, null);
+  if (job.status === "QUEUED") {
+    if (!jobToRunning(db, jobId, null)) {
+      console.error(red(`FEHLER: Job ${jobId} ist noch nicht für einen Lauf fällig (Retry-Backoff oder Status-Rennen).`));
+      closeDb();
+      process.exit(3);
+    }
+    job = getJob(db, jobId);
+  }
   // Direkt-Run-Liveness (Regel-3-Rig, Asymmetrie-Fix): Jobs ohne Fenster
   // (falsify run --job-id, window_idx NULL) registrieren sich selbst als
   // Fenster-0-Worker mit Heartbeat. Ein lebender Direkt-Lauf ist damit KEIN
@@ -350,6 +428,19 @@ if (jobId) {
   planText = job.payload || planText;
   diffText = job.diff_text || diffText;
   ROOT = path.resolve(job.root || ROOT);
+  // TASK-005 (Executionsseite): der HEADER der gebundenen Scope-Datei muss
+  // dem beim Submit eingefrorenen header_digest entsprechen — ein geänderter
+  // HEADER macht den Job fail-closed ohne Modell-Call.
+  {
+    const scopeForDigest = job.scope_id ? getScope(db, job.scope_id) : null;
+    const currentDigest = headerDigest(scopeForDigest ? scopeForDigest.header : (job.payload || planText));
+    if (job.header_digest && currentDigest !== job.header_digest) {
+      jobDone(db, jobId, null, "HEADER Digest stimmt nicht mehr (Scope-HEADER wurde nach der Einreichung geändert)");
+      console.error(red("FEHLER: HEADER-Digest weicht ab – Job wird ohne Modell-Call abgelehnt (fail-closed)."));
+      closeDb();
+      process.exit(2);
+    }
+  }
   // Self-Review-Regel auf dem JOB-Root (nicht dem lokalen --root): deckt
   // Bestands-Jobs ab, die mit unvollständiger Whitelist erstellt wurden
   // (idempotent; die Initialisierung oben lief gegen den lokalen root).
@@ -360,6 +451,37 @@ if (jobId) {
     process.exit(2);
   }
   FILE_WHITELIST = validateProjectFiles(ROOT, jobContext.files);
+  try {
+    // New jobs are snapshot-bound. Legacy rows without a snapshot retain an
+    // explicit current-config fallback, but are never silently synthesized.
+    runtimeConfig = job.runtime_config
+      ? configFromSnapshot(jobRuntimeConfig(job))
+      : loadConfig(configOverrides());
+    model = runtimeConfig.model;
+    lang = runtimeConfig.lang;
+    maxRpm = runtimeConfig.maxRpm;
+  } catch (error) {
+    jobDone(db, jobId, null, `Ungültiger Laufzeit-Snapshot: ${error.message}`);
+    console.error(red(`FEHLER: Ungültiger Laufzeit-Snapshot – ${error.message}`));
+    closeDb();
+    process.exit(3);
+  }
+  if (job.checkout_id) {
+    try {
+      projectIdentity = requireProjectIdentity(db, ROOT);
+      checkoutId = projectIdentity.checkout.checkout_id;
+      anchorRecords = projectIdentity.anchor.records;
+      if (scope) assertScopeCheckout(scope, checkoutId);
+      if (job.root && projectIdentity.checkout.bound_root !== projectIdentity.anchor.root) {
+        throw new Error("Job-Root weicht vom gebundenen Checkout-Root ab.");
+      }
+    } catch (error) {
+      jobDone(db, jobId, null, `Projektidentität nicht verifiziert: ${error.message}`);
+      console.error(red(`FEHLER: Projektidentität nicht verifiziert – ${error.message}`));
+      closeDb();
+      process.exit(2);
+    }
+  }
 } else {
   if (!planText) {
     console.error(red("FEHLER: Kein Plan übergeben. Nutze ein Argument, --plan-file oder stdin."));
@@ -375,7 +497,28 @@ if (jobId) {
       process.exit(2);
     }
   }
+  const directIdentity = (() => {
+    try { return requireProjectIdentity(db, ROOT); }
+    catch (error) {
+      console.error(red(`FEHLER: Projektidentität nicht verifiziert – ${error.message}`));
+      closeDb();
+      process.exit(2);
+    }
+  })();
+  projectIdentity = directIdentity;
+  checkoutId = directIdentity.checkout.checkout_id;
+  anchorRecords = directIdentity.anchor.records;
+  if (scope) {
+    try { assertScopeCheckout(scope, checkoutId); }
+    catch (error) {
+      console.error(red(`FEHLER: Scope-/Projektidentität widerspricht sich – ${error.message}`));
+      closeDb();
+      process.exit(2);
+    }
+  }
+  runtimeConfig = loadConfig(configOverrides());
   jobId = createJob(db, {
+    checkoutId,
     scopeId: scope ? scope.id : null,
     payload: planText,
     diffText: diffText || null,
@@ -385,10 +528,19 @@ if (jobId) {
     files: FILE_WHITELIST.join(","),
     mode: scope ? scope.phase : "plan",
     status: "RUNNING",
+    runtimeConfig: snapshotConfig(runtimeConfig),
+    maxAttempts: runtimeConfig.maxJobAttempts,
   });
+  // Loop-Korrelation auch für Direkt-Runs (TASK-005/010, gleiche Pflicht).
+  db.prepare("UPDATE jobs SET header_digest = ?, change_digest = ?, loop_state = 'QUEUED' WHERE id = ?")
+    .run(headerDigest(scope ? scope.header : planText), snapshotRoot(ROOT, FILE_WHITELIST).digest, jobId);
+  recordLoopEvent(db, { jobId, scopeId: scope ? scope.id : null, eventType: "submitted", toState: "QUEUED", payload: { direct_run: true } });
   job = getJob(db, jobId);
 }
 activeJobId = jobId;
+// Ab hier ist der Job-Snapshot die einzige Runtime-Konfiguration. Der Alias
+// verhindert, dass spätere Refactorings versehentlich wieder CFG verwenden.
+const executionConfig = runtimeConfig;
 
 // ── UI-Start-Events (Phase 2): Job bekannt -> Slot belegen (nur FALSIFY_UI=1) ──
 const phaseLabel = PHASE_LABEL[scope?.phase || job?.mode || "plan"] || "PLAN";
@@ -398,10 +550,10 @@ uiEvt({ t: "phase", phase: phaseLabel });
 uiEvt({ t: "files", n: FILE_WHITELIST.length, list: FILE_WHITELIST });
 
 // ── API-Key aus FALSIFY_HOME/.env oder Prozessumgebung ───────────────────────
-const apiKey = loadApiKey();
-if (!apiKey) {
-  console.error(red(`FEHLER: Kein API-Key gefunden (gesucht: ${keyNames().join(", ")}). Trage einen Key in ${keyEnvFile()} ein oder setze die passende Umgebungsvariable.`));
-  console.error(dim(`Provider/Ziel: ${CFG.provider} (${CFG.apiBase}) – anpassbar via FALSIFY_API_BASE/FALSIFY_MODEL oder ${CFG.configFile}.`));
+const apiKey = loadApiKeyForNames(executionConfig.keyEnvNames);
+if (!apiKey && !isLocalApiBase(executionConfig.apiBase)) {
+  console.error(red(`FEHLER: Kein API-Key gefunden (gesucht: ${executionConfig.keyEnvNames.join(", ")}). Trage einen Key in ${keyEnvFile()} ein oder setze die passende Umgebungsvariable.`));
+  console.error(dim(`Provider/Ziel: ${executionConfig.provider} (${executionConfig.apiBase}) – anpassbar via FALSIFY_API_BASE/FALSIFY_MODEL oder ${executionConfig.configFile}.`));
   uiEvt({ t: "state", s: "ERROR" });
   // Job sauber schliessen, damit er nicht als RUNNING hängen bleibt.
   if (jobId) jobDone(db, jobId, null, "API-Key fehlt");
@@ -438,7 +590,7 @@ async function main() {
   console.log("");
   console.log(cyan(bold("◤ FalsifyMe ◢")));
   console.log(dim(`  Modell : ${model}`));
-  console.log(dim(`  Provider: ${CFG.provider} (${CFG.apiBase})`));
+  console.log(dim(`  Provider: ${executionConfig.provider} (${executionConfig.apiBase})`));
   console.log(dim(`  Root   : ${ROOT}  (Agent-Datenzugriff)`));
   if (FILE_WHITELIST.length === 0) {
     // Direkt-Run ohne --files (auch --job-id-Lauf mit leerer Whitelist auf
@@ -452,7 +604,7 @@ async function main() {
     console.log(dim(`  Scope  : ${scope.id}`));
     console.log(dim(`  Phase  : ${scope.phase}  (${scope.phase === "plan" ? "PLAN-Prüfung – Init" : scope.phase === "research" ? "RESEARCH – Datenprüfung" : "WRITE-Prüfung – Review der Umsetzung"})`));
   }
-  console.log(dim(`  Thinking: ${CFG.reasoningEffort} · max_tokens ${CFG.maxTokens} · temp ${CFG.temperature}`));
+  console.log(dim(`  Thinking: ${executionConfig.reasoningEffort} · max_tokens ${executionConfig.maxTokens} · temp ${executionConfig.temperature}`));
   console.log(dim(`  Iteration: ${planText.length} Zeichen${diffText ? ` · Diff: ${diffText.length} Zeichen` : ""}`));
   console.log(dim("  Streaming: Reasoning · Kritik · ⟳ = Agent liest Dateien"));
   console.log("");
@@ -460,7 +612,7 @@ async function main() {
   const systemPrompt = lang === "en" ? SYSTEM_EN_FULL : SYSTEM_DE_FULL;
   // UI-Traceability (E2E-Befund): die UI muss SEHEN, wer denkt und mit welchem
   // Modell - sonst ist die Gegenpruefung von der Erstpruefung nicht unterscheidbar.
-  uiEvt({ t: "model", thinker: model, twin: CFG.twinModel, who: "thinker" });
+  uiEvt({ t: "model", thinker: model, twin: executionConfig.twinModel, who: "thinker" });
   const findings = scope ? getFindings(db, scope.id) : [];
   const userContent = buildUserContent({
     header: scope ? scope.header : null,
@@ -476,6 +628,7 @@ async function main() {
     agentIntent: job?.agent_intent || null,
     affected: (job?.affected || "").split(",").map((s) => s.trim()).filter(Boolean),
     lastDivergence: scope ? scope.last_divergence : null,
+    anchorRecords,
     // P0 (Regel 1): Coverage-Anker des Probe-Sets – die Thinker-Antwort darf
     // requirement_ref nur auf diese Original-H_i-IDs beziehen (keine Paraphrase).
     requirementList: renderRequirementList(splitRequirement(scope ? scope.header : planText)),
@@ -489,20 +642,20 @@ async function main() {
   // wieder Platz hat (enforceRateLimit blockiert bis zum freien Slot).
   // Begrenzt durch maxJobAttempts/jobRetryBackoffMs; nicht-retrybare Fehler
   // (z. B. HTTP 401/403, Parse-Fehler) gehen direkt in den Fehlerpfad.
-  const maxAttempts = Math.max(1, Number(CFG.maxJobAttempts) || 1);
-  const backoffMs = Math.max(0, Number(CFG.jobRetryBackoffMs) || 0);
+  const maxAttempts = Math.max(1, Number(executionConfig.maxJobAttempts) || 1);
+  const backoffMs = Math.max(0, Number(executionConfig.jobRetryBackoffMs) || 0);
   const retryableOverload = (msg) => /überlastung|Überlastung|429|rate.?limit|HTTP 5\d\d|timeout|Netzwerk/i.test(msg);
   try {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         result = await runAgent({
       systemPrompt, userContent, model, apiKey,
-      apiBase: CFG.apiBase,
-      maxTokens: CFG.maxTokens,
-      reasoningEffort: CFG.reasoningEffort,
-      maxToolRounds: CFG.maxToolRounds,
-      temperature: CFG.temperature,
-      timeoutMs: CFG.timeoutMs,
+      apiBase: executionConfig.apiBase,
+      maxTokens: executionConfig.maxTokens,
+      reasoningEffort: executionConfig.reasoningEffort,
+      maxToolRounds: executionConfig.maxToolRounds,
+      temperature: executionConfig.temperature,
+      timeoutMs: executionConfig.timeoutMs,
       root: ROOT,
       whitelist: FILE_WHITELIST,
       onTool: (info) => {
@@ -534,7 +687,7 @@ async function main() {
     } else {
       console.error(red(`\n✖ ${msg}`));
     }
-    jobDone(db, jobId, null, msg);
+    jobDone(db, jobId, null, msg, { failureKind: classifyFailure(e) });
     const secs = ((Date.now() - t0) / 1000).toFixed(1);
     console.log(dim(`── ${secs}s – Fehler ──`));
     console.log(dim(`Job: ${jobId}  ·  Status: ERROR (falsify status ${jobId})`));
@@ -646,11 +799,11 @@ async function main() {
     // sind WÄHLBAR (FALSIFY_TWIN_*). Ohne Diversität ehrlich warnen — der
     // gemeinsame Blindspot (gleiche Modellfamilie/Biases) ist dann eine
     // bekannte, dokumentierte Grenze, kein stiller Mangel.
-    const twinKey = CFG.twinApiKeyEnv ? loadApiKeyForNames(CFG.twinApiKeyEnv) : apiKey;
-    if (CFG.twinApiKeyEnv && !twinKey) {
-      throw new Error(`Twin-API-Key nicht gefunden (${CFG.twinApiKeyEnv.join(", ")}) – in ${keyEnvFile()} setzen oder FALSIFY_TWIN_API_KEY_ENV entfernen.`);
+    const twinKey = executionConfig.twinApiKeyEnv ? loadApiKeyForNames(executionConfig.twinApiKeyEnv) : apiKey;
+    if (executionConfig.twinApiKeyEnv && !twinKey) {
+      throw new Error(`Twin-API-Key nicht gefunden (${executionConfig.twinApiKeyEnv.join(", ")}) – in ${keyEnvFile()} setzen oder FALSIFY_TWIN_API_KEY_ENV entfernen.`);
     }
-    if (!CFG.twinDiversity) {
+    if (!executionConfig.twinDiversity) {
       console.warn(yellow("⚠ Gegenprüfung läuft mit dem PRIMÄRMODELL (keine Modell-Diversität konfiguriert: FALSIFY_TWIN_MODEL/FALSIFY_TWIN_API_BASE). BESTAETIGT heißt dann: der Fall hält Nachprüfung durch dieselbe Modellfamilie stand – ein geteilter Bias/Blindspot ist nicht ausgeschlossen."));
     }
     // Dateien während der Prüfung unverändert (P0, letztes harte Gate):
@@ -664,20 +817,20 @@ async function main() {
       diffText,
       header: scope ? scope.header : null,
       lang,
-      model: CFG.twinModel,
+      model: executionConfig.twinModel,
       apiKey: twinKey,
-      apiBase: CFG.twinApiBase,
+      apiBase: executionConfig.twinApiBase,
       opts: {
         // F-11-Fix (2026-09-02): eigenes Twin-Token-Budget - der Primaerwert
         // (bis 1e6) reisst Groq (> 16384 = 400) und OpenRouter-Free-Tier
         // (402) auf. Default min(Primaer, 16384), per CLI setzbar.
-        maxTokens: CFG.twinMaxTokens,
+        maxTokens: executionConfig.twinMaxTokens,
         // F-3-Fix (2026-09-02): eigener Twin-Effort (Fallback = Primaerwert) -
         // vorher erbte der Twin CFG.reasoningEffort; Groq lehnt high mit 400 ab.
-        reasoningEffort: CFG.twinReasoningEffort,
-        maxToolRounds: CFG.maxToolRounds,
-        temperature: CFG.temperature,
-        timeoutMs: CFG.timeoutMs,
+        reasoningEffort: executionConfig.twinReasoningEffort,
+        maxToolRounds: executionConfig.maxToolRounds,
+        temperature: executionConfig.temperature,
+        timeoutMs: executionConfig.timeoutMs,
       },
       root: ROOT,
       whitelist: FILE_WHITELIST,
@@ -807,6 +960,57 @@ async function main() {
   if (befund) console.log(dim(`BEFUND: ${befund}`));
 
   if (verdict === "WRITE") {
+    // TASK-007: Kanonischer v1-Handoff NUR nach bestandenem technischen Gate.
+    // Modellprosa/parseVerdict allein haben diesen Pfad nie erreicht (das Gate
+    // oben entscheidet). Der Handoff beschreibt die Freigabe maschinenlesbar
+    // und wird als JSON persistiert (cli/log/answer lesen sie).
+    try {
+      const handoff = buildHandoff({
+        jobId,
+        scopeId: scope ? scope.id : null,
+        checkoutId: checkoutId ?? null,
+        iterationId: jobId,
+        verdict: "WRITE",
+        phase: scope ? scope.phase : (job?.mode || "write"),
+        reasons: befund ? [befund] : [],
+        // FIX (E2E-Befund): die Raw-Twin-Results tragen KEIN evidenceOk —
+        // das wird erst durch probeEvidenceOk() berechnet (Block oben). Der
+        // Handoff muss hier die EVIDENZ-PRÜFUNG reproduzieren, sonst trägt
+        // jedes Probe evidenceOk=false und der eigene Validator lehnt den
+        // Handoff des freigegebenen WRITE-Laufs ab (Coder-Brief unmöglich).
+        probeResults: (twin?.results || []).map((r) => ({
+          probe_id: r.probe_id,
+          requirement_ref: probeValidation?.probes?.find?.((p) => p.id === r.probe_id)?.requirement_ref ?? null,
+          status: r.status,
+          evidenceOk: probeEvidenceOk(r, twin, { root: ROOT, whitelist: FILE_WHITELIST }) === true,
+          reason: r.evidence || "",
+        })),
+        twinEvidence: twin ? {
+          tool_rounds: Number(twin.toolRounds ?? 0),
+          file_refs: (twin.toolEvidence || [])
+            .filter((e) => e?.tool === "read_file" && e?.success === true)
+            .map((e) => String(e?.file || e?.path || "")).filter(Boolean).slice(0, 50),
+        } : null,
+        beforeSnapshot: snapshotRoot(ROOT, FILE_WHITELIST),
+        allowedFiles: FILE_WHITELIST,
+      });
+      const handoffPath = path.join(falsifyHome(), "logs", `handoff-${jobId}.json`);
+      fs.writeFileSync(handoffPath, serializeHandoff(handoff), "utf8");
+      recordLoopEvent(db, {
+        jobId, scopeId: scope ? scope.id : null, handoffId: handoff.handoff_id,
+        changeDigest: handoff.before_snapshot?.digest ?? null,
+        eventType: "handoff_emitted", toState: "WRITE_AUTHORIZED",
+        payload: { handoff_id: handoff.handoff_id, path: handoffPath },
+      });
+      db.prepare("UPDATE jobs SET handoff_id = ?, loop_state = 'WRITE_AUTHORIZED' WHERE id = ?").run(handoff.handoff_id, jobId);
+      // UI-123: Loop-Zustand dem Dock spiegeln (nur Anzeige, keine UI-Wahrheit).
+      uiEvt({ t: "loop", s: "WRITE_AUTHORIZED" });
+      console.log(green(`HANDOFF_ID=${handoff.handoff_id}`));
+      console.log(dim(`Handoff (v1, maschinenlesbar): ${handoffPath}`));
+      console.log(dim(`→ Nach der Umsetzung: falsify handoff complete --file <report.json> (Re-Review wird automatisch eingereicht).`));
+    } catch (e) {
+      console.warn(yellow(`⚠ Handoff-Erzeugung fehlgeschlagen (${e.message}) – die WRITE-Freigabe selbst bleibt bestehen; Re-Review benötigt einen manuellen Submit.`));
+    }
     uiEvt({ t: "verdict", v: "WRITE" });
     uiEvt({ t: "done" });
     // Exit-Code zentral: exitCodeOf ist die EINZIGE Quelle fuer Verdict-Exits
@@ -814,7 +1018,7 @@ async function main() {
     process.exitCode = exitCodeOf(verdict);
     console.log(green(bold(`\nVERDICT: WRITE → Freigabe: READ-ONLY → WRITE`)));
     if (scope) console.log(green(`Scope ${scope.id} ist freigegeben – der Agent darf jetzt schreiben (WRITE-Loop/REVIEW-Loop).`));
-    if (scope) console.log(green("GAP: geschlossen – die Coder-Annahme hat die Falsifikations-Challenge überstanden."));
+    if (scope) console.log(green("GAP: geschlossen – die Ausgangsbehauptung des USER AGENT hat die Falsifikations-Challenge überstanden."));
     closeDb();
     process.exitCode = 0;
     return;
@@ -841,7 +1045,7 @@ async function main() {
       ? "→ FalsifyMe braucht weitere Daten (Falsifikations-Modul): read-only recherchieren, Befunde ergänzen, erneut einreichen."
       : "→ Iteration überarbeiten (Plan konkretisieren), erneut einreichen.";
     console.log(yellow(`\nVERDICT: ${verdict} – nicht freigegeben (Loop)`));
-    if (scope && befund) console.log(yellow(`GAP offen (Divergenz Coder-Urteil vs. Falsifikation): ${befund}`));
+    if (scope && befund) console.log(yellow(`GAP offen (Divergenz USER-AGENT-Urteil vs. Falsifikation): ${befund}`));
     console.log(yellow(hint));
     closeDb();
     process.exitCode = 1;

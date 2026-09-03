@@ -3,7 +3,7 @@
 # FalsifyMe Workflow-Instructions fuer Bash-Agenten
 #
 # FalsifyMe = unabhaengiger read-only Falsifizierungs-Agent
-# Coding-Agent = eigentliche Arbeits-/Write-Instanz
+# USER AGENT = externe Arbeits-/Write-Instanz
 # Sourcen dieses Skripts, dann: falsifyme_check --user-input "<auftrag>" \
 #   --plan plan.txt --root /projekt --files "a.js,b.js"
 
@@ -38,7 +38,7 @@ falsifyme_check() {
 
 # Pflichtprotokoll nach jeder Arbeit:
 # CHANGE_GATE_10X = A1..A10 jeweils JA mit Proof und Test.
-# FALSIFICATION_RECORD_10X = F1..F10 (Coder claim, User contract, Scope,
+# FALSIFICATION_RECORD_10X = F1..F10 (User-Agent claim, User contract, Scope,
 # Annahme, Angriff, verifizierte Evidenz, Gegenbeweise, offene Luecke,
 # Rest-Risiko, Release-Entscheidung).
 # NEIN/UNBEKANNT/fehlender Beleg = BLOCKED – mindestens eine Invariante ist nicht nachgewiesen.

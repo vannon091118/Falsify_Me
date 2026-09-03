@@ -1,6 +1,6 @@
 {
-  "name": "FalsfyME Agent Skill",
-  "version": "2.0.0",
+  "name": "FalsifyMe Agent Skill",
+  "version": "0.8.1-beta",
   "description": "Pflicht-Review für Coding-Agents (Scope-Protokoll): PLAN ist immer Init, User-Input 1:1 als HEADER, Loop bis Scope erfüllt – Freigabe nur bei VERDICT: WRITE",
 
   "settings": {
@@ -10,7 +10,7 @@
     "timeoutMs": 300000,
     "language": "de",
     "maxWindows": 3,
-    "persistence": "SQLite (WAL) in FALSIFY_HOME (~/.Falsify) – ausserhalb des Repos",
+    "persistence": "SQLite (WAL) in FALSIFY_HOME (~/.Falsify_Private) – ausserhalb des Repos",
     "readOnlyVsProject": true
   },
 
@@ -57,13 +57,13 @@
       "3. VERDICT: WRITE → FREIGABE (READ-ONLY → WRITE): jetzt umsetzen, dann Umsetzung erneut reviewen bis Scope erfüllt",
       "4. VERDICT: RESEARCH → FalsifyMe braucht weitere Daten: read-only recherchieren, Befunde ergänzen, erneut einreichen",
       "5. VERDICT: PLAN → Plan überarbeiten (HEADER behalten), erneut einreichen",
-      "6. Neuer Scope startet frisch/getrennt (Context wird nie vermischt); FalsifyMe bleibt read-only zum Projekt"
+      "6. Neuer Scope startet frisch/getrennt (Context wird nie vermischt); FalsifyMe bleibt read-only zum Projekt (einzige Schreibausnahme: der identitätstragende FalsifyME.md-Anker – nie Scopes/Verdicts/Regeln)"
     ]
   },
 
   "agentInstructions": {
-    "de": "PFLICHT: FalsifyMe-Review vor jeder Code-Änderung. PLAN ist IMMER die Init-Aktion: User-Input 1:1 als HEADER (falsify scope new). Loop bis Scope erfüllt: VERDICT: WRITE = Freigabe (READ-ONLY → WRITE) und umsetzen; VERDICT: RESEARCH = read-only recherchieren (FalsifyMe braucht Daten), Befunde ergänzen, erneut einreichen; VERDICT: PLAN = Plan überarbeiten, erneut einreichen. 1 Artefakt pro Scope (SQLite). Jeder Job startet das Modell neu – kein Kontext-Mixing. Bis zu 3 Falsify-Fenster, immer offen. FalsifyMe bleibt absolut read-only zum Projekt. Nutze: bash agent-skill-falsify.sh --user-input \"<user-input>\" --plan <plan-datei> --root <projekt-root> --files <datei-liste>",
-    "en": "MANDATORY: FalsifyMe review before every code change. PLAN is ALWAYS the init action: quote the user input 1:1 as HEADER (falsify scope new). Loop until the scope is fulfilled: VERDICT: WRITE = release (READ-ONLY → WRITE) and implement; VERDICT: RESEARCH = research read-only (FalsifyMe needs data), add findings, resubmit; VERDICT: PLAN = rework the plan, resubmit. 1 artifact per scope (SQLite). Every job restarts the model fresh – no context mixing. Up to 3 Falsify windows, always open. FalsifyMe stays absolutely read-only to the project. Use: bash agent-skill-falsify.sh --user-input \"<user-input>\" --plan <plan-file> --root <project-root> --files <file-list>"
+    "de": "PFLICHT: FalsifyMe-Review vor jeder Code-Änderung. PLAN ist IMMER die Init-Aktion: User-Input 1:1 als HEADER (falsify scope new). Loop bis Scope erfüllt: VERDICT: WRITE = Freigabe (READ-ONLY → WRITE) und umsetzen; VERDICT: RESEARCH = read-only recherchieren (FalsifyMe braucht Daten), Befunde ergänzen, erneut einreichen; VERDICT: PLAN = Plan überarbeiten, erneut einreichen. 1 Artefakt pro Scope (SQLite). Jeder Job startet das Modell neu – kein Kontext-Mixing. Bis zu 3 Falsify-Fenster, immer offen. FalsifyMe bleibt read-only zum Projekt (einzige Schreibausnahme: der identitätstragende FalsifyME.md-Anker – nie Scopes/Verdicts/Regeln). Nutze: bash agent-skill-falsify.sh --user-input \"<user-input>\" --plan <plan-datei> --root <projekt-root> --files <datei-liste>",
+    "en": "MANDATORY: FalsifyMe review before every code change. PLAN is ALWAYS the init action: quote the user input 1:1 as HEADER (falsify scope new). Loop until the scope is fulfilled: VERDICT: WRITE = release (READ-ONLY → WRITE) and implement; VERDICT: RESEARCH = research read-only (FalsifyMe needs data), add findings, resubmit; VERDICT: PLAN = rework the plan, resubmit. 1 artifact per scope (SQLite). Every job restarts the model fresh – no context mixing. Up to 3 Falsify windows, always open. FalsifyMe stays read-only to the project (sole write exception: the identity anchor FalsifyME.md – never scopes/verdicts/rules). Use: bash agent-skill-falsify.sh --user-input \"<user-input>\" --plan <plan-file> --root <project-root> --files <file-list>"
   },
 
   "exitCodes": {

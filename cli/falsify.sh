@@ -22,6 +22,7 @@
 #                                            Ergebnis kommt im Moment der Fertigstellung.
 #   falsify status <job-id> | falsify jobs | falsify stats [--json] | falsify state | falsify check
 #   falsify scope show <id> | falsify scope trace <id> | falsify scope list
+#   falsify anchor init|check|rebind|clone|record [--root <dir>]
 #   falsify scope trace <id>                 GAP-Loop je Runde: Welle/Verdict/Intent/Befund + Loop-Ausgang
 #   falsify log <job-id> | falsify answer <job-id> [--file pfad]
 #   falsify history [--last n]
@@ -96,7 +97,7 @@ case "$cmd" in
     fi
     echo ""
     echo "Fertig. Ab sofort in JEDER neuen Bash (auch Agents):"
-    echo "  falsify scope new ... | trace ... | submit ... | wait | status | jobs | state | check | history | log | answer | run"
+    echo "  falsify scope new ... | trace ... | submit ... | wait | status | jobs | history | log | answer | run"
     echo "Aktive Shells:  source ~/.bashrc"
     ;;
   submit)
@@ -119,8 +120,8 @@ case "$cmd" in
     exec bash "$V2_DIR/cli/falsify.sh" wait "$id"
     ;;
   wait)
-    # Poll-Ping mit Coder-Auswertung (KEIN fester Timeout): Denk-/Schreibdauer
-    # ist anbieterabhängig nicht abschätzbar. Der Coder bewertet den Zustand
+    # Poll-Ping mit USER-AGENT-Auswertung (KEIN fester Timeout): Denk-/Schreibdauer
+    # ist anbieterabhängig nicht abschätzbar. Der USER AGENT bewertet den Zustand
     # und entscheidet ueber Weiterwarten oder Abbruch (falsify abort <id>).
     ping=0; abort_flag=0
     for a in "$@"; do [ "$a" = "--ping" ] && ping=1; [ "$a" = "--abort" ] && abort_flag=1; done
@@ -204,6 +205,12 @@ case "$cmd" in
     ;;
   scope)
     node "$V2_DIR/cli/main.mjs" scope "$@"
+    ;;
+  anchor)
+    node "$V2_DIR/cli/main.mjs" anchor "$@"
+    ;;
+  handoff)
+    node "$V2_DIR/cli/main.mjs" handoff "$@"
     ;;
   ensure-home)
     node "$V2_DIR/cli/main.mjs" ensure-home

@@ -13,6 +13,11 @@ Verwendung:
   falsify scope show <id> [--full]        Scope-Artefakt (Header, Phase, letzter Befund, alle Befunde)
   falsify scope trace <id>                GAP-Loop je Runde: Welle/Verdict/Intent/Befund + Loop-Ausgang
   falsify scope list [--all]              aktive (oder alle) Scopes
+  falsify anchor init|check|rebind|clone   Projektanker verwalten (Root-Bindung, kein Verdict-Zustand)
+  falsify anchor record <typ> …            bestätigten Decision-Record im Anker speichern
+  falsify handoff complete --file <report.json> --root <dir>
+                                          Externen Write-Report konsumieren;
+                                          Re-Review wird automatisch eingereicht
   falsify run [--submit|--falsiflow] …   EINHEITLICHER Einstieg (Generalisierung
                                         2026-09-01): Direkt-Run, Job-Einreichung
                                         (--submit) oder kompletter Flow bis zum

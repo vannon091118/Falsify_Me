@@ -15,6 +15,9 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
+import { initAnchor } from "../core/identity.mjs";
+import { bindAnchor } from "../artifacts/projects.mjs";
+import { openDb, closeDb } from "../artifacts/db.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const savedHome = process.env.FALSIFY_HOME;
@@ -100,6 +103,11 @@ test("ensureSelfReviewWhitelist: Fremdprojekt bleibt unverändert (nie Zugriffse
 test("Live-Submit-Smoke: --files nur WIRING.md -> Job-Whitelist enthält den Kern (isolierte Home)", () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-sr-sub-"));
   process.env.FALSIFY_HOME = home;
+  const anchor = initAnchor(ROOT);
+  assert.equal(anchor.ok, true, anchor.message);
+  const identityDb = openDb();
+  bindAnchor(identityDb, anchor, ROOT);
+  closeDb();
   try {
     const plan = path.join(home, "plan.txt");
     fs.writeFileSync(plan, "Prüfe das Repo gegen den Vertrag.");
@@ -120,6 +128,7 @@ test("Live-Submit-Smoke: --files nur WIRING.md -> Job-Whitelist enthält den Ker
     assert.ok(files.includes("artifacts/jobs.mjs"));
     assert.ok(!/[,\s]custom\.js/.test(files), "keine Fantasiepfade");
   } finally {
+    try { fs.rmSync(path.join(ROOT, "FalsifyME.md"), { force: true }); } catch { /* test cleanup */ }
     process.env.FALSIFY_HOME = savedHome;
     fs.rmSync(home, { recursive: true, force: true });
   }

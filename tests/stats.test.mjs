@@ -241,7 +241,7 @@ test("falsify scope trace: GAP-Loop je Runde aus der Queue abgeleitet (UI-116, r
     assert.match(out, /Jobs: 2 · Findings: 2/, "Zaehler aus der Queue");
     assert.match(out, /Welle scan · DONE RESEARCH/, "Runde 1 mit Welle + Verdict");
     assert.match(out, /Welle plan · DONE PLAN/, "Runde 2 mit Welle + Verdict");
-    assert.match(out, /Intent: Erste Annahme: nur Header lesen/, "Coder-Intent je Runde sichtbar");
+    assert.match(out, /Intent: Erste Annahme: nur Header lesen/, "USER-AGENT-Intent je Runde sichtbar");
     assert.match(out, /Befund: Runde 2: Gate-Format lueckig/, "Befund je Runde sichtbar");
     assert.match(out, /Loop-Ausgang: OFFEN/, "ehrlicher Loop-Ausgang bei offenem Scope");
 

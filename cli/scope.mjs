@@ -8,6 +8,8 @@ import { openDb, closeDb } from "../artifacts/db.mjs";
 import { createScope, getScope, listScopes, getFindings } from "../artifacts/scopes.mjs";
 import { listJobs } from "../artifacts/jobs.mjs";
 import { fail, truncate } from "./util.mjs";
+import { validateAnchorForRoot } from "../core/identity.mjs";
+import { assertAnchorBinding } from "../artifacts/projects.mjs";
 
 export function runScope(args) {
   const sub = args[0];
@@ -21,10 +23,18 @@ export function runScope(args) {
 // ── scope new "<user-input>" ────────────────────────────────────────────────
 function scopeNew(rest) {
   if (!rest.length) fail('Verwendung: falsify scope new "<user-input>" – der Text wird 1:1 zum HEADER');
-  const header = rest.join(" ").trim();
+  const rootIndex = rest.indexOf("--root");
+  const root = rootIndex >= 0 && rest[rootIndex + 1] ? rest[rootIndex + 1] : process.cwd();
+  const headerArgs = rootIndex >= 0 ? rest.slice(0, rootIndex) : rest;
+  const header = headerArgs.join(" ").trim();
   if (!header) fail("User-Input darf nicht leer sein.");
   const db = openDb();
-  const scope = createScope(db, header);
+  const anchor = validateAnchorForRoot(root);
+  if (!anchor.ok) fail(`Projektanker fehlt/ist ungueltig: ${anchor.message} (falsify anchor init --root "${root}")`);
+  let binding;
+  try { binding = assertAnchorBinding(db, anchor); }
+  catch (error) { fail(error.message); }
+  const scope = createScope(db, header, { checkoutId: binding.checkout_id });
   console.log(`SCOPE_ID=${scope.id}`);
   console.log(`HEADER (1:1): ${scope.header}`);
   console.log("Phase: plan  ·  PLAN ist immer die Init-Aktion eines Scopes.");
@@ -48,9 +58,9 @@ function scopeShow(rest) {
   // UI-094: offene Whitelist-Nachforderung sichtbar (was beim naechsten Submit automatisch ergaenzt wird).
   if (scope.research_additions) console.log(`Whitelist-Nachforderung (RESEARCH, beim naechsten Submit automatisch ergaenzt): ${scope.research_additions}`);
   // Loop-Anker (UI-107): offene Scope-Divergenz sichtbar (der Punkt, an dem
-  // Coder- und Thinker-Vorschlaege auseinanderliegen — vor dem naechsten
+  // USER-AGENT- und Thinker-Vorschlaege auseinanderliegen — vor dem naechsten
   // Submit durch Scope-Praezisierung aufzuloesen).
-  if (scope.last_divergence) console.log(`Offene Scope-Divergenz (Loop-Anker, Thinker vs. Coder-Intent — vor dem naechsten Submit praezisieren): ${scope.last_divergence}`);
+  if (scope.last_divergence) console.log(`Offene Scope-Divergenz (Loop-Anker, Thinker vs. USER-AGENT-Intent — vor dem naechsten Submit praezisieren): ${scope.last_divergence}`);
   console.log(`Angelegt: ${scope.created_at}`);
   if (scope.done_at) console.log(`Abgeschlossen: ${scope.done_at}`);
   const findings = getFindings(db, scope.id);

@@ -6,8 +6,8 @@ Dieses AGENTS.md wird vom Coding-Agenten gelesen und zwingt ihn in den
 FalsifyMe-Falsifizierungs-Workflow.
 
 FalsifyMe = unabh\xE4ngiger read-only Falsifizierungs-Agent
-Coding-Agent = eigentliche Arbeits-/Write-Instanz
-Bis VERDICT: WRITE bleibt der Coding-Agent READ-ONLY.
+USER AGENT = externe Arbeits-/Write-Instanz
+Bis VERDICT: WRITE bleibt der USER AGENT READ-ONLY.
 Dock = sichtbare Visualisierung der laufenden FalsifyMe-Arbeit
 
 ## PFLICHT vor jeder Code-\xC4nderung

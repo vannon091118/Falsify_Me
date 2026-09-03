@@ -6,7 +6,7 @@
 // Intent) ist der Anker; der eingereichte Plan/diff wird gegen die REALITAET
 // (Dateien unter root, Whitelist) geprueft.
 // Ergebnis: { feasible, blocks[], findings[] } – die Hinweise gehen als
-// KONTEXT an den Falsifikations-Agent (Thinker), der die Coder-Annahmen
+// KONTEXT an den Falsifikations-Agent (Thinker), der die Ausgangsbehauptungen des USER AGENT
 // selbst falsifiziert. Dieser Check erteilt KEIN Verdict und schliesst KEINEN
 // Job (kein jobDone/addFinding) – Verdict-Hoheit liegt ausschliesslich beim
 // unabhängigen Betrachter (Modellpfad). RESEARCH bleibt ein

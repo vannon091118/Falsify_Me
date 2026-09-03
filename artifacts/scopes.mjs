@@ -18,13 +18,13 @@ export function verdictToPhase(verdict) {
 }
 
 /** Legt einen Scope an. header = User-Input 1:1 (HEADER des Prompts). */
-export function createScope(db, header) {
+export function createScope(db, header, { checkoutId = null } = {}) {
   const id = genId("scope");
   const now = nowIso();
   db.prepare(
-    "INSERT INTO scopes(id, header, status, phase, created_at, updated_at) VALUES(?, ?, 'active', 'plan', ?, ?)"
-  ).run(id, header, now, now);
-  return { id, header };
+    "INSERT INTO scopes(id, checkout_id, header, status, phase, created_at, updated_at) VALUES(?, ?, ?, 'active', 'plan', ?, ?)"
+  ).run(id, checkoutId, header, now, now);
+  return { id, header, checkoutId };
 }
 
 export function getScope(db, id) {
@@ -67,7 +67,7 @@ export function updateScopeAfterReview(db, scopeId, verdict, befund, subPrompt, 
     db.prepare("UPDATE scopes SET research_additions = NULL WHERE id = ?").run(scopeId);
   }
   // GAP-Erfassung (Divergenz-Loop): Der Gap ist offen, solange das
-  // Falsifikations-Ergebnis die Coder-Annahme nicht freigibt (PLAN/RESEARCH/ASK).
+  // Falsifikations-Ergebnis die Ausgangsbehauptung des USER AGENT nicht freigibt (PLAN/RESEARCH/ASK).
   // Mit WRITE ist der Gap geschlossen (last_gap = null).
   const gap = v === "WRITE" ? null : (befund || null);
   // Loop-Anker (UI-107): last_divergence wird bei deklarierter Divergenz
@@ -122,7 +122,7 @@ export function getFindings(db, scopeId) {
 /** Artefakt-Ansicht (für CLI/prompt) – nur Daten des EIGENEN Scopes. */
 export function artifactView(scope, findings) {
   const lines = [`- Phase: ${scope.phase}`];
-  if (scope.last_gap) lines.push(`- GAP (offen, Divergenz Coder-Urteil vs. Falsifikation): ${scope.last_gap}`);
+  if (scope.last_gap) lines.push(`- GAP (offen, Divergenz USER-AGENT-Urteil vs. Falsifikation): ${scope.last_gap}`);
   else if (scope.phase === "write") lines.push("- GAP: geschlossen (WRITE-Freigabe nach Falsifikations-Challenge)");
   if (scope.last_befund) lines.push(`- Letzter Befund: ${scope.last_befund}`);
   if (scope.sub_prompt) lines.push(`- Sub-Prompt (Fallback gegen Drift): ${scope.sub_prompt}`);
@@ -132,10 +132,10 @@ export function artifactView(scope, findings) {
     lines.push(`- Whitelist-Nachforderung (RESEARCH, beim nächsten Submit automatisch ergänzt): ${scope.research_additions}`);
   }
   // Loop-Anker (UI-107): eine offene SCOPE-DIVERGENZ ist der Punkt, an dem
-  // Coder- und Thinker-Vorschläge auseinanderliegen — sie muss im Artefakt
+  // USER-AGENT- und Thinker-Vorschläge auseinanderliegen — sie muss im Artefakt
   // sichtbar sein (der Submit muss sie durch Scope-Präzisierung auflösen).
   if (scope.last_divergence) {
-    lines.push(`- Offene Scope-Divergenz (Loop-Anker, Thinker vs. Coder-Intent — vor dem nächsten Submit präzisieren): ${scope.last_divergence}`);
+    lines.push(`- Offene Scope-Divergenz (Loop-Anker, Thinker vs. USER-AGENT-Intent — vor dem nächsten Submit präzisieren): ${scope.last_divergence}`);
   }
   if (findings?.length) {
     lines.push(`- Alle Befunde (${findings.length}):`);

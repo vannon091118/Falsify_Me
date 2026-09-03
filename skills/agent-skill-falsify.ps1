@@ -1,5 +1,5 @@
 ﻿# ─────────────────────────────────────────────────────────────────────────────
-# AGENT SKILL: FalsfyME Pflicht-Check (PowerShell) · FalsifyMe 2.0
+# AGENT SKILL: FalsifyMe Pflicht-Check (PowerShell) · FalsifyMe 2.0
 # -----------------------------------------------------------------------------
 # SCOPE-PROTOKOLL (nicht verhandelbar):
 #   1. PLAN ist IMMER die Init-Aktion eines Scopes. User-Input 1:1 wird zum
@@ -13,7 +13,8 @@
 #                             recherchieren, Befunde ergaenzen, erneut einreichen
 #      - VERDICT: WRITE    -> FREIGABE: READ-ONLY -> WRITE. Jetzt umsetzen, dann
 #                             die Umsetzung erneut reviewen (WRITE-/REVIEW-Loop)
-#   4. FalsifyMe selbst bleibt ABSOLUT read-only zum Projekt.
+#   4. FalsifyMe selbst bleibt read-only zum Projekt (einzige Schreibausnahme:
+#      der identitätstragende FalsifyME.md-Anker – nie Scopes/Verdicts/Regeln).
 #   5. Nach dem finalen Review endet der Modellkontext; der naechste Scope
 #      startet frisch (getrennt, kein Vermischen).
 #
@@ -99,7 +100,7 @@ function Ensure-FalsifyDock {
 
 # ── Scope sicherstellen: PLAN ist IMMER die Init-Aktion ─────────────────────
 function Ensure-FalsifyScope {
-    param([string]$ScopeId, [string]$UserInput)
+    param([string]$ScopeId, [string]$UserInput, [string]$RootDir)
 
     if ($ScopeId) { return $ScopeId }
 
@@ -107,8 +108,9 @@ function Ensure-FalsifyScope {
         throw "Beim Scope-Start ist -UserInput Pflicht (User-Input 1:1 -> HEADER). Bei Loop-Fortsetzung -ScopeId angeben."
     }
 
+    if (-not $RootDir) { throw "Beim Scope-Start ist -RootDir Pflicht; Scope wird nicht ohne Projekt-Root angelegt." }
     Write-Step "PLAN = Init: Scope anlegen - User-Input wird 1:1 zum HEADER..."
-    $out = & node (Join-Path $V2Dir "cli\main.mjs") scope new $UserInput 2>&1
+    $out = & node (Join-Path $V2Dir "cli\main.mjs") scope new $UserInput --root $RootDir 2>&1
     if ($LASTEXITCODE -ne 0) { throw "Scope konnte nicht angelegt werden: $out" }
 
     $scopeId = ""
@@ -153,9 +155,9 @@ function Invoke-FalsifyCheck {
     }
 
     # ── 0b. Scope: beim Start anlegen (PLAN = Init, HEADER = User-Input 1:1) ──
-    $scope = Ensure-FalsifyScope -ScopeId $ScopeId -UserInput $UserInput
+    $scope = Ensure-FalsifyScope -ScopeId $ScopeId -UserInput $UserInput -RootDir $RootDir
 
-    Write-Step "FalsfyME Pflicht-Check wird gestartet..."
+    Write-Step "FalsifyMe Pflicht-Check wird gestartet..."
     Write-Info "Scope: $scope"
     Write-Info "Plan: $PlanFile"
     Write-Info "Root: $RootDir"
@@ -232,7 +234,7 @@ if ($MyInvocation.InvocationName -eq '.') {
 # ── CLI-Modus ──────────────────────────────────────────────────────────────
 if ($Help) {
     Write-Host @"
-AGENT SKILL: FalsfyME Pflicht-Check (PowerShell) · FalsifyMe 2.0
+AGENT SKILL: FalsifyMe Pflicht-Check (PowerShell) · FalsifyMe 2.0
 
 SCOPE-PROTOKOLL: PLAN ist IMMER Init (User-Input 1:1 als HEADER).
 Loop: PLAN → überarbeiten · RESEARCH → read-only recherchieren · WRITE → Freigabe.
@@ -261,7 +263,7 @@ EXIT-CODES:
 WICHTIG:
   - KEIN Bash! Nur PowerShell + Node.js
   - Bis zu 3 Falsify-Fenster, IMMER offen
-  - Persistenz in SQLite (~/.Falsify), FalsifyMe bleibt read-only zum Projekt
+  - Persistenz in SQLite (~/.Falsify_Private), FalsifyMe bleibt read-only zum Projekt (Ausnahme: FalsifyME.md-Anker)
 "@
     exit 0
 }

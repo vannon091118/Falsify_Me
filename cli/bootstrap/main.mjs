@@ -12,6 +12,9 @@ import { detectAgent } from "./detect.mjs";
 import { runInstall, readInstallLocation } from "./install.mjs";
 import { writeInstruction } from "./instructions.mjs";
 import { startDock } from "./dock.mjs";
+import { openDb, closeDb } from "../../artifacts/db.mjs";
+import { bindAnchor } from "../../artifacts/projects.mjs";
+import { initAnchor } from "../../core/identity.mjs";
 
 export async function runBootstrap({ root, projectRoot, homeDir, dryRun = false, skipDock = false, noDesktop = false, mode = "optional", reichweite = "projekt" } = {}) {
   // 1. Installation (existierendes install.mjs aus dem Paket-Root)
@@ -36,7 +39,18 @@ export async function runBootstrap({ root, projectRoot, homeDir, dryRun = false,
   // der User ruft `falsify bootstrap` IM Projekt auf -> cwd ist das Projekt).
   const targetRoot = projectRoot || process.cwd();
 
-  // 2. Agent-Detektion
+  // Project anchor: one explicit bootstrap write, then SQLite registration.
+  // Dry-runs remain side-effect free; normal sessions validate this anchor.
+  if (!dryRun) {
+    const anchor = initAnchor(targetRoot);
+    if (!anchor.ok) return { ok: false, stage: "anchor", error: anchor.message };
+    const db = openDb();
+    try { bindAnchor(db, anchor, targetRoot); }
+    catch (error) { closeDb(); return { ok: false, stage: "anchor", error: error.message }; }
+    closeDb();
+  }
+
+  // 3. Agent-Detektion
   const agent = detectAgent(process.env, process.platform);
   console.log(`Agent erkannt: ${agent.label}`);
   console.log(`Zielprojekt: ${targetRoot}`);

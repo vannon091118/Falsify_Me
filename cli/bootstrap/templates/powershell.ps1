@@ -2,8 +2,8 @@
 {{MODE_HEADER}}
 #
 # FalsifyMe = unabhaengiger read-only Falsifizierungs-Agent
-# Coding-Agent = eigentliche Arbeits-/Write-Instanz
-# Bis VERDICT: WRITE bleibt der Coding-Agent READ-ONLY.
+# USER AGENT = externe Arbeits-/Write-Instanz
+# Bis VERDICT: WRITE bleibt der USER AGENT READ-ONLY.
 # Exit 0 = VERDICT: WRITE; Exit 1 = PLAN/RESEARCH; Exit 2/3 = keine Freigabe.
 # Derselbe Scope wird fuer PLAN -> RESEARCH -> WRITE -> IMPLEMENTATION REVIEW verwendet.
 # Wird automatisch aus dem PowerShell-Profil geladen (siehe Marker unten).
@@ -36,7 +36,7 @@ function Invoke-FalsifyMeCheck {
 
 # Pflichtprotokoll nach jeder Arbeit:
 # CHANGE_GATE_10X = A1..A10 jeweils JA mit Proof und Test.
-# FALSIFICATION_RECORD_10X = F1..F10 (Coder claim, User contract, Scope,
+# FALSIFICATION_RECORD_10X = F1..F10 (User-Agent claim, User contract, Scope,
 # Annahme, Angriff, verifizierte Evidenz, Gegenbeweise, offene Luecke,
 # Rest-Risiko, Release-Entscheidung).
 # NEIN/UNBEKANNT/fehlender Beleg = BLOCKED – mindestens eine Invariante ist nicht nachgewiesen.
