@@ -1,6 +1,6 @@
 # FalsifyMe 2.0 — Terminal-UI (ui/) — PHASE 1 + 2 (live verdrahtet)
 
-**Version v0.08 Beta** (`0.8.0-beta` im `package.json`; Produkt-Runtime bleibt
+**Version 0.8.2 Beta** (`0.8.2-beta` im `package.json`; Produkt-Runtime bleibt
 Read-only-Gateway, Business-Logik unverändert).
 
 **Dokumentationsstand:** Phase 1 (visuelle Implementierung) abgeschlossen,

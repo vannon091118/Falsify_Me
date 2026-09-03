@@ -432,11 +432,62 @@ nachgewiesen.`
   externer Coder → CHANGE_CAPTURED → RE_REVIEW_QUEUED → THINKER` ist
   ausführbar und e2e-getestet (Abschluss-Record:
   `plan/feature-runtime-loop-production-1.md`; Modul-Karte: WIRING §18).
-- `artifacts/loops.mjs` ist der EINZIGE Loop-Übergangs-Owner (12 Zustände,
-  `applyTransition` fail-closed, Terminale unumkehrlich). Child-Jobs
-  entstehen NUR via `completeHandoff` → `jobs.createJob` — der Writer-Scan
-  in `tests/invariants.test.mjs` hat `artifacts/loops.mjs` als registrierten
-  Orchestrierer (RISK-003: keine zweite Queue).
+- Drei getrennte Module statt eines Zyklus (Richtung: Job-Lebenszyklus →
+  Übergangs-Dienst → Loop-Zustand):
+  · `artifacts/loops.mjs` — REINE Loop-Zustandsmaschine (12 Zustände,
+    legale Übergänge `applyTransition`/`transitionLoop`, `loop_events`-
+    Log, `isTerminal`). Importiert KEIN jobs.mjs; Terminale sind
+    unumkehrbar (SEC-004).
+  · `artifacts/loopflow.mjs` — ÜBERGANGS-DIENST: die EINZIGE Kopplung
+    zwischen Runtime-Ereignis und Loop-Zustand (`advanceLoop(event)`:
+    load → Terminal-Guard → Übergang ableiten → persistieren).
+  · `artifacts/handoff.mjs` — `completeHandoff`-Orchestrierung: Child-Jobs
+    entstehen NUR hier via `jobs.createJob` (der Writer-Scan in
+    `tests/invariants.test.mjs` hat `artifacts/handoff.mjs` als
+    registrierten Orchestrierer, RISK-003: keine zweite Queue).
+- **Kausale Zustands-Herkunft (2026-09-03, Divergenz-Fix + Atomaritäts-
+  Fix):** `loop_state` ist ein EIGENER persistierter Protokollzustand (kein
+  Ableitung aus `jobs.status`); Job-State und Loop-State sind bewusst
+  getrennt und kausal gekoppelt. Welches RUNTIME-Ereignis welchen Zustand
+  setzt:
+  - `RE_REVIEW_QUEUED`: `completeHandoff` erzeugt das Child (EINE
+    Transaktion mit Parent-Übergängen).
+  - `RE_REVIEW_RUNNING`: der EINZIGE Claim-Übergangs-Owner ist `claimJob`
+    in artifacts/jobs.mjs — `claimNextJob` (worker) UND der `--job-id`-Pfad
+    (worker-Kind/Direkt-Run) rufen BEIDE nur diese eine Funktion; die
+    Claim-Transition existiert genau einmal. `advanceLoop({event:"claim"})`
+    läuft in derselben BEGIN-IMMEDIATE-Transaktion wie `status=RUNNING`;
+    ein Crash dazwischen kann nie status=RUNNING bei
+    loop_state=RE_REVIEW_QUEUED hinterlassen. Erstlauf-Jobs ohne Re-Review
+    werden NICHT auf RE_REVIEW_RUNNING gehoben (kein Phantom-State; Retry
+    bleibt idempotent).
+  - `DONE`: IN `jobDone` selbst (kein separater CLI-Schritt mehr) — der
+    finale Job-Zustandsübergang erzeugt GENAU EINE Loop-Transition.
+    `advanceLoop({event:"finalize"})` setzt DONE NUR wenn der letzte
+    Loop-Schritt einen finalen NICHT-WRITE-Verdict persistiert hat und der
+    Job status=DONE trägt. WRITE lässt den Loop offen (Handoff →
+    `WRITE_AUTHORIZED`); ein laufender Job (status=RUNNING) kann nie DONE
+    werden (kein vorzeitiges DONE, auch nicht bei Parent mit ausstehendem
+    Child).
+  - `ERROR`: IN `jobDone` bei Fehler-Finalisierung (Worker-Crash, Abort,
+    Review-Fehler, Retry-Exhaustion) — jeder Nicht-Terminal-Zustand hat
+    ERROR als legales Ziel; Terminale bleiben unangetastet (SEC-004).
+- **jobDone ist EINE Transaktion (SAVEPOINT):** Status UND Loop-Zustand
+  werden zusammen persistiert (verify non-terminal → status →
+  `advanceLoop` → RELEASE). Scheitert die Loop-Transition, scheitert die
+  GESAMTE Zustandsänderung (kein halber Zustand); ein Crash zwischen zwei
+  Writes kann nie status=ERROR bei loop_state=RE_REVIEW_RUNNING
+  hinterlassen. SAVEPOINT statt BEGIN, weil jobDone sowohl innerhalb des
+  Review-Commits (cli/run.mjs) als auch standalone läuft (Abort, Recovery,
+  Retry-Exhaustion) — bewiesen in tests/loop.test.mjs (Crash-Boundary).
+- **SEC-004 ist jetzt überall erzwungen:** LOOP_BLOCKED, ABORTED und
+  NO_CHANGE-Pfade in `completeHandoff` prüfen zuerst `isTerminal` — ein
+  terminaler Zustand (DONE/ABORTED/ERROR/LOOP_BLOCKED) wird durch keinerlei
+  Re-Completion überschrieben (Terminal-Matrix-Test). LOOP_BLOCKED ist von
+  jedem offenen Zustand legal erreichbar (WRITE_AUTHORIZED nach der
+  Handoff-Emission, RE_REVIEW_QUEUED bei Re-Delivery) — die
+  Transitionstabelle ist die Wahrheit, es gibt kein rohes
+  `loop_state='LOOP_BLOCKED'`-UPDATE mehr.
 - `completeHandoff` ist EINE Transaktion: Report-/Handoff-/Change-
   Korrelation, Übergänge und GENAU EIN Child mit voller Korrelation
   (`parent_job_id`, `handoff_id`, `iteration_id`, `change_digest`,

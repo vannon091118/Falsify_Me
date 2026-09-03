@@ -23,10 +23,18 @@ no files were deleted or reset during this audit.
 
 ## Loop Verification (new 2026-09-03)
 
-- `artifacts/loops.mjs` is the single loop-transition owner (12 states,
-  illegal transitions and terminal rewrites fail-closed; enforced by the
-  writer scan in `tests/invariants.test.mjs` where it is a registered
-  orchestrator).
+- Loop layer split acyclically (2026-09-03, `job lifecycle → transition
+  service → loop state`): `artifacts/loops.mjs` is the pure loop-state
+  machine (12 states, illegal transitions and terminal rewrites fail-closed,
+  SEC-004); `artifacts/loopflow.mjs` is the single `advanceLoop(event)`
+  transition service; `artifacts/handoff.mjs` is the `completeHandoff`
+  orchestrator (child jobs only via `jobs.createJob`; the writer scan in
+  `tests/invariants.test.mjs` registers `artifacts/handoff.mjs`). No import
+  cycle between jobs.mjs and loops.mjs anymore.
+- `jobDone` finalizes status AND loop state in ONE transaction (SAVEPOINT;
+  atomic even inside the review commit): a crash can never leave
+  `status=ERROR` with `loop_state=RE_REVIEW_RUNNING`, and a failed loop
+  transition fails the whole state change (no half state, no silent catch).
 - `completeHandoff` validates report/handoff/change correlation inside one
   `BEGIN IMMEDIATE` transaction, creates exactly one child job with full
   correlation (`parent_job_id`, `handoff_id`, `iteration_id`, `change_digest`,
@@ -73,12 +81,14 @@ Executed successfully from the repository root:
 
 ```text
 npm test
-221 tests passed, 0 failed   (2026-09-03; baseline 198 pre-loop, 191 at the 09-02 audit)
+228 tests passed, 0 failed   (2026-09-03; +3: Terminal-Matrix SEC-004, jobDone-Crash-Boundary, Immutable-Guard; baseline 198 pre-loop, 191 at the 09-02 audit)
 
 node --check cli/run.mjs
 node --check artifacts/db.mjs
 node --check artifacts/jobs.mjs
 node --check artifacts/loops.mjs
+node --check artifacts/loopflow.mjs
+node --check artifacts/handoff.mjs
 node --check core/config.mjs
 node --check core/handoff.mjs
 node --check core/changes.mjs

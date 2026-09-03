@@ -6,6 +6,7 @@
 // in meta (Fenster 1..MAX_WINDOWS) mit PID + Herzschlag.
 // ─────────────────────────────────────────────────────────────────────────────
 import { nowIso, genId, setMeta, getMeta, isProcessAlive } from "./db.mjs";
+import { advanceLoop } from "./loopflow.mjs";
 
 const RETRYABLE_FAILURES = Object.freeze(["transient", "worker-crash"]);
 const FAILURE_KINDS = Object.freeze(["transient", "worker-crash", "permanent", "aborted"]);
@@ -98,14 +99,43 @@ export function jobDone(db, id, verdict, error, { failureKind = null } = {}) {
   // Recovery-Double) darf einen finalisierten Job nie umschreiben — sonst
   // koennte ein nachgelagerter ERROR-Pfad ein persistiertes WRITE nach-
   // traeglich tilgen (empirisch bestätigt: WRITE -> ERROR per 2. Aufruf).
-  // Der Guard ist ein Hook in EINER Funktion, nicht verstreute WHERE-Klauseln.
-  const final = db.prepare("SELECT status FROM jobs WHERE id = ?").get(id);
-  if (final && (final.status.startsWith("DONE") || final.status.startsWith("ERROR"))) {
-    return false; // bereits finalisiert — unveränderlich, kein Umschreiben
+  //
+  // Status UND Loop-Protokollzustand sind EINE atomare Einheit (TASK-011):
+  // Der Status wird erst gesetzt, dann folgt kausal der Loop-Übergang
+  // (finalize/error via advanceLoop) — beides in derselben Transaktion.
+  // SAVEPOINT statt BEGIN, weil jobDone sowohl innerhalb fremder
+  // Transaktionen (Review-Commit in cli/run.mjs) als auch standalone läuft
+  // (Abort, Recovery, Retry-Exhaustion): SAVEPOINT schachtelt gefahrlos und
+  // persistiert erst beim RELEASE. Scheitert der Loop-Übergang, wird der
+  // Status-Wechsel mit zurückgerollt — niemals status=ERROR mit
+  // loop_state=RE_REVIEW_RUNNING nach einem Crash zwischen zwei Writes.
+  db.exec("SAVEPOINT jobdone");
+  try {
+    const final = db.prepare("SELECT status, loop_state, scope_id FROM jobs WHERE id = ?").get(id);
+    if (final && (final.status.startsWith("DONE") || final.status.startsWith("ERROR"))) {
+      db.exec("ROLLBACK TO jobdone"); db.exec("RELEASE jobdone");
+      return false; // bereits finalisiert — unveränderlich, kein Umschreiben
+    }
+    const result = db.prepare("UPDATE jobs SET status = ?, verdict = ?, error = ?, failure_kind = ?, retry_at = NULL, done_at = ? WHERE id = ? AND status NOT LIKE 'DONE %' AND status NOT LIKE 'ERROR %'")
+      .run(status, verdict ?? null, error ?? null, failureKind, nowIso(), id);
+    const changed = Number(result?.changes || 0) === 1;
+    if (changed) {
+      // Ein finaler Job-Zustandsübergang erzeugt GENAU EINE Loop-Transition
+      // (kein CLI-Pfad muss daran denken): Fehler-Finalisierung → ERROR,
+      // finaler NICHT-WRITE-Verdict eines Re-Reviews → DONE, WRITE → Loop
+      // bleibt offen (Handoff). Fail-closed: schlägt die Transition fehl,
+      // scheitert die GESAMTE Zustandsänderung (kein halber Zustand).
+      const advance = advanceLoop(db, id, { event: error ? "error" : "finalize", verdict, scopeId: final?.scope_id ?? null });
+      if (!advance.ok && !advance.skipped) {
+        throw new Error(`Loop-Transition nach Job-Finalisierung fehlgeschlagen: ${advance.reason}`);
+      }
+    }
+    db.exec("RELEASE jobdone");
+    return changed;
+  } catch (e) {
+    try { db.exec("ROLLBACK TO jobdone"); db.exec("RELEASE jobdone"); } catch { /* egal */ }
+    throw e; // fail-closed: Status- UND Loop-Änderung scheitern zusammen
   }
-  const result = db.prepare("UPDATE jobs SET status = ?, verdict = ?, error = ?, failure_kind = ?, retry_at = NULL, done_at = ? WHERE id = ? AND status NOT LIKE 'DONE %' AND status NOT LIKE 'ERROR %'")
-    .run(status, verdict ?? null, error ?? null, failureKind, nowIso(), id);
-  return Number(result?.changes || 0) === 1;
 }
 
 export function listJobs(db, { status } = {}) {
@@ -141,6 +171,30 @@ export function isAbortRequested(db, id) {
  * Die Affinität wird INNERHALB der Claim-Transaktion gelesen (E2E-Befund
  * 2026-09-01: ein Vorab-Lesen ausserhalb wäre gegen setWorkerScope racy).
  */
+/**
+ * EINZIGER Claim-Übergangs-Owner (TASK-011): übernimmt einen konkreten Job
+ * atomar (status=QUEUED → RUNNING) UND schreibt den Loop-Protokollzustand
+ * kausal fort (Re-Review-Kind RE_REVIEW_QUEUED → RE_REVIEW_RUNNING via
+ * advanceLoop). Muss INNERHALB einer vom Aufrufer geöffneten
+ * BEGIN-IMMEDIATE-Transaktion laufen — ein Crash zwischen Status- und
+ * Loop-Wechsel kann so nie status=RUNNING bei loop_state=RE_REVIEW_QUEUED
+ * hinterlassen. claimNextJob (Worker) und der --job-id-Pfad (Direkt-Run)
+ * rufen BEIDE nur diese eine Funktion: die fachliche Claim-Transition
+ * existiert genau einmal.
+ *
+ * @returns {{ok:true}|{ok:false, reason}}
+ */
+export function claimJob(db, jobId, windowIdx, scopeId = null) {
+  if (!jobToRunning(db, jobId, windowIdx)) {
+    return { ok: false, reason: "Job ist nicht claimbar (Status/Attempt/Backoff-Rennen)" };
+  }
+  const advance = advanceLoop(db, jobId, { event: "claim", windowIdx, scopeId });
+  if (!advance.ok && !advance.skipped) {
+    throw new Error(`Claim-Loop-Transition fehlgeschlagen: ${advance.reason}`);
+  }
+  return { ok: true };
+}
+
 export function claimNextJob(db, windowIdx, preferredScopeId = null) {
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -157,7 +211,11 @@ export function claimNextJob(db, windowIdx, preferredScopeId = null) {
       ).get(nowIso());
     }
     if (!row) { db.exec("COMMIT"); return null; }
-    jobToRunning(db, row.id, windowIdx);
+    // Atomarer Claim + kausale Claim-Transition (EIN Funktion, EIN Ort —
+    // siehe claimJob oben). Status- und Loop-Wechsel in DERSELBEN
+    // BEGIN-IMMEDIATE-Transaktion wie der Claim selbst.
+    const claimed = claimJob(db, row.id, windowIdx, row.scope_id ?? null);
+    if (!claimed.ok) throw new Error(claimed.reason);
     // Scope-Affinität ATOMAR mit dem Claim setzen (E2E-Befund 5, 2026-09-01):
     // Ein separater setWorkerScope-Aufruf NACH dem Claim liesse zwischen Claim
     // und Scope-Switch einen zweiten Worker denselben Scope claimen. Hier läuft

@@ -257,6 +257,7 @@ test("loops: completeHandoff idempotent — 100 identische Reports, genau ein Ch
   const s = await setupDb();
   try {
     const loops = await mod("artifacts/loops.mjs");
+    const handoffMod = await mod("artifacts/handoff.mjs");
     const jobs = await mod("artifacts/jobs.mjs");
     const changes = await mod("core/changes.mjs");
     const scopes = await mod("artifacts/scopes.mjs");
@@ -286,13 +287,13 @@ test("loops: completeHandoff idempotent — 100 identische Reports, genau ein Ch
       };
       // Legalisierungs-Kette: WRITE_IN_PROGRESS→CHANGE_CAPTURED passiert in
       // completeHandoff selbst (Transition prüft WRITE_IN_PROGRESS→CHANGE_CAPTURED).
-      const first = loops.completeHandoff(s.db, { report, handoff, changeComparison: comparison, allowedFiles: ["app.js"], reReviewJob: { payload: "re", root: dir, files: "app.js", runtimeConfig: { model: "m" }, maxAttempts: 2 } });
+      const first = handoffMod.completeHandoff(s.db, { report, handoff, changeComparison: comparison, allowedFiles: ["app.js"], reReviewJob: { payload: "re", root: dir, files: "app.js", runtimeConfig: { model: "m" }, maxAttempts: 2 } });
       assert.equal(first.ok, true, JSON.stringify(first.reasons || first));
       assert.equal(first.idempotent, false);
       assert.ok(first.re_review_job_id, "Child-Job erzeugt");
       // 99 identische Wiederholungen: immer idempotent, kein zweites Child.
       for (let i = 0; i < 99; i++) {
-        const again = loops.completeHandoff(s.db, { report, handoff, changeComparison: comparison, allowedFiles: ["app.js"], reReviewJob: { payload: "re", root: dir, files: "app.js", runtimeConfig: { model: "m" }, maxAttempts: 2 } });
+        const again = handoffMod.completeHandoff(s.db, { report, handoff, changeComparison: comparison, allowedFiles: ["app.js"], reReviewJob: { payload: "re", root: dir, files: "app.js", runtimeConfig: { model: "m" }, maxAttempts: 2 } });
         assert.equal(again.ok, true);
         assert.equal(again.idempotent, true);
         assert.equal(again.re_review_job_id, first.re_review_job_id);
@@ -319,6 +320,7 @@ test("loops: NO_CHANGE blockt, ABORTED-Report ist terminal, Loop-Limit blockt", 
   const s = await setupDb();
   try {
     const loops = await mod("artifacts/loops.mjs");
+    const handoffMod = await mod("artifacts/handoff.mjs");
     const jobs = await mod("artifacts/jobs.mjs");
     const changes = await mod("core/changes.mjs");
     const scopes = await mod("artifacts/scopes.mjs");
@@ -331,14 +333,14 @@ test("loops: NO_CHANGE blockt, ABORTED-Report ist terminal, Loop-Limit blockt", 
       const comparison = changes.compareSnapshots(before, before, { allowedFiles: ["app.js"] });
       const handoff = { handoff_id: "h-x", job_id: parentId, scope_id: scopeId, before_snapshot: before };
       // NO_CHANGE-Report → LOOP_BLOCKED, kein Child.
-      const noChange = loops.completeHandoff(s.db, { report: { handoff_id: "h-x", job_id: parentId, scope_id: scopeId, checkout_id: null, writer_id: "a", before_digest: before.digest, after_digest: before.digest, changed_files: [], diff_digest: comparison.diff_digest, write_status: "NO_CHANGE" }, handoff, changeComparison: comparison, allowedFiles: ["app.js"] });
+      const noChange = handoffMod.completeHandoff(s.db, { report: { handoff_id: "h-x", job_id: parentId, scope_id: scopeId, checkout_id: null, writer_id: "a", before_digest: before.digest, after_digest: before.digest, changed_files: [], diff_digest: comparison.diff_digest, write_status: "NO_CHANGE" }, handoff, changeComparison: comparison, allowedFiles: ["app.js"] });
       assert.equal(noChange.ok, false);
       assert.ok(noChange.reasons.some((r) => /NO_CHANGE/.test(r)));
       assert.equal(loops.getLoopState(s.db, parentId), "LOOP_BLOCKED");
       // ABORTED-Report → ABORTED.
       const p2 = jobs.createJob(s.db, { scopeId, payload: "p", root: dir, files: "app.js", mode: "write" });
       s.db.prepare("UPDATE jobs SET loop_state = 'WAITING_FOR_AGENT' WHERE id = ?").run(p2);
-      const aborted = loops.completeHandoff(s.db, { report: { handoff_id: "h-y", job_id: p2, scope_id: scopeId, checkout_id: null, writer_id: "a", before_digest: before.digest, after_digest: before.digest, changed_files: [], diff_digest: "d", write_status: "ABORTED" }, handoff: { ...handoff, job_id: p2, handoff_id: "h-y" }, changeComparison: comparison, allowedFiles: ["app.js"] });
+      const aborted = handoffMod.completeHandoff(s.db, { report: { handoff_id: "h-y", job_id: p2, scope_id: scopeId, checkout_id: null, writer_id: "a", before_digest: before.digest, after_digest: before.digest, changed_files: [], diff_digest: "d", write_status: "ABORTED" }, handoff: { ...handoff, job_id: p2, handoff_id: "h-y" }, changeComparison: comparison, allowedFiles: ["app.js"] });
       assert.equal(aborted.ok, false);
       assert.equal(loops.getLoopState(s.db, p2), "ABORTED");
       // Loop-Limit: max_loop_count erreicht → LOOP_BLOCKED statt Child.
@@ -350,13 +352,322 @@ test("loops: NO_CHANGE blockt, ABORTED-Report ist terminal, Loop-Limit blockt", 
       fs.writeFileSync(path.join(dir, "app.js"), "neu\n");
       const after = changes.snapshotRoot(dir, ["app.js"]);
       const cmp2 = changes.compareSnapshots(before, after, { allowedFiles: ["app.js"] });
-      const limited = loops.completeHandoff(s.db, { report: { handoff_id: "h-z", job_id: p3, scope_id: scopeId, checkout_id: null, writer_id: "a", before_digest: before.digest, after_digest: cmp2.after_digest, changed_files: cmp2.changed_files, diff_digest: cmp2.diff_digest, write_status: "COMPLETED" }, handoff: { ...handoff, job_id: p3, handoff_id: "h-z" }, changeComparison: cmp2, allowedFiles: ["app.js"], reReviewJob: { payload: "r", root: dir, files: "app.js" } });
+      const limited = handoffMod.completeHandoff(s.db, { report: { handoff_id: "h-z", job_id: p3, scope_id: scopeId, checkout_id: null, writer_id: "a", before_digest: before.digest, after_digest: cmp2.after_digest, changed_files: cmp2.changed_files, diff_digest: cmp2.diff_digest, write_status: "COMPLETED" }, handoff: { ...handoff, job_id: p3, handoff_id: "h-z" }, changeComparison: cmp2, allowedFiles: ["app.js"], reReviewJob: { payload: "r", root: dir, files: "app.js" } });
       assert.equal(limited.ok, false);
       assert.ok(limited.reasons.some((r) => /Loop-Limit/.test(r)));
       assert.equal(loops.getLoopState(s.db, p3), "LOOP_BLOCKED");
     } finally {
       fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
+  } finally {
+    s.cleanup();
+  }
+});
+
+// ── Loop-State-Divergenz: RE_REVIEW_RUNNING + DONE sind echte Runtime-Zustände ──
+// Kausale Kette (TASK-011): Child createJob → RE_REVIEW_QUEUED → Claim →
+// RE_REVIEW_RUNNING → Re-Review-Ausführung → finaler Verdict → DONE.
+// Jeder Pfeil hier hat ein Runtime-Ereignis + eine autoritative Code-Stelle
+// (claimJob/claimNextJob → advanceLoop claim; jobDone → advanceLoop
+// finalize/error — GENAU EINE Loop-Transition pro finalem Job-Zustandsübergang).
+
+test("loops: Child-Claim macht RE_REVIEW_RUNNING real (B, F — kein Phantom-State)", async () => {
+  const s = await setupDb();
+  try {
+    const loops = await mod("artifacts/loops.mjs");
+    const jobs = await mod("artifacts/jobs.mjs");
+    const scopes = await mod("artifacts/scopes.mjs");
+    const scopeId = scopes.createScope(s.db, "Re-Review-Header").id;
+
+    // Normales Erstlauf-Job (kein Re-Review): Claim darf NICHT auf
+    // RE_REVIEW_RUNNING springen (F: kein Phantom-State ohne Re-Review).
+    const normal = jobs.createJob(s.db, { scopeId, payload: "p", root: ".", files: "a.js", mode: "plan" });
+    const claimed = jobs.claimNextJob(s.db, 1, scopeId);
+    assert.equal(claimed.id, normal, "Erstlauf-Job wird geclaimt");
+    assert.equal(claimed.loop_state, null, "Erstlauf ohne Loop-Zustand: Claim erzeugt KEIN RE_REVIEW_RUNNING (F)");
+
+    // Re-Review-Kind (wie von completeHandoff erzeugt: RE_REVIEW_QUEUED).
+    const child = jobs.createJob(s.db, { scopeId, payload: "re", root: ".", files: "a.js", mode: "write" });
+    s.db.prepare("UPDATE jobs SET loop_state = 'RE_REVIEW_QUEUED' WHERE id = ?").run(child);
+    const claimedChild = jobs.claimNextJob(s.db, 2, scopeId);
+    assert.equal(claimedChild.id, child, "Re-Review-Kind wird geclaimt");
+    assert.equal(claimedChild.status, "RUNNING");
+    assert.equal(claimedChild.loop_state, "RE_REVIEW_RUNNING", "B: Claim setzt RE_REVIEW_RUNNING");
+
+    // E: Retry-Idempotenz: doppelter Claim erzeugt keine zweite/illegale Transition.
+    s.db.prepare("UPDATE jobs SET status = 'QUEUED', window_idx = NULL, started_at = NULL WHERE id = ?").run(child);
+    const reClaimed = jobs.claimNextJob(s.db, 2, scopeId);
+    assert.equal(reClaimed.id, child);
+    assert.equal(reClaimed.loop_state, "RE_REVIEW_RUNNING", "Retry bleibt RE_REVIEW_RUNNING (idempotent)");
+    const events = loops.listLoopEvents(s.db, child).filter((e) => e.event_type === "claim_start");
+    assert.equal(events.length, 1, "E: Retry erzeugt KEINE zweite Transition (idempotent)");
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("loops: DONE entsteht nur nach finalem NICHT-WRITE-Verdict eines Re-Reviews (D, G)", async () => {
+  const s = await setupDb();
+  try {
+    const loops = await mod("artifacts/loops.mjs");
+    const loopflow = await mod("artifacts/loopflow.mjs");
+    const jobs = await mod("artifacts/jobs.mjs");
+    const scopes = await mod("artifacts/scopes.mjs");
+    const scopeId = scopes.createScope(s.db, "Done-Header").id;
+
+    // Re-Review-Kind claimen → RE_REVIEW_RUNNING.
+    const child = jobs.createJob(s.db, { scopeId, payload: "re", root: ".", files: "a.js", mode: "write" });
+    s.db.prepare("UPDATE jobs SET loop_state = 'RE_REVIEW_QUEUED' WHERE id = ?").run(child);
+    jobs.claimNextJob(s.db, 1, scopeId);
+    assert.equal(loops.getLoopState(s.db, child), "RE_REVIEW_RUNNING");
+
+    // G: Solange der Re-Review läuft (status=RUNNING), ist KEIN DONE erlaubt —
+    // der Verdict fehlt noch. advanceLoop(finalize) wird erst NACH jobDone
+    // (im Review-Commit) aufgerufen — hier direkt geprüft: skipped.
+    const premature = loopflow.advanceLoop(s.db, child, { event: "finalize", verdict: "PLAN" });
+    assert.equal(premature.ok, true);
+    assert.equal(premature.skipped, true, "kein DONE bei laufendem Job (kein finaler Verdict)");
+    assert.equal(loops.getLoopState(s.db, child), "RE_REVIEW_RUNNING");
+
+    // D: Erst der persistierte finale NICHT-WRITE-Verdict schließt den Loop —
+    // jobDone vollzieht die DONE-Transition atomar (GENAU EINE Loop-Transition
+    // pro finalem Job-Zustandsübergang, kein separater CLI-Schritt).
+    jobs.jobDone(s.db, child, "PLAN", null);
+    assert.equal(loops.getLoopState(s.db, child), "DONE", "jobDone setzt DONE kausal");
+    assert.equal(jobs.getJob(s.db, child).status, "DONE PLAN");
+    // Ein erneuter finalize-Versuch (Re-Delivery) ist idempotent — DONE bleibt DONE.
+    const again = loopflow.advanceLoop(s.db, child, { event: "finalize", verdict: "PLAN", scopeId });
+    assert.equal(again.ok, true);
+    assert.equal(again.skipped, true, "terminaler DONE wird nicht doppelt verbucht");
+    // Terminal bleibt terminal (SEC-004).
+    assert.equal(loops.transitionLoop(s.db, child, "RE_REVIEW_RUNNING").ok, false);
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("loops: WRITE-Verdict lässt den Loop offen — kein vorzeitiges DONE (G)", async () => {
+  const s = await setupDb();
+  try {
+    const loops = await mod("artifacts/loops.mjs");
+    const jobs = await mod("artifacts/jobs.mjs");
+    const scopes = await mod("artifacts/scopes.mjs");
+    const scopeId = scopes.createScope(s.db, "Write-Offen-Header").id;
+
+    const child = jobs.createJob(s.db, { scopeId, payload: "re", root: ".", files: "a.js", mode: "write" });
+    s.db.prepare("UPDATE jobs SET loop_state = 'RE_REVIEW_QUEUED' WHERE id = ?").run(child);
+    jobs.claimNextJob(s.db, 1, scopeId);
+    jobs.jobDone(s.db, child, "WRITE", null);
+    // WRITE lässt den Loop offen — jobDone/advanceLoop(finalize) überspringt,
+    // kein vorzeitiges DONE (Handoff → WRITE_AUTHORIZED folgt im Handoff-Pfad).
+    assert.equal(loops.getLoopState(s.db, child), "RE_REVIEW_RUNNING", "WRITE lässt den Loop offen (kein DONE)");
+    // Der Handoff-Pfad schiebt danach legal weiter:
+    const t = loops.transitionLoop(s.db, child, "WRITE_AUTHORIZED", { eventType: "handoff_emitted" });
+    assert.equal(t.ok, true);
+    assert.equal(loops.getLoopState(s.db, child), "WRITE_AUTHORIZED");
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("loops: Fehler-Finalisierung schließt den Loop kausal auf ERROR (Crash-Boundary)", async () => {
+  const s = await setupDb();
+  try {
+    const loops = await mod("artifacts/loops.mjs");
+    const jobs = await mod("artifacts/jobs.mjs");
+    const scopes = await mod("artifacts/scopes.mjs");
+    const scopeId = scopes.createScope(s.db, "Error-Header").id;
+
+    const child = jobs.createJob(s.db, { scopeId, payload: "re", root: ".", files: "a.js", mode: "write" });
+    s.db.prepare("UPDATE jobs SET loop_state = 'RE_REVIEW_QUEUED' WHERE id = ?").run(child);
+    jobs.claimNextJob(s.db, 1, scopeId);
+    assert.equal(loops.getLoopState(s.db, child), "RE_REVIEW_RUNNING");
+    // Worker-Crash/Review-Fehler: jobDone mit error → Loop folgt auf ERROR.
+    const finalized = jobs.jobDone(s.db, child, null, "Worker-Abbruch (Recovery)", { failureKind: "worker-crash" });
+    assert.equal(finalized, true);
+    assert.equal(jobs.getJob(s.db, child).status, "ERROR Worker-Abbruch (Recovery)");
+    assert.equal(loops.getLoopState(s.db, child), "ERROR", "Loop schließt kausal auf ERROR");
+    assert.equal(loops.transitionLoop(s.db, child, "DONE").ok, false, "ERROR ist terminal");
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("loops: A — Parent wird nicht DONE, solange der Child aussteht", async () => {
+  const s = await setupDb();
+  try {
+    const loops = await mod("artifacts/loops.mjs");
+    const handoffMod = await mod("artifacts/handoff.mjs");
+    const loopflow = await mod("artifacts/loopflow.mjs");
+    const jobs = await mod("artifacts/jobs.mjs");
+    const changes = await mod("core/changes.mjs");
+    const scopes = await mod("artifacts/scopes.mjs");
+    const scopeId = scopes.createScope(s.db, "Parent-Header").id;
+    const dir = tempProject();
+    try {
+      const before = changes.snapshotRoot(dir, ["app.js"]);
+      const parentId = jobs.createJob(s.db, { scopeId, payload: "p", root: dir, files: "app.js", mode: "write" });
+      s.db.prepare("UPDATE jobs SET loop_state = 'WRITE_AUTHORIZED' WHERE id = ?").run(parentId);
+      loops.transitionLoop(s.db, parentId, "WAITING_FOR_AGENT");
+      loops.transitionLoop(s.db, parentId, "WRITE_IN_PROGRESS");
+      fs.writeFileSync(path.join(dir, "app.js"), "export function add(a, b) {\n  return a * b;\n}\n");
+      const after = changes.snapshotRoot(dir, ["app.js"]);
+      const comparison = changes.compareSnapshots(before, after, { allowedFiles: ["app.js"] });
+      const handoff = { handoff_id: "h-p", job_id: parentId, scope_id: scopeId, checkout_id: null, before_snapshot: before };
+      const report = {
+        handoff_id: "h-p", job_id: parentId, scope_id: scopeId, checkout_id: null,
+        writer_id: "agent", before_digest: before.digest, after_digest: comparison.after_digest,
+        changed_files: comparison.changed_files, diff_digest: comparison.diff_digest, write_status: "COMPLETED",
+      };
+      const done = handoffMod.completeHandoff(s.db, { report, handoff, changeComparison: comparison, allowedFiles: ["app.js"], reReviewJob: { payload: "re", root: dir, files: "app.js", maxAttempts: 2 } });
+      assert.equal(done.ok, true);
+      const childId = done.re_review_job_id;
+      assert.ok(childId);
+      // Child steht aus (QUEUED) — Parent darf NICHT DONE sein.
+      assert.equal(loops.getLoopState(s.db, parentId), "RE_REVIEW_QUEUED");
+      assert.notEqual(loops.getLoopState(s.db, parentId), "DONE");
+      // Parent-Verdict ist WRITE (Job-State), aber Loop läuft weiter (Child ausstehend).
+      jobs.jobDone(s.db, parentId, "WRITE", null);
+      // advanceLoop(finalize) auf dem PARENT: kein RE_REVIEW_RUNNING → skipped, kein DONE.
+      const r = loopflow.advanceLoop(s.db, parentId, { event: "finalize", verdict: "WRITE", scopeId });
+      assert.equal(r.ok, true);
+      assert.equal(r.skipped, true);
+      assert.notEqual(loops.getLoopState(s.db, parentId), "DONE");
+      assert.equal(jobs.getJob(s.db, childId).status, "QUEUED");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  } finally {
+    s.cleanup();
+  }
+});
+
+// ── SEC-004 Terminal-Matrix + Atomizität (nachgeschärft 2026-09-03) ──────────
+// Der zentrale Test ist NICHT der Happy Path (claim → running → done), sondern
+// die Invariante: TERMINAL + beliebiger späterer Versuch einer Loop-Transition
+// = TERMINAL unverändert. Und für Fehler: ERROR-Transition = status + loop_state
+// als EINE atomare Einheit (jobDone-Transaktionsgrenze).
+
+test("loops: Terminal-Matrix — DONE/ABORTED/ERROR/LOOP_BLOCKED bleiben bei Re-Completion unverändert (SEC-004)", async () => {
+  const s = await setupDb();
+  try {
+    const loops = await mod("artifacts/loops.mjs");
+    const handoffMod = await mod("artifacts/handoff.mjs");
+    const jobs = await mod("artifacts/jobs.mjs");
+    const scopes = await mod("artifacts/scopes.mjs");
+    const scopeId = scopes.createScope(s.db, "Terminal-Matrix-Header").id;
+    const dir = tempProject();
+    try {
+      const changes = await mod("core/changes.mjs");
+      const beforeSnap = changes.snapshotRoot(dir, ["app.js"]);
+      fs.writeFileSync(path.join(dir, "app.js"), "neu\n");
+      const afterSnap = changes.snapshotRoot(dir, ["app.js"]);
+      const comparison = changes.compareSnapshots(beforeSnap, afterSnap, { allowedFiles: ["app.js"] });
+      for (const terminal of ["DONE", "ABORTED", "ERROR", "LOOP_BLOCKED"]) {
+        const p = jobs.createJob(s.db, { scopeId, payload: "p", root: dir, files: "app.js", mode: "write" });
+        // Terminaler Zustand + Loop-Limit erreicht: der COMPLETED-Report läuft in
+        // die Loop-Limit-Branch, die früher per rohem UPDATE überschrieb.
+        s.db.prepare("UPDATE jobs SET loop_state = ?, loop_count = 5, max_loop_count = 5 WHERE id = ?").run(terminal, p);
+        const handoff = { handoff_id: `h-${terminal}`, job_id: p, scope_id: scopeId, before_snapshot: beforeSnap };
+        const report = {
+          handoff_id: `h-${terminal}`, job_id: p, scope_id: scopeId, checkout_id: null,
+          writer_id: "a", before_digest: beforeSnap.digest, after_digest: comparison.after_digest,
+          changed_files: comparison.changed_files, diff_digest: comparison.diff_digest, write_status: "COMPLETED",
+        };
+        const r = handoffMod.completeHandoff(s.db, { report, handoff, changeComparison: comparison, allowedFiles: ["app.js"], reReviewJob: { payload: "r", root: dir, files: "app.js" } });
+        assert.equal(r.ok, false, `${terminal}: Re-Completion muss abgelehnt werden`);
+        assert.equal(loops.getLoopState(s.db, p), terminal, `${terminal} bleibt unverändert (SEC-004)`);
+        assert.equal(s.db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE parent_job_id = ?").get(p).n, 0, `${terminal}: kein Child`);
+        assert.equal(s.db.prepare("SELECT COUNT(*) AS n FROM loop_events WHERE job_id = ? AND event_type = 'loop_limit'").get(p).n, 0, `${terminal}: kein loop_limit-Event`);
+      }
+      // NO_CHANGE-/ABORTED-Re-Delivery überschreibt ebenfalls keinen Terminal-Zustand.
+      const p = jobs.createJob(s.db, { scopeId, payload: "p", root: dir, files: "app.js", mode: "write" });
+      s.db.prepare("UPDATE jobs SET loop_state = 'ABORTED' WHERE id = ?").run(p);
+      const h = { handoff_id: "h-re", job_id: p, scope_id: scopeId, before_snapshot: beforeSnap };
+      const r2 = handoffMod.completeHandoff(s.db, { report: { handoff_id: "h-re", job_id: p, scope_id: scopeId, checkout_id: null, writer_id: "a", before_digest: beforeSnap.digest, after_digest: beforeSnap.digest, changed_files: [], diff_digest: comparison.diff_digest, write_status: "NO_CHANGE" }, handoff: h, changeComparison: comparison, allowedFiles: ["app.js"] });
+      assert.equal(r2.ok, false);
+      assert.equal(loops.getLoopState(s.db, p), "ABORTED", "ABORTED bleibt auch nach NO_CHANGE-Re-Delivery unverändert");
+      // Loop-Limit auf OFFENEM Produktionspfad (WRITE_AUTHORIZED + RE_REVIEW_QUEUED)
+      // → terminales LOOP_BLOCKED (kein illegaler Übergang, kein hängender Loop).
+      for (const openState of ["WRITE_AUTHORIZED", "RE_REVIEW_QUEUED"]) {
+        const q = jobs.createJob(s.db, { scopeId, payload: "p", root: dir, files: "app.js", mode: "write" });
+        s.db.prepare("UPDATE jobs SET loop_state = ?, loop_count = 5, max_loop_count = 5 WHERE id = ?").run(openState, q);
+        const hq = { handoff_id: `h-${openState}`, job_id: q, scope_id: scopeId, before_snapshot: beforeSnap };
+        const rq = handoffMod.completeHandoff(s.db, { report: { handoff_id: `h-${openState}`, job_id: q, scope_id: scopeId, checkout_id: null, writer_id: "a", before_digest: beforeSnap.digest, after_digest: comparison.after_digest, changed_files: comparison.changed_files, diff_digest: comparison.diff_digest, write_status: "COMPLETED" }, handoff: hq, changeComparison: comparison, allowedFiles: ["app.js"], reReviewJob: { payload: "r", root: dir, files: "app.js" } });
+        assert.equal(rq.ok, false);
+        assert.equal(loops.getLoopState(s.db, q), "LOOP_BLOCKED", `${openState} am Loop-Limit → LOOP_BLOCKED`);
+        assert.ok(rq.reasons.some((x) => /Loop-Limit/.test(x)), `${openState}: ehrliche Loop-Limit-Meldung`);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("loops: jobDone ist atomar — rollback einer äußeren Transaktion macht weder status noch loop_state sichtbar (Crash-Boundary)", async () => {
+  const s = await setupDb();
+  try {
+    const loops = await mod("artifacts/loops.mjs");
+    const jobs = await mod("artifacts/jobs.mjs");
+    const scopes = await mod("artifacts/scopes.mjs");
+    const scopeId = scopes.createScope(s.db, "Atomic-Header").id;
+
+    // Re-Review-Kind: RE_REVIEW_QUEUED → Claim → RE_REVIEW_RUNNING.
+    const child = jobs.createJob(s.db, { scopeId, payload: "re", root: ".", files: "a.js", mode: "write" });
+    s.db.prepare("UPDATE jobs SET loop_state = 'RE_REVIEW_QUEUED' WHERE id = ?").run(child);
+    jobs.claimNextJob(s.db, 1, scopeId);
+    assert.equal(loops.getLoopState(s.db, child), "RE_REVIEW_RUNNING");
+
+    // Crash-Boundary provozieren: äußere Transaktion offen, jobDone vollzieht
+    // finalize (status=DONE + loop DONE) INNERHALB der Transaktion, dann
+    // ROLLBACK der äußeren Transaktion (simulierter Absturz vor COMMIT).
+    // Wäre jobDone nicht atomar, bliebe status=DONE oder loop DONE sichtbar.
+    s.db.exec("BEGIN IMMEDIATE");
+    jobs.jobDone(s.db, child, "PLAN", null);
+    s.db.exec("ROLLBACK");
+    assert.equal(jobs.getJob(s.db, child).status, "RUNNING", "status nach Rollback unverändert (kein DONE sichtbar)");
+    assert.equal(loops.getLoopState(s.db, child), "RE_REVIEW_RUNNING", "loop_state nach Rollback unverändert (kein DONE sichtbar)");
+
+    // Gleiches für den ERROR-Pfad: status=ERROR + loop ERROR sind EINE Einheit.
+    s.db.exec("BEGIN IMMEDIATE");
+    jobs.jobDone(s.db, child, null, "Crash-Test", { failureKind: "worker-crash" });
+    s.db.exec("ROLLBACK");
+    assert.equal(jobs.getJob(s.db, child).status, "RUNNING", "kein ERROR nach Rollback sichtbar");
+    assert.equal(loops.getLoopState(s.db, child), "RE_REVIEW_RUNNING", "kein loop ERROR nach Rollback sichtbar");
+
+    // Standalone (keine äußere Transaktion): SAVEPOINT committet BEIDES atomar.
+    const finalized = jobs.jobDone(s.db, child, null, "Worker-Abbruch (Recovery)", { failureKind: "worker-crash" });
+    assert.equal(finalized, true);
+    assert.equal(jobs.getJob(s.db, child).status, "ERROR Worker-Abbruch (Recovery)");
+    assert.equal(loops.getLoopState(s.db, child), "ERROR", "Standalone-jobDone committet status+loop atomar");
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("loops: jobDone lehnt einen zweiten Abschluss ab — kein Umschreiben eines finalen Zustands (Immutable-Guard)", async () => {
+  const s = await setupDb();
+  try {
+    const loops = await mod("artifacts/loops.mjs");
+    const jobs = await mod("artifacts/jobs.mjs");
+    const scopes = await mod("artifacts/scopes.mjs");
+    const scopeId = scopes.createScope(s.db, "Atomic-Immutable-Header").id;
+
+    const child = jobs.createJob(s.db, { scopeId, payload: "re", root: ".", files: "a.js", mode: "write" });
+    s.db.prepare("UPDATE jobs SET loop_state = 'RE_REVIEW_QUEUED' WHERE id = ?").run(child);
+    jobs.claimNextJob(s.db, 1, scopeId);
+    jobs.jobDone(s.db, child, "PLAN", null);
+    assert.equal(loops.getLoopState(s.db, child), "DONE");
+
+    // Ein späterer ERROR-Versuch (Crash-Guard nach dem Review-Commit, Abort-
+    // Race, Recovery-Double) darf weder status noch loop_state umschreiben.
+    const second = jobs.jobDone(s.db, child, null, "Später Fehler");
+    assert.equal(second, false, "zweiter Abschluss ist ein No-Op");
+    assert.equal(jobs.getJob(s.db, child).status, "DONE PLAN", "Status bleibt DONE PLAN");
+    assert.equal(loops.getLoopState(s.db, child), "DONE", "Loop bleibt DONE (kein ERROR über DONE)");
+    assert.equal(loops.listLoopEvents(s.db, child).filter((e) => e.event_type === "loop_error").length, 0, "kein loop_error-Event");
   } finally {
     s.cleanup();
   }

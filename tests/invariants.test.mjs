@@ -47,10 +47,12 @@ const WRITERS = [
 const ALLOWED_CALLERS = new Set([
   "artifacts/jobs.mjs", "artifacts/scopes.mjs",
   "cli/run.mjs", "ui/worker.mjs", "cli/jobs.mjs", "cli/scope.mjs",
-  // artifacts/loops.mjs: Loop-Orchestrator (TASK-012) — erzeugt Re-Review-
-  // Jobs AUSSCHLIESSLICH via jobs.mjs:createJob (keine eigene Queue/INSERT,
-  // RISK-003); der statische Scan prüft das hier mit.
-  "artifacts/loops.mjs",
+  // artifacts/handoff.mjs: Handoff-Orchestrator (TASK-012) — erzeugt
+  // Re-Review-Jobs AUSSCHLIESSLICH via jobs.mjs:createJob (keine eigene
+  // Queue/INSERT, RISK-003); der statische Scan prüft das hier mit.
+  // artifacts/loops.mjs ist die REINE Zustandsmaschine und ruft keine
+  // benannten Writer auf (kein Eintrag nötig).
+  "artifacts/handoff.mjs",
 ]);
 
 /** Alle *.mjs des Repos ausser tests/ + node_modules + .git (ganzer Baum). */

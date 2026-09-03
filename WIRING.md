@@ -66,8 +66,12 @@ core/changes.mjs           ← Content-Snapshots/Digests (§18): snapshotRoot /
                              compareSnapshots / validateChangeReport (kein mtime)
 core/protocols.mjs         ← 10X-Protokoll-Validatoren (§18): A1–A10 / F1–F10
                              (implementiert + getestet, NICHT im Release-Pfad)
-artifacts/loops.mjs        ← EINZIGER Loop-Übergangs-Owner (§18): loop_state /
-                             completeHandoff / Idempotenz / loop_events (Schema v9)
+artifacts/loops.mjs        ← REINE Loop-Zustandsmaschine (§18): loop_state /
+                             legale Übergänge / loop_events (kein jobs.mjs-Import)
+artifacts/loopflow.mjs     ← Übergangs-Dienst (§18): advanceLoop(event) — die
+                             EINZIGE Runtime↔Loop-State-Kopplung (kein Zyklus)
+artifacts/handoff.mjs      ← completeHandoff-Orchestrierung (§18): Child-Jobs
+                             NUR via jobs.createJob / Idempotenz (Schema v9)
 cli/handoff.mjs            ← falsify handoff brief|complete (§18)
 cli/settings.mjs           ← settings show/set + models (siehe §6)
   tui/views/               ← React/Ink Views (NUR Darstellung, stateless)
@@ -735,7 +739,9 @@ e2e-getestet. Abschluss-Record: `plan/feature-runtime-loop-production-1.md`.
 
 | Modul | Verantwortung (EIN Owner je Wahrheit) |
 |---|---|
-| `artifacts/loops.mjs` | EINZIGER Übergangs-Owner: 12 `loop_state`-Werte, legale Übergänge (`applyTransition`/`transitionLoop`), transaktionale `completeHandoff` (Child nur via `jobs.createJob`), Idempotenz `(handoff_id, change_digest, scope_id)` IN der Transaktion, Loop-Limit → `LOOP_BLOCKED`, append-only `loop_events` (Audit, nie Entscheidungsinstanz) |
+| `artifacts/loops.mjs` | REINE Loop-Zustandsmaschine: 12 `loop_state`-Werte, legale Übergänge (`applyTransition`/`transitionLoop`), `isTerminal` (SEC-004), append-only `loop_events` (Audit, nie Entscheidungsinstanz). Importiert KEIN jobs.mjs — keine Zustandslogik außerhalb. Schema-DDL gehört db.mjs (kein db↔loops-Zyklus) |
+| `artifacts/loopflow.mjs` | ÜBERGANGS-DIENST: `advanceLoop(db, jobId, {event})` — EINZIGE Kopplung Runtime-Ereignis ↔ Loop-Zustand (claim/finalize/error), transaktions-agnostisch (Aufrufer besitzt die Transaktion). Kausale Zustands-Quellen (2026-09-03): `RE_REVIEW_RUNNING` ← `advanceLoop({event:"claim"})` im EINZIGEN Claim-Owner `claimJob` (`claimNextJob` + `--job-id` rufen beide nur ihn, atomar mit `status=RUNNING`); `DONE` ← `advanceLoop({event:"finalize"})` IN `jobDone` (finaler Job-Zustandsübergang → GENAU EINE Loop-Transition; nur nach persistiertem NICHT-WRITE-Verdict, status=DONE); `ERROR` ← `advanceLoop({event:"error"})` IN `jobDone` (Fehler-Finalisierung) |
+| `artifacts/handoff.mjs` | `completeHandoff`-Orchestrierung: transaktionale Completion (Report-/Handoff-/Change-Korrelation, Parent-Übergänge, Idempotenz `(handoff_id, change_digest, scope_id)` IN der Transaktion, Loop-Limit → `LOOP_BLOCKED`), Child-Jobs NUR via `jobs.createJob` (RISK-003). SEC-004: ABORTED/NO_CHANGE/Loop-Limit prüfen zuerst `isTerminal` — kein Überschreiben terminaler Zustände |
 | `core/handoff.mjs` | v1-Handoff-Vertrag: `buildHandoff` (nur nach Gate), `validateHandoff` (strikt, SEC-001-Secret-Scan), `renderCoderBrief` (pure Ableitung der Coder-Arbeitsanweisung, fail-closed) |
 | `core/changes.mjs` | Gemessene Wahrheit über Repo-Zustände: `snapshotRoot` (Content+Git-HEAD, KEIN mtime), `compareSnapshots`, `validateChangeReport` (Report-Korrelation + Whitelist) |
 | `core/protocols.mjs` | Strukturierte A1–A10/F1–F10-Validatoren — bewusst NICHT im Release-Pfad (Prompt-Vorbedingung: die System-Prompts erzeugen noch keine Records; Schaltung = TASK-017-Rest) |

@@ -5,7 +5,7 @@
 // Umsetzung den Write-Report zurück. FalsifyMe konsumiert und validiert ihn
 // (Identität, Handoff-Korrelation, Before/After-Content, Whitelist, Digests),
 // vollzieht die Loop-Übergänge und reichert GENAU EINEN Re-Review-Job über
-// die einzige Queue an (artifacts/loops.mjs completeHandoff). FalsifyMe
+// die einzige Queue an (artifacts/handoff.mjs completeHandoff). FalsifyMe
 // schreibt selbst NIE die Implementierung (REQ-004).
 //
 // Verwendung:
@@ -25,7 +25,8 @@ const emitLoop = (s) => { if (UI_EVTS) console.log("FM-EVT: " + JSON.stringify({
 import { getJob, jobFilesList } from "../artifacts/jobs.mjs";
 import { snapshotRoot, compareSnapshots, validateChangeReport } from "../core/changes.mjs";
 import * as handoffCore from "../core/handoff.mjs";
-import { completeHandoff, getLoopState } from "../artifacts/loops.mjs";
+import { completeHandoff } from "../artifacts/handoff.mjs";
+import { getLoopState } from "../artifacts/loops.mjs";
 import { enforceQueueConsistency } from "../artifacts/invariants.mjs";
 
 const HELP = `falsify handoff – externer Write-Übergabepunkt (Re-Review wird automatisch eingereicht)

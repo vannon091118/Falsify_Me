@@ -25,7 +25,6 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { DatabaseSync } from "node:sqlite";
-import { migrateLoopSchema } from "./loops.mjs";
 
 export const SCHEMA_VERSION = "8";
 
@@ -243,7 +242,35 @@ function migrate(db) {
   // Idempotenz + append-only Audit. ALTER-only; die ausführbare Queue bleibt
   // ausschließlich die jobs-Tabelle (artifacts/loops.mjs besitzt die
   // Übergänge, RISK-003: kein zweiter Queue-Pfad).
-  migrateLoopSchema(db);
+  for (const sql of [
+    "ALTER TABLE jobs ADD COLUMN parent_job_id TEXT",
+    "ALTER TABLE jobs ADD COLUMN handoff_id TEXT",
+    "ALTER TABLE jobs ADD COLUMN iteration_id TEXT",
+    "ALTER TABLE jobs ADD COLUMN change_digest TEXT",
+    "ALTER TABLE jobs ADD COLUMN header_digest TEXT",
+    "ALTER TABLE jobs ADD COLUMN loop_state TEXT",
+    "ALTER TABLE jobs ADD COLUMN review_iteration INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE jobs ADD COLUMN loop_count INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE jobs ADD COLUMN max_loop_count INTEGER NOT NULL DEFAULT 5",
+  ]) {
+    try { db.exec(sql); } catch { /* Spalte existiert bereits */ }
+  }
+  // Append-only Loop-Audit-Historie (keine zweite Queue — nur Ereignis-Log).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS loop_events(
+      id          TEXT PRIMARY KEY,
+      job_id      TEXT NOT NULL,
+      scope_id    TEXT,
+      handoff_id  TEXT,
+      change_digest TEXT,
+      event_type  TEXT NOT NULL,
+      from_state  TEXT,
+      to_state    TEXT,
+      payload     TEXT,
+      created_at  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_loop_events_job ON loop_events(job_id);
+  `);
 
   setMeta(db, "schema_version", SCHEMA_VERSION);
 }

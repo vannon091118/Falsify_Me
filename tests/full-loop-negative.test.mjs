@@ -116,6 +116,7 @@ test("negativ: NO_CHANGE-Report → LOOP_BLOCKED, kein Child-Job (RISK-007)", as
   const s = await setup();
   try {
     const loops = await mod("artifacts/loops.mjs");
+    const handoffMod = await mod("artifacts/handoff.mjs");
     const jobs = await mod("artifacts/jobs.mjs");
     const changes = await mod("core/changes.mjs");
     const scopes = await mod("artifacts/scopes.mjs");
@@ -127,7 +128,7 @@ test("negativ: NO_CHANGE-Report → LOOP_BLOCKED, kein Child-Job (RISK-007)", as
       s.db.prepare("UPDATE jobs SET loop_state = 'WRITE_AUTHORIZED' WHERE id = ?").run(pid);
       const cmp = changes.compareSnapshots(before, before, { allowedFiles: ["app.js"] });
       const handoff = { handoff_id: "h", job_id: pid, scope_id: scopeId, before_snapshot: before };
-      const r = loops.completeHandoff(s.db, {
+      const r = handoffMod.completeHandoff(s.db, {
         report: { handoff_id: "h", job_id: pid, scope_id: scopeId, checkout_id: null, writer_id: "a", before_digest: before.digest, after_digest: before.digest, changed_files: [], diff_digest: cmp.diff_digest, write_status: "NO_CHANGE" },
         handoff, changeComparison: cmp, allowedFiles: ["app.js"],
       });
@@ -182,13 +183,14 @@ test("negativ: Loop-Limit (max_loop_count) endet terminal in LOOP_BLOCKED", asyn
   const s = await setup();
   try {
     const loops = await mod("artifacts/loops.mjs");
+    const handoffMod = await mod("artifacts/handoff.mjs");
     const jobs = await mod("artifacts/jobs.mjs");
     const scopes = await mod("artifacts/scopes.mjs");
     const scopeId = scopes.createScope(s.db, "Header").id;
     const pid = jobs.createJob(s.db, { scopeId, payload: "p", root: ".", files: "app.js", mode: "write" });
     s.db.prepare("UPDATE jobs SET loop_state = 'WRITE_IN_PROGRESS', loop_count = 5, max_loop_count = 5 WHERE id = ?").run(pid);
     const cmp = { changed: true, changed_files: ["app.js"], unauthorized_files: [], diff_digest: "dd", before_digest: "b", after_digest: "a" };
-    const r = loops.completeHandoff(s.db, {
+    const r = handoffMod.completeHandoff(s.db, {
       report: { handoff_id: "h", job_id: pid, scope_id: scopeId, checkout_id: null, writer_id: "w", before_digest: "b", after_digest: "a", changed_files: ["app.js"], diff_digest: "dd", write_status: "COMPLETED" },
       handoff: { handoff_id: "h", job_id: pid, scope_id: scopeId, before_snapshot: { digest: "b" } },
       changeComparison: cmp, allowedFiles: ["app.js"],

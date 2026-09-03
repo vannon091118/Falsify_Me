@@ -228,6 +228,21 @@ test("Full-Loop E2E: WRITE-Gate → Handoff → externer Write → automatisches
     assert.ok(types.includes("handoff_emitted"), "handoff_emitted");
     assert.ok(types.includes("change_captured"), "change_captured");
     assert.ok(types.includes("re_review_queued"), "re_review_queued");
+    // 6a. Kausale Loop-Kette am echten Child (TASK-011): der tatsächliche
+    // Worker-Claim (claimNextJob) schiebt RE_REVIEW_QUEUED → RE_REVIEW_RUNNING;
+    // erst der persistierte finale NICHT-WRITE-Verdict schließt den Loop auf
+    // DONE. Beides sind echte Runtime-Zustände, keine TUI-Leuchtschilder.
+    const claimedChild = jobsMod.claimNextJob(db3, 1, scopeId);
+    assert.equal(claimedChild.id, childId, "Child wird von der echten Claim-Funktion übernommen");
+    assert.equal(claimedChild.loop_state, "RE_REVIEW_RUNNING", "Claim setzt RE_REVIEW_RUNNING");
+    assert.equal(claimedChild.status, "RUNNING");
+    jobsMod.jobDone(db3, childId, "PLAN", null);
+    // jobDone vollzieht die DONE-Transition atomar (finaler Job-Zustandsübergang
+    // → GENAU EINE Loop-Transition) — kein separater Aufruf mehr nötig.
+    assert.equal(loops.getLoopState(db3, childId), "DONE", "finaler NICHT-WRITE-Verdict setzt DONE");
+    const childEvents = loops.listLoopEvents(db3, childId).map((e) => e.event_type);
+    assert.ok(childEvents.includes("claim_start"), "claim_start-Event");
+    assert.ok(childEvents.includes("loop_done"), "loop_done-Event");
     closeDb();
 
     // 6b. Coder-Brief (Twin→Coder-Übergabepunkt): aus dem ECHTEN, von der

@@ -26,9 +26,13 @@ VERDICT/LOOP GATE (core/probes.mjs computeVerdict)   [EXISTS, EINZIGE WRITE-Quel
    │           → externer Coder ändert Repo (AUSSERHALB FalsifyMe)
    │           → falsify handoff complete (cli/handoff.mjs)
    │           → validateChangeReport (core/changes.mjs)
-   │           → completeHandoff (artifacts/loops.mjs): CHANGE_CAPTURED →
+   │           → completeHandoff (artifacts/handoff.mjs): CHANGE_CAPTURED →
    │             RE_REVIEW_QUEUED → createJob (Child, volle Korrelation)
-   │           → claimNextJob → THINKER (zweiter Lauf) … LOOP
+   │           → claimNextJob / --job-id → RE_REVIEW_RUNNING (claimJob,
+   │             EINZIGER Claim-Owner; advanceLoop claim, atomar mit status=
+   │             RUNNING) → THINKER (zweiter Lauf) … LOOP
+   │           → finaler NICHT-WRITE-Verdict → jobDone vollzieht DONE
+   │             atomar (advanceLoop finalize IN jobDone, gleiche Transaktion)
    ├─ BLOCK  → PLAN/ASK/ERROR; NO_CHANGE/Loop-Limit/ABORTED → LOOP_BLOCKED/
    │           ABORTED (terminal, unumkehrlich)
    └─ RESEARCH → research_additions persistiert → nächster Submit merged
@@ -42,7 +46,7 @@ VERDICT/LOOP GATE (core/probes.mjs computeVerdict)   [EXISTS, EINZIGE WRITE-Quel
 | 0: Audit | Merge `6f2446a` fast-forward, Baseline 198/198, kein Konflikt mit lokalen Änderungen | `git log -1`, `npm test` |
 | 1: Identität + Snapshot | Skill-Wrapper propagieren `rootDir` (bestand); `runtime_config`-Snapshot (bestand); `header_digest` + Basis-`change_digest` bei Submit UND Direkt-Run, Executionsseite verifiziert HEADER ohne Modell-Call | `tests/loop.test.mjs`, e2e |
 | 2: Handoff | `core/handoff.mjs` (v1, strikt, SEC-001-Secret-Scan), Erzeugung nur nach Gate, `falsify handoff complete` + `falsify handoff brief` | `tests/loop.test.mjs`, `tests/full-loop-e2e.test.mjs` |
-| 3: Change/Loop | `core/changes.mjs` (Content-Digests, kein mtime), Schema v9 (ALTER-only), `artifacts/loops.mjs` (12 Zustände, Transaktions-Guard, append-only `loop_events`), transaktionale Completion, Korrelation | `tests/loop.test.mjs`, `tests/full-loop-e2e.test.mjs` |
+| 3: Change/Loop | `core/changes.mjs` (Content-Digests, kein mtime), Schema v9 (ALTER-only, DDL in db.mjs), `artifacts/loops.mjs` (reine Zustandsmaschine: 12 Zustände, Transaktions-Guard, append-only `loop_events`), `artifacts/loopflow.mjs` (`advanceLoop`-Übergangs-Dienst), `artifacts/handoff.mjs` (transaktionale Completion), Korrelation | `tests/loop.test.mjs`, `tests/full-loop-e2e.test.mjs` |
 | 4: Idempotenz/Gates | `(handoff_id, change_digest, scope_id)` IN der Transaktion (Race-Fix), Loop-Limit → `LOOP_BLOCKED`, `core/protocols.mjs` (A1–A10/F1–F10-Validatoren, implementiert — **nicht geschaltet**) | `tests/loop.test.mjs`, `tests/full-loop-negative.test.mjs` |
 | 5: E2E | Happy Path (Gate → Handoff → Coder-Brief → externer Write → automatisches Child → Idempotenz) + Negative Matrix | `tests/full-loop-e2e.test.mjs`, `tests/full-loop-negative.test.mjs` |
 | 6: UI-Konsum | UI-123 (loop-Event, Spiegel-only) erledigt; UI-124 (E2E-Event-Beweis) offen | `ui/tui/events.test.mjs` |
@@ -67,9 +71,12 @@ VERDICT/LOOP GATE (core/probes.mjs computeVerdict)   [EXISTS, EINZIGE WRITE-Quel
 
 ## SINGLE-TRUTH-Anker (geprüft)
 
-- Queue/Verdict/Loop: SQLite EINE Quelle; `artifacts/loops.mjs` ist der
-  einzige Übergangs-Owner (statisch erzwungen: `tests/invariants.test.mjs`
-  ALLOWED_CALLERS); Child-Jobs nur via `artifacts/jobs.mjs:createJob`.
+- Queue/Verdict/Loop: SQLite EINE Quelle; `artifacts/loops.mjs` ist die
+  reine Zustandsmaschine, `artifacts/loopflow.mjs` der Übergangs-Dienst,
+  `artifacts/handoff.mjs` die Completion-Orchestrierung (statisch erzwungen:
+  `tests/invariants.test.mjs` ALLOWED_CALLERS — `artifacts/handoff.mjs` ist
+  der registrierte Orchestrierer); Child-Jobs nur via
+  `artifacts/jobs.mjs:createJob`. Kein jobs↔loops-Importzyklus.
 - Handoff-JSON ist Beschreibung, nie Autorität; nur nach `computeVerdict`
   erzeugt; Korrelation gegen `jobs.handoff_id`.
 - Kein neuer Truth-Store durch das Loop-Paket (Beweis: RED-Fact-Finding §15,

@@ -26,7 +26,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDb, closeDb, falsifyHome } from "../artifacts/db.mjs";
-import { createJob, getJob, jobFilesList, jobDone, jobToRunning, registerWorker, heartbeatWorker, reapStaleJobs, jobRuntimeConfig, classifyFailure } from "../artifacts/jobs.mjs";
+import { createJob, getJob, jobFilesList, jobDone, claimJob, registerWorker, heartbeatWorker, reapStaleJobs, jobRuntimeConfig, classifyFailure } from "../artifacts/jobs.mjs";
 import { enforceQueueConsistency } from "../artifacts/invariants.mjs";
 import { getScope, updateScopeAfterReview, addFinding, getFindings, nextRound } from "../artifacts/scopes.mjs";
 import { loadApiKey, loadApiKeyForNames, keyEnvFile, keyNames } from "../core/keys.mjs";
@@ -42,7 +42,7 @@ import { resolveProjectContext, validateProjectFiles } from "../core/project-con
 import { requireProjectIdentity, assertScopeCheckout } from "../artifacts/projects.mjs";
 import { snapshotRoot } from "../core/changes.mjs";
 import { buildHandoff, serializeHandoff } from "../core/handoff.mjs";
-import { recordLoopEvent } from "../artifacts/loops.mjs";
+import { recordLoopEvent, getLoopState } from "../artifacts/loops.mjs";
 
 // TASK-005: header_digest bindet den exakten Scope-HEADER-Bytes an den Job.
 // Ein geänderter/fehlender HEADER vor THINKER-Start oder Re-Review-Creation
@@ -396,8 +396,23 @@ if (jobId) {
     process.exit(2);
   }
   if (job.status === "QUEUED") {
-    if (!jobToRunning(db, jobId, null)) {
-      console.error(red(`FEHLER: Job ${jobId} ist noch nicht für einen Lauf fällig (Retry-Backoff oder Status-Rennen).`));
+    // Der --job-id-Pfad (Worker-Kind UND Direkt-Run) führt einen noch nicht
+    // übernommenen Job über den EINZIGEN Claim-Übergangs-Owner (claimJob in
+    // artifacts/jobs.mjs): atomar status=RUNNING + kausale Claim-Transition
+    // (RE_REVIEW_QUEUED → RE_REVIEW_RUNNING), damit kein status=RUNNING mit
+    // loop_state=RE_REVIEW_QUEUED persistiert wird. Bereits geclaimte Jobs
+    // (status=RUNNING, Worker-Pfad) werden hier NUR ausgeführt — dieser Zweig
+    // besitzt keine eigene Claim-Transition.
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const claimed = claimJob(db, jobId, null, job.scope_id ?? null);
+      if (!claimed.ok) {
+        throw new Error(claimed.reason);
+      }
+      db.exec("COMMIT");
+    } catch (e) {
+      try { db.exec("ROLLBACK"); } catch { /* egal */ }
+      console.error(red(`FEHLER: Job ${jobId} konnte nicht gestartet werden: ${e.message}`));
       closeDb();
       process.exit(3);
     }
@@ -933,7 +948,14 @@ async function main() {
         }
       }
       jobDone(db, jobId, verdict, null);
+      // Loop-Abschluss ist in jobDone eingebettet (TASK-011): der finale
+      // Job-Zustandsübergang erzeugt GENAU EINE Loop-Transition — ein
+      // Re-Review mit finalem NICHT-WRITE-Verdict schließt den Loop auf DONE
+      // (gleiche Transaktion wie das Verdict); WRITE lässt ihn offen
+      // (Handoff → WRITE_AUTHORIZED folgt unten). Kein CLI-Pfad besitzt mehr
+      // die Loop-Lifecycle-Semantik.
       db.exec("COMMIT");
+      if (getLoopState(db, jobId) === "DONE") uiEvt({ t: "loop", s: "DONE" });
     } catch (e) {
       try { db.exec("ROLLBACK"); } catch { /* egal */ }
       throw e;
@@ -947,6 +969,7 @@ async function main() {
     // bestehen; der Fehlerpfad schreibt keinen finalen Zustand um.
     try { jobDone(db, jobId, null, `Review nicht persistent (${String(e.message).split("\n")[0].slice(0, 120)})`); } catch { /* egal */ }
     uiEvt({ t: "state", s: "ERROR" });
+    uiEvt({ t: "loop", s: "ERROR" });
     closeDb();
     process.exitCode = 3;
     return;
