@@ -15,6 +15,13 @@
 // Any new production loop_state UPDATE is a regression and must fail loudly.
 // This is intentionally a source-level freeze: it protects the ownership rule
 // from future refactors that accidentally add a second state writer.
+//
+// REPAIR (2026-09-03): as pushed, this file was escape-mangled (double
+// backslashes in the regexes) and could not load (SyntaxError: Unterminated
+// group); the string-stripping additionally removed the very SQL it must
+// detect (the writes live inside string literals). Fix: only comments are
+// stripped, string literals stay visible — same contract as the freeze block
+// in tests/invariants.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -45,10 +52,9 @@ function prodSources() {
   return out.sort();
 }
 
-function stripCommentsAndStrings(src) {
+/** Entfernt NUR Kommentare — String-Literale (die SQL) bleiben sichtbar. */
+function stripCommentsOnly(src) {
   return String(src)
-    .replace(/\"(?:[^\"\\\\]|\\\\.)*\"/g, '\"\"')
-    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .split("\n")
     .map((line) => line.replace(/\/\/.*$/, ""))
@@ -57,12 +63,12 @@ function stripCommentsAndStrings(src) {
 
 test("STATIC: loop_state has no production writer outside the frozen ownership set", () => {
   const violations = [];
-  const updates = /UPDATE\\s+jobs\\s+SET\\s+loop_state\\s*=|UPDATE\\s+jobs\\s+SET[^;\n]*\\bloop_state\\b/gi;
-  const inserts = /INSERT\\s+INTO\\s+jobs\\s*\\([^)]*\\bloop_state\\b/gi;
+  const updates = /UPDATE\s+jobs\s+SET\s+loop_state\s*=|UPDATE\s+jobs\s+SET[^;\n]*\bloop_state\b/gi;
+  const inserts = /INSERT\s+INTO\s+jobs\s*\([^)]*\bloop_state\b/gi;
 
   for (const file of prodSources()) {
     if (file === "tests/loop-state-writer-freeze.test.mjs") continue;
-    const source = stripCommentsAndStrings(fs.readFileSync(path.join(ROOT, file), "utf8"));
+    const source = stripCommentsOnly(fs.readFileSync(path.join(ROOT, file), "utf8"));
     const matches = [...source.matchAll(updates), ...source.matchAll(inserts)];
     if (matches.length && !ALLOWED.has(file)) {
       violations.push(`${file}: ${matches.length} raw loop_state writer expression(s)`);
@@ -79,4 +85,4 @@ test("STATIC: the frozen ownership set is exactly the four audited production fi
     "artifacts/loops.mjs",
     "cli/run.mjs",
   ]);
-});
+});
