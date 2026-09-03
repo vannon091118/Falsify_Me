@@ -18,8 +18,9 @@ export function buildHistory(db, snapshot) {
 
 export function correlation(snapshot) {
   const findings = snapshot.findings ?? [];
-  const thinker = findings.filter((f) => f.wave !== 'evil');
-  const evil = findings.filter((f) => f.wave === 'evil');
+  const isEvil = (f) => f.wave === 'evil' || f.wave === 'evil-twin';
+  const thinker = findings.filter((f) => !isEvil(f));
+  const evil = findings.filter(isEvil);
   if (!thinker.length || !evil.length) return 'UNAVAILABLE';
   const t = new Set(thinker.map((f) => String(f.verdict ?? f.befund ?? '')));
   const e = new Set(evil.map((f) => String(f.verdict ?? f.befund ?? '')));

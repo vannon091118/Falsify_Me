@@ -16,7 +16,7 @@ export function readSnapshot(fdb, eventId) {
     const findings = fdb.prepare('SELECT round, wave, mode, befund, verdict FROM findings WHERE job_id = ? AND wave IN (\'scan\', \'plan\', \'evil\', \'replan\') ORDER BY round ASC').all(event.job_id);
     const scope = event.scope_id ? (fdb.prepare('SELECT header, phase, last_befund, open_conflicts, last_divergence, research_additions, hardened_at FROM scopes WHERE id = ?').get(event.scope_id) ?? null) : null;
     const checkout = job?.checkout_id ? (fdb.prepare('SELECT project_id, checkout_id, bound_root, anchor_digest FROM checkouts WHERE checkout_id = ?').get(job.checkout_id) ?? null) : null;
-    const project = checkout?.project_id ? (fdb.prepare('SELECT project_id, checkout_id, bound_root, anchor_digest FROM projects WHERE project_id = ?').get(checkout.project_id) ?? null) : null;
+    const project = checkout?.project_id ? (fdb.prepare('SELECT project_id, created_at FROM projects WHERE project_id = ?').get(checkout.project_id) ?? null) : null;
     const snapshot = { loop_event: { ...event, payload: safeJson(event.payload) }, job: job ? { ...job, runtime_config: safeJson(job.runtime_config) } : null, findings, scope, project, checkout };
     fdb.exec('COMMIT');
     return { snapshot, snapshotDigest: digestJson(snapshot) };
