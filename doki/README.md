@@ -1,49 +1,61 @@
-# DOKI Runtime Rev. 2
+# DOKI Runtime Rev. 3
 
 DOKI is a side-channel with no authority over FalsifyMe. It opens `falsify.db` read-only and persists its own derived state in `doki.db`.
 
-## Fail-open contract
-
-DOKI is strictly optional for the FalsifyMe production lifecycle.
+## Non-negotiable boundary
 
 ```text
-DOKI failure
-  -> DOKI fallback / unavailable state / failed DOKI job
-  -> FalsifyMe continues unchanged
-
-DOKI MUST NOT
-  -> block FalsifyMe
-  -> pause FalsifyMe
-  -> change a FalsifyMe lifecycle state
-  -> change a FalsifyMe verdict or gate
-  -> trigger or suppress a FalsifyMe abort
-  -> authorize or perform a FalsifyMe write
+FALSIFY FACTS
+  -> DOKI local deterministic analysis
+     regex / matches / statistics / correlations / history / persona / mood / relationships
+  -> deterministic X-output prompt
+  -> ONE minimal Thinker LLM call
+  -> user-facing prose only
 ```
 
-This is enforced structurally: no FalsifyMe module is imported, `falsify.db` is opened with `readOnly: true`, and all derived state is persisted only in the separate DOKI database. The implementation is additive under `doki/`.
+The Thinker is **not** an analyst, judge, selector, controller, or second truth source. It does not decide a verdict, choose a technical path, perform reasoning for DOKI, or modify DOKI state. All facts and all narrative inputs are prepared locally before the API call.
 
-Runtime contract:
+DOKI MUST NOT:
 
-`terminal loop_event -> read-only snapshot -> observation -> history comparison -> deterministic correlation -> Q-LEARNING -> MODEL WECHSEL -> PROMPT -> LLM CALL -> DokiMessage -> ENDE RUNTIME -> SQLite persistence`
+- block, pause, change, authorize, or suppress any FalsifyMe lifecycle action;
+- change FalsifyMe verdicts, gates, aborts, or writes;
+- use an LLM to calculate patterns, statistics, correlations, narrator choice, mood, or relationships;
+- use Q-learning or model switching to decide whether or how to render an event.
 
-The DOKI runtime itself may terminate with fallback or failure, but that termination belongs only to DOKI. FalsifyMe does not consume DOKI as a required lifecycle dependency.
+## Shared Thinker key
 
-No FalsifyMe module is imported. The interface is the documented table/JSON contract.
+The Thinker uses the shared Thinker API key: `DOKI_THINKER_API_KEY`. `DOKI_API_KEY` remains a compatibility fallback only. One configured Thinker model, one prose call path.
 
-Node.js >= 22.5 is required because `node:sqlite` and `DatabaseSync` are used by the runtime.
+The request is rate-limited locally to the configured `DOKI_RPM`, defaulting to **40 RPM** with a minimum spacing of **1.5 seconds** between model requests. The limiter executes only inside the DOKI side-channel. It is not part of FalsifyMe's validation path.
 
-## Configuration
+## Deterministic runtime
 
-`DOKI_API_BASE`, `DOKI_API_KEY`, `DOKI_GREEN_MODEL`, `DOKI_THINKER_MODEL`, `DOKI_TIMEOUT_MS`, `DOKI_MAX_CALLS`, `DOKI_TOKEN_BUDGET`, and `DOKI_RPM` configure model access and local budget. `DOKI_RPM` defaults to 40 and is hard-capped to a minimum inter-request delay of 1.5 seconds so local parallel callers cannot exceed the 40 requests/minute budget.
+Before the model call, DOKI computes locally:
 
-The CLI requires the FalsifyMe database path and a separate DOKI database path:
+- technical input copied from the read-only Falsify snapshot;
+- finding, verdict, wave, file and phase statistics;
+- regex and match results;
+- historical references and continuity information;
+- deterministic correlation information;
+- narrator and mood selection;
+- persistent persona state including recall count, fatigue and emotional weight;
+- persistent directed persona relationships;
+- the complete deterministic prompt envelope.
+
+The model receives those results and turns them into concise user-facing prose for X. It may express the supplied persona voice and mood, but it may not invent facts, make decisions, or reinterpret the technical verdict.
+
+## Independent storage
+
+`falsify.db` contains FalsifyMe runtime truth. DOKI never writes it.
+
+`doki.db` contains only DOKI-derived narrative state: observations, reports, prompt records, dialog messages, persona state and persona relationships.
+
+There are no foreign-key relationships from DOKI tables into the FalsifyMe schema.
+
+## CLI
 
 `node doki/src/cli.mjs run --falsify-db <path/to/falsify.db> --doki-db <path/to/doki.db>`
 
-DOKI never writes `falsify.db`, FalsifyMe lifecycle state, FalsifyMe verdicts, or FalsifyMe logs.
+`node doki/src/cli.mjs rebuild --falsify-db <path/to/falsify.db> --doki-db <path/to/doki.db>`
 
-## Current status
-
-This branch is based directly on the current `main` baseline. DOKI is carried only as additive `doki/*` content, with the model-call rate limiter in `doki/src/rate-limit.mjs`.
-
-Before any real API run, rotate every API key that has previously been pasted into chat or repository context.
+Node.js >= 22.5 is required because the runtime uses `node:sqlite` and `DatabaseSync`.
