@@ -342,8 +342,8 @@ Minimal-Completion gegen den Konto-Zugriff bestätigt. Ein Modell-404 mit
 # EIN Vertrags-Einstieg (Test-Konsolidierung 2026-09-03, siehe AGENTS.md):
 npm run check:sql              # CI-Guard: interpolierte SQL-Identifier fail-closed
 bash scripts/run-tests.sh fast   # Unit-Verträge, ~8 s — jeder Commit
-                                   # (inkl. tests/dead-views.test.mjs:
-                                   #  keine toten Views in ui/tui/views/)
+                                   # (inkl. tests/dead-files.test.mjs:
+                                   #  keine toten .mjs/.ts im ganzen Repo)
 bash scripts/run-tests.sh core   # + Prozess-/DB-Suiten, ~2.5 min — vor Push
 npm test                         # full: alle 33 Dateien — Release
 npm run test:phase2      # FM-EVT-Verdrahtung (Marker-Gate, Parser→UI-State,
