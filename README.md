@@ -1,6 +1,6 @@
 ![FalsifyMe Banner](falsifyme-banner.svg)
 
-# FALSIFYME — Beta (`0.8.2-beta`)
+# FALSIFYME — v0.9.0
 
 Zwischen einer Behauptung und einer Freigabe sitze ich. Ich bin Falsify_ME —
 das **read-only Falsifikations-Gateway für Coding-Agenten**, und der Name ist
@@ -307,9 +307,9 @@ Scopes, Findings, Verdicts oder Regeln; er trennt nur logische Projekt-Historie
 
 ```bash
 falsify anchor init --root <projekt>
-falsify scope new "Mein Auftrag 1:1" --root <projekt>  # Scope mit HEADER = User-Input
-# Plan-Datei anlegen (z.B. plan.txt), dann:
-falsify submit --scope <scope-id> --plan-file plan.txt --root <projekt> --files "app.js,lib/auth.js"
+# Plan-Datei anlegen (z.B. plan.txt), dann — das Ticket (User-Input 1:1) ist der
+# EINZIGE Identitätsanker; die Scope-ID bestimmt FalsifyMe automatisch:
+falsify submit --header "Mein Auftrag 1:1" --plan-file plan.txt --root <projekt> --files "app.js,lib/auth.js"
 ```
 
 - Der Submit legt den Job in die SQLite-Queue (`JOB_ID=…`) und wartet bis zum
@@ -318,8 +318,9 @@ falsify submit --scope <scope-id> --plan-file plan.txt --root <projekt> --files 
   der Aufgabe — FalsifyMe prüft die Divergenz zum User-Wunsch als eigenen
   Punkt) und `--affected "a.js,b.js"` (betroffene Daten).
 - Ein Worker verarbeitet den Job live: sichtbares Dock-Fenster (Desktop-Icon
-  oder `ui/start-dock.cmd`), oder headless über
-  `node "$(npm root -g)/falsifyme/ui/worker.mjs"`.
+  oder `ui/start-dock.cmd`) oder Hintergrund über `falsify worker start 1`.
+  Ohne frischen Worker-Herzschlag warnt `submit`/`status`/`doctor` ehrlich
+  (mit letzter Worker-Aktivität) statt still zu warten.
 - Ergebnis: `=== <job-id>: DONE WRITE/PLAN/RESEARCH ===`, Befund + Findings via
   `falsify log <job-id>`, Antwort via `falsify answer <job-id>`.
 
@@ -330,7 +331,7 @@ falsify submit --scope <scope-id> --plan-file plan.txt --root <projekt> --files 
 | Kein API-Key konfiguriert | `FEHLER: Kein API-Key gefunden (gesucht: …)`, Exit 2 |
 | Kein `bash` (Windows ohne Git Bash) | `FEHLER: bash wurde nicht gefunden …`, Exit 3 |
 | Node < 22.5 | npm-Warnung `EBADENGINE`; `falsify doctor` meldet die Node-Anforderung |
-| FalsifyMe/Worker nicht erreichbar | Job bleibt `QUEUED`; `falsify wait` pollt weiter (kein Fake-Verdict) |
+| Kein Worker aktiv | `status`/`jobs`/`doctor`/`submit` warnen ehrlich (mit letzter Worker-Aktivität); Start: `falsify worker start 1` (Hintergrund) oder Desktop-Icon `FalsifyMe` (sichtbar) |
 | Provider nicht erreichbar | HTTP-Fehler von `falsify submit`/`run`, Exit 3 |
 | `falsify onboard` ohne Terminal | klare Meldung + Hinweis auf `settings set`, Exit 2 |
 
@@ -668,6 +669,8 @@ falsify wait <job-id> [--ping|--abort] | status <job-id> | jobs | stats
 #   --ping = eine Auswertungsrunde (STATUS <zustand> <sek>; Exit 4 = läuft noch,
 #   der USER AGENT wertet selbst aus) · --abort = Job abbrechen (keine Freigabe)
 falsify abort <job-id>          # CLI-Abbruch: setzt Flag, Worker killt den Job echt
+falsify worker start [1..3]     # registrierten Hintergrund-Worker starten (detached,
+                                # verifizierte Registrierung); sichtbar: Desktop-Icon
 falsify log <job-id> | answer <job-id> | history
 falsify onboard [--skip-dock]   # interaktive Ersteinrichtung (Dialog)
 falsify uninstall [--dry-run]   # vollständige Deinstallation

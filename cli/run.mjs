@@ -38,6 +38,7 @@ import { runProbeExecution } from "../core/twin.mjs";
 import { parseProbeSet, validateProbeSet, splitRequirement, renderRequirementList, probeEvidenceOk, computeVerdict } from "../core/probes.mjs";
 import { runAgent } from "../core/agent.mjs";
 import { checkFeasibility } from "../core/feasibility.mjs";
+import { warnIfNoWorker, workerSnapshot, lastHeartbeatAge, workerHintLines } from "./workerliveness.mjs";
 import { resolveProjectContext, validateProjectFiles } from "../core/project-context.mjs";
 import { requireProjectIdentity, assertScopeCheckout } from "../artifacts/projects.mjs";
 import { snapshotRoot } from "../core/changes.mjs";
@@ -396,6 +397,18 @@ if (submitMode) {
   console.log(`Dateien (Whitelist): ${filesList.join(", ")}`);
   console.log(`Status: SQLite (falsify status ${id})   ·   Protokoll: falsify log ${id}`);
   console.log(`Ein Worker-Fenster (max. 3, FALSIFY_HOME=${falsifyHome()}) verarbeitet den Job live.`);
+  // User-Befund 2026-09-03: Submit darf den Nutzer nicht im Dunkeln lassen,
+  // wenn seit X Minuten kein Worker gehorcht hat. Ehrlich warngen (Alter des
+  // letzten Heartbeats, plattformkorrekter Start) – kein Fake-Status.
+  {
+    const snap = workerSnapshot(db);
+    if (!snap.any) {
+      const age = lastHeartbeatAge(db);
+      const mins = age == null ? " (noch nie ein Worker registriert)" : ` (letzte Worker-Aktivität vor ${Math.max(1, Math.round(age / 60000))} min)`;
+      console.log(`⚠ Kein Worker mit frischem Heartbeat${mins} – der Job bleibt QUEUED, bis einer startet:`);
+      for (const line of workerHintLines()) console.log(line);
+    }
+  }
 
   // ── Regel-3-Enforcement (submit): erst Recovery (Waisen schliessen), dann
   //     Konsistenz erzwingen — eine kaputte Basis darf keine neuen Jobs

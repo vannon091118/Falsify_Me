@@ -328,6 +328,22 @@ export function isWorkerAlive(db, windowIdx) {
 // Status-API bis zu einer Minute lügen).
 export const WORKER_STALE_MS = 15 * 1000;
 
+/**
+ * Alter (ms) des FRISCHESTEN Heartbeats über alle Fenster oder null, wenn nie
+ * ein Worker registriert war. Grundlage der ehrlichen „seit X min kein
+ * Worker"-Hinweise (Status/Doctor/Submit) – nur Lesen, keine Zustandsänderung.
+ */
+export function workerHeartbeatAgeMs(db, maxWindows = 3) {
+  let newest = null;
+  for (let i = 1; i <= maxWindows; i++) {
+    const ts = getMeta(db, `worker.${i}.ts`);
+    if (!ts) continue;
+    const t = new Date(ts).getTime();
+    if (Number.isFinite(t) && (newest === null || t > newest)) newest = t;
+  }
+  return newest === null ? null : Date.now() - newest;
+}
+
 /** Registrierte/laufende Worker (1..MAX_WINDOWS) als Liste. */
 export function listWorkers(db, maxWindows = 3) {
   const out = [];

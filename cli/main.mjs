@@ -51,6 +51,14 @@ async function main() {
     }
     case "log": runLog(args[1]); break;
     case "answer": runAnswer(args.slice(1)); break;
+    case "worker": {
+      // Hintergrund-Worker-Start (User-Test-Befund 2026-09-03): der universelle
+      // Pfad, den Doctor/Status/Submit als Starthinweis nennen. Kein Verdict-
+      // Pfad – startet nur einen registrierten Worker.
+      const { runWorkerStart } = await import("./worker-start.mjs");
+      runWorkerStart(args.slice(1));
+      break;
+    }
     case "ensure-home": {
       const home = ensureFalsifyHome();
       console.log(`FALSIFY_HOME=${home}`);

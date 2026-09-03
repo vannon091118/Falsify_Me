@@ -1,6 +1,6 @@
 {
   "name": "FalsifyMe Agent Skill",
-  "version": "0.8.2-beta",
+  "version": "0.9.0",
   "description": "Pflicht-Review für Coding-Agents (Scope-Protokoll): PLAN ist immer Init, User-Input 1:1 als HEADER, Loop bis Scope erfüllt – Freigabe nur bei VERDICT: WRITE",
 
   "settings": {

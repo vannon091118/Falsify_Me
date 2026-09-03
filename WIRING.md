@@ -89,6 +89,10 @@ core/agent.mjs             ← additiver onTool-Callback (echte Tool-Aktivitaet)
 ui/start-dock.cmd          ← sichtbarer Worker-Start (Fenster 1..3)
 cli/onboard.mjs            ← Onboarding-Dialog (falsify onboard, siehe §13)
 cli/jobs.mjs               ← status/jobs/ping/abort (Wait-Auswertung + CLI-Abbruch)
+cli/workerliveness.mjs     ← Worker-Liveness (EINE Wahrheit: Frische = Heartbeat, egal ob
+                             Dock-Fenster oder Hintergrund) + plattformkorrekte Hinweise
+cli/worker-start.mjs       ← falsify worker start [1..3]: detached Hintergrund-Worker,
+                             verifiziert die Registrierung ehrlich (kein Fake-Erfolg)
 artifacts/stats.mjs        ← Progression-Statistik (read-only User-Anker aus der Queue)
 cli/stats.mjs              ← falsify stats [--json] (Anzeige der Statistik)
 cli/onboard/prompts.mjs    ← echter readline-Dialog: ask/askSecret(maskiert)/confirm

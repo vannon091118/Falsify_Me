@@ -25,6 +25,9 @@ export async function runDoctor() {
   const needMajor = Number(String(pkg.engines?.node || ">=22").replace(/[^0-9.]/g, "").split(".")[0]);
   if (major >= needMajor) ok(`Node ${process.versions.node} (>= ${needMajor} gefordert)`);
   else bad(`Node ${process.versions.node} zu alt (>= ${needMajor} gefordert)`);
+  // Selbst-Kenntnis (User-Test 2026-09-03): das Werkzeug nennt seine Version —
+  // `falsify --version` und doctor zeigen dieselbe Quelle (package.json).
+  ok(`FalsifyMe v${pkg.version}`);
   // Produktkern bleibt dependency-frei; die Terminal-UI braucht bewusst
   // ink + react (Doku: package.json). Alles andere ist unerwartet.
   const DOC_DEPS = { ink: "^7.1.1", react: "^19.2.8" };
@@ -89,15 +92,17 @@ export async function runDoctor() {
     // Worker-Fenster ist DER Onboarding-Moment, in dem neue Nutzer
     // orientierungslos warten. Hartes Problem nur, wenn wirklich Jobs warten;
     // sonst ehrlicher Hinweis (frische Installation hat bewusst kein Fenster).
-    const { listWorkers, MAX_WINDOWS, listJobs } = await import("../artifacts/jobs.mjs");
-    const workers = listWorkers(db, MAX_WINDOWS).filter((w) => w.alive);
+    const { listJobs } = await import("../artifacts/jobs.mjs");
+    const { workerSnapshot } = await import("./workerliveness.mjs");
+    const snap = workerSnapshot(db);
     const queued = listJobs(db, { status: "QUEUED" });
-    if (workers.length) {
-      ok(`Worker: ${workers.length} Fenster aktiv (${workers.map((w) => `Fenster ${w.idx}, pid ${w.pid}`).join(" · ")})`);
-    } else if (queued.length) {
-      bad(`Kein Worker-Fenster aktiv, aber ${queued.length} Job(s) QUEUED – sie bleiben hängen, bis ein Fenster startet. Windows: Desktop-Icon "FalsifyMe" oder ui\\start-dock.cmd 1 (sichtbar) · Linux/macOS: FALSIFY_WINDOW=1 node ui/worker.mjs`);
+    if (snap.fresh.length) {
+      ok(`Worker: ${snap.fresh.length} aktiv (${snap.fresh.map((w) => `Fenster ${w.idx}, pid ${w.pid}`).join(" · ")}) – Hintergrund- oder Dock-Fenster zählen gleichermaßen (eine Registrierung, ein Heartbeat).`);
+    } else if (snap.stale.length) {
+      bad(`Worker registriert, aber Herzschlag abgelaufen (Fenster ${snap.stale.map((w) => w.idx).join(", ")}) – Prozess tot oder gekillt. Sofort starten (Hintergrund): falsify worker start 1 · Windows sichtbar: Desktop-Icon "FalsifyMe" oder ui\\start-dock.cmd 1`);
+    } else if (queued.length) {      bad(`Kein Worker aktiv, aber ${queued.length} Job(s) QUEUED – sie bleiben hängen, bis ein Worker startet. Sofort starten (Hintergrund): falsify worker start 1 · Windows sichtbar: Desktop-Icon "FalsifyMe" oder ui\\start-dock.cmd 1`);
     } else {
-      console.log("  ℹ️  Kein Worker-Fenster aktiv (Queue leer – ein Fenster wird erst beim ersten Job gebraucht. Windows: ui\\start-dock.cmd 1 · Linux/macOS: FALSIFY_WINDOW=1 node ui/worker.mjs)");
+      console.log("  ℹ️  Kein Worker aktiv (Queue leer – ein Worker wird erst beim ersten Job gebraucht. Start: falsify worker start 1 · Windows sichtbar: ui\\start-dock.cmd 1)");
     }
     closeDb();
   } catch (e) {
