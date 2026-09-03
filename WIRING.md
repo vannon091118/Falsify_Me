@@ -506,20 +506,29 @@ Muster), nicht per 2s-Einzelcheck.
 
 ### Deinstallation (uninstall.mjs, Gegenstück zu install.mjs)
 
-`node uninstall.mjs` wickelt die Benutzerinstallation vollständig ab:
+`node uninstall.mjs` (clickable: `FalsifyMe-Deinstall.cmd`, Doppelklick) wickelt
+die Benutzerinstallation vollständig ab — Ziel: „als wäre FalsifyMe nie da
+gewesen":
 Worker stoppen (PIDs aus `ui/worker.mjs --check`), `~/.Falsify_Core` +
 `~/.Falsify_Private` entfernen, `~/.agents/skills/falsifyme*` und
-Instruction-Dateien + Profil-Marker entfernen, den markierten
+Instruction-Dateien + Profil-/PATH-Marker entfernen (dot-source-Zeilen
+`FalsifyMe-Agent-Integration` UND PATH-Einträge `Falsify-CLI` aus
+`.bashrc`/`.bash_profile`/`.profile`/PowerShell-Profil), den markierten
 Instruction-Block aus `AGENTS.md`/`FALSIFYME-WORKFLOW.md` des Zielprojekts
-(`--project-root` oder aktuelle cwd) und npm-Global-Shims. Der kanonische
-Runtime-Home ist `~/.Falsify_Private`; vorhandene alte `~/.Falsify`-Daten sind
-Legacy-Drift und werden im aktuellen Uninstall-Audit noch nicht als vollständig
-bereinigtes Ziel behauptet (siehe `HANDOFF.md`). Key-Inhalte werden vor der
-Entfernung nach `~/.Falsify.env.uninstall-backup` gesichert; `--keep-env` behält
-private Laufzeitdaten. Flags: `--dry-run`, `--keep-env`, `--project-root`.
+(`--project-root` oder aktuelle cwd), den markierten `.gitignore`-Block
+(`# >>> FalsifyMe …`) und den Identitäts-Anker `FalsifyME.md`, sowie
+npm-Global-Shims und Desktop-Icons. Der kanonische Runtime-Home ist
+`~/.Falsify_Private`; vorhandene alte `~/.Falsify`-Daten sind Legacy-Drift
+und werden im aktuellen Uninstall-Audit noch nicht als vollständig bereinigtes
+Ziel behauptet (siehe `HANDOFF.md`). Key-Inhalte werden vor der Entfernung nach
+`~/.Falsify.env.uninstall-backup` gesichert; `--keep-env` behält private
+Laufzeitdaten. Flags: `--dry-run`, `--keep-env`, `--project-root`.
+Test-/CI-Escape-Hatch: `FALSIFY_UNINSTALL_HOME=<tmp>` verlegt ALLE Pfade in
+ein isoliertes Verzeichnis (nie echte Profile/Desktop/npm-Shims anfassen).
 Idempotent; `package.json`: `npm run uninstall:user`. Der Modus-Entscheid
 (Reichweite/Betriebsmodus, nur `PFLICHT` = Gate) ist im Skill
-`falsifyme-selfinstall` verankert.
+`falsifyme-selfinstall` verankert. Installation per Doppelklick:
+`FalsifyMe-Setup.cmd` (ruft `node install.mjs` mit sichtbarem Fenster).
 
 ### Verifikation
 
@@ -723,7 +732,10 @@ nicht und fuehrt keine neue Modellrolle oder Schreibinstanz ein.
   init` und `anchor clone`) traegt `/FalsifyME.md` automatisch in die
   Projekt-`.gitignore` ein (markierter Block, idempotent, bestehende Inhalte
   bleiben; best-effort — schlaegt die Pflege fehl, bleibt der Anker-Vertrag
-  unberuehrt). Fremde Kopien erben so keine fremde PROJECT/CHECKOUT-Bindung.
+  unberuehrt; beim Selbstprüfen des FalsifyMe-Repos wird die eigene
+  `.gitignore` NIE mutiert). Fremde Kopien erben so keine fremde
+  PROJECT/CHECKOUT-Bindung. `uninstall.mjs` entfernt Block + Anker bei der
+  Deinstallation („als wäre FalsifyMe nie da").
 - Decision-Records werden als `UNTRUSTED CONTEXT` in den Thinker-Prompt gegeben.
   Sie koennen weder HEADER, Falsifikationsaufgabe noch Verdict ueberschreiben.
 

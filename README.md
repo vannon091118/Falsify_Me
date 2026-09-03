@@ -422,14 +422,14 @@ Details — jede Zeile ist oben im README oder in `WIRING.md` belegt.
 
 | # | Nutzer / Coding-Agent | FalsifyMe (read-only Gateway) + Dock |
 |---|---|---|
-| 1 | installieren: `falsify bootstrap` / `node install.mjs` | Programm nach `~/.Falsify_Core`, Laufzeitdaten unter `FALSIFY_HOME` (Default `~/.Falsify_Private`); aufgelöste Pfade in `~/.Falsify_Core/install-location.json` |
+| 1 | installieren: `FalsifyMe-Setup.cmd` (Doppelklick) / `falsify bootstrap` / `node install.mjs` | Programm nach `~/.Falsify_Core`, Laufzeitdaten unter `FALSIFY_HOME` (Default `~/.Falsify_Private`); aufgelöste Pfade in `~/.Falsify_Core/install-location.json` |
 | 2 | Reichweite + Betriebsmodus **mit dem Nutzer** entscheiden | als Kopfzeile in der Instruction-Datei dokumentiert (`PFLICHT`/`optional`/`aus`) — **keine stille Gate-Aktivierung** |
 | 3 | — | installiert die **3 Agent-Skills** nach `~/.agents/skills/` (Mapping unten) |
 | 4 | Dock starten | `FalsifyMe.lnk` / `ui/start-dock.cmd` — sichtbar („Niemals headless") |
-| 5 | `falsify scope new "<User-Input 1:1>" --root <projekt>` | Scope mit HEADER = User-Input 1:1; Artefakt in der SQLite-Queue |
-| 6 | `falsify submit --plan … --root … --files "a.js,b.js"` | Queue → Worker → Thinker → Proben → Evil Twin → Gate → Verdict — live im sichtbaren Dock |
+| 5 | **Ticket schreiben**: `falsify start "<User-Input 1:1>"` (sichtbar binden) — bei JEDER Iteration dasselbe Ticket | **FalsifyMe bestimmt die Scope-ID automatisch** (neu angelegt oder Fortsetzung; der Agent verwaltet keine IDs) |
+| 6 | `falsify submit --header "<Ticket 1:1>" --plan … --root … --files "a.js,b.js"` | Queue → Worker → Thinker → Proben → Evil Twin → Gate → Verdict — live im sichtbaren Dock |
 | 7 | Exit 0 = `WRITE`: `falsify handoff brief`, dann umsetzen | Freigabe: der Coding-Agent (einziger Writer) setzt die Änderung um |
-| 8 | `falsify handoff complete …` | FalsifyMe misst selbst nach (Change-Digest, Whitelist) → Re-Review automatisch (`RE_REVIEW_QUEUED`) → Loop bis hardened/done — Dock bleibt sichtbar |
+| 8 | `falsify handoff complete …` · `falsify resume` / `falsify history` für Wiederaufnahme & Verlauf | FalsifyMe misst selbst nach (Change-Digest, Whitelist) → Re-Review automatisch (`RE_REVIEW_QUEUED`) → Loop bis hardened/done — Dock bleibt sichtbar |
 
 ### Installation und Skill-Installation: Wo landet was?
 
@@ -451,21 +451,27 @@ Die **drei Agent-Skills** werden nach `~/.agents/skills/` installiert:
 Der FalsiFlow-Skill und der Self-Install-Skill haben einen eigenen Ordner
 mit `SKILL.md`, damit sie direkt nach der Installation funktionieren.
 
-### Der FalsiFlow in der Agent-Session
+### Der FalsiFlow in der Agent-Session (Ticket-Protokoll)
 
-1. **Scope anlegen** — `falsify scope new "<User-Input 1:1>" --root <projekt>`:
-   der User-Input wird unverändert zum HEADER; jeder Job startet eine
-   frische Modell-Konversation (kein Kontext-Mixing über Scopes).
-2. **Iteration einreichen** — `falsify submit --scope <id> --plan-file <datei>
-   --root <root> --files "a.js,b.js"` (blockiert bis zum Verdict; Whitelist
-   = `--files`). Optional `--agent-intent`/`--affected`.
+1. **Ticket schreiben** — der User-Input wird unverändert 1:1 übernommen
+   (`--header`/`--user-input`). `falsify start "<Ticket>"` bindet den Auftrag
+   sichtbar; `falsify resume [--header "<Ticket>"]` nimmt den letzten offenen
+   Auftrag wieder auf. **Die Scope-ID bestimmt FalsifyMe automatisch** — der
+   Agent wählt, parst und reicht nie eine Scope-ID zurück (`--scope <id>` ist
+   Operator-/Diagnose-Flag, kein Agent-Vertrag).
+2. **Iteration einreichen** — `falsify submit --header "<Ticket 1:1>"
+   --plan-file <datei> --root <root> --files "a.js,b.js"` (blockiert bis zum
+   Verdict; Whitelist = `--files`). Optional `--agent-intent`/`--affected`.
+   Jede Iteration nutzt denselben Aufruf (ein Pfad für Start und Loop).
 3. **Verdict lesen** — Exit 0 = `WRITE` (Freigabe read-only → write),
-   1 = `PLAN`/`RESEARCH` (Loop: Plan überarbeiten bzw. read-only
-   recherchieren, erneut einreichen), 5 = `ASK`, 2/3 = keine Freigabe.
+   1 = `PLAN`/`RESEARCH` (Loop: Iteration überarbeiten bzw. read-only
+   recherchieren, erneut einreichen — gleiches Ticket), 5 = `ASK`, 2/3 =
+   keine Freigabe.
 4. **WRITE umsetzen** — Handoff-Brief holen, als einziger Writer ändern.
-5. **Review im selben Scope** — nach der Umsetzung erneut einreichen bzw.
+5. **Review im selben Auftrag** — nach der Umsetzung erneut einreichen bzw.
    `falsify handoff complete`; das **letzte** Review bestimmt das
-   Output-Verdict. Loop bis der Scope erfüllt ist.
+   Output-Verdict. Loop bis der Auftrag erfüllt ist. Verlauf & Auswirkung:
+   `falsify history [--scope <id>]` (Freigaben/Blockaden je Auftrag).
 
 Details: Bootstrap („Für Agents" weiter unten), `WIRING.md` §6 (Installation
 und FalsiFlow-Skills), Quelltexte `skills/*.md` und
@@ -624,19 +630,27 @@ er, wird er mit dem FalsifyMe-Skillpfad angelegt. `winget` wird nicht als
 Voraussetzung behauptet — es ist nur ein möglicher Weg, Node.js/Git
 bereitzustellen.
 
-### Deinstallation (vollständig und sauber)
+### Deinstallation (vollständig und sauber — „als wäre FalsifyMe nie da gewesen")
+
+Doppelklick auf **`FalsifyMe-Deinstall.cmd`** (clickable Uninstaller) oder
+per CLI:
 
 ```bash
 node uninstall.mjs --dry-run          # Vorschau, ändert nichts
-node uninstall.mjs --project-root DIR  # + Zielprojekt-Instruction entfernen
+node uninstall.mjs --project-root DIR  # + Zielprojekt-Marker/-Anker entfernen
 node uninstall.mjs --keep-env          # FALSIFY_HOME behalten
 node uninstall.mjs                     # komplette Rückabwicklung
 ```
 
-Entfernt Worker-Fenster, `~/.Falsify_Core`, `~/.Falsify_Private`,
-`~/.agents/skills/falsifyme*`, die Instruction-Dateien und Profil-Marker,
-den Instruction-Block im Zielprojekt sowie npm-Global-Shims. Enthaltene
-API-Keys werden VORHER nach `~/.Falsify.env.uninstall-backup` gesichert.
+Entfernt: Worker-Fenster, `~/.Falsify_Core`, `~/.Falsify_Private` (Keys
+VORHER nach `~/.Falsify.env.uninstall-backup` gesichert),
+`~/.agents/skills/falsifyme*`, Instruction-Dateien (`~/.falsifyme-instructions.*`),
+Profil-/PATH-Marker (dot-source-Zeilen **und** PATH-Einträge von
+`falsify install` aus `.bashrc`/`.bash_profile`/`.profile`/PowerShell-Profil),
+Desktop-Icons, npm-Global-Shims — und mit `--project-root` zusätzlich den
+markierten FalsifyMe-Block aus `AGENTS.md`/`FALSIFYME-WORKFLOW.md`, den
+markierten `.gitignore`-Block sowie den Identitäts-Anker `FalsifyME.md` des
+Zielprojekts. Idempotent; fehlende Pfade sind kein Fehler.
 
 ---
 
@@ -645,8 +659,10 @@ API-Keys werden VORHER nach `~/.Falsify.env.uninstall-backup` gesichert.
 ```bash
 falsify ensure-home | doctor
 falsify anchor init|check|rebind|clone|record [--root <dir>]
-falsify scope new "<user-input>" [--root <dir>] | scope show <id> | scope list
-falsify submit --scope <id> --plan-file plan.txt --root <dir> --files "a,b"
+falsify start "<ticket>" [--root <dir>]        # Auftrag binden (Scope-ID bestimmt FalsifyMe)
+falsify resume [--header "<ticket>"] [--all]   # letzten offenen Auftrag wieder aufnehmen
+falsify scope new "<user-input>" [--root <dir>] | scope show <id> | scope list   # Operator-/Diagnose
+falsify submit --header "<ticket 1:1>" --plan-file plan.txt --root <dir> --files "a,b"   # Agent-Pfad
 falsify wait <job-id> [--ping|--abort] | status <job-id> | jobs | stats
 #   --ping = eine Auswertungsrunde (STATUS <zustand> <sek>; Exit 4 = läuft noch,
 #   der USER AGENT wertet selbst aus) · --abort = Job abbrechen (keine Freigabe)

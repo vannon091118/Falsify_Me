@@ -8,7 +8,9 @@
 //   - private Daten ~/.Falsify_Private entfernen
 //   - Agent-Skills ~/.agents/skills/{falsifyme,falsifyme-falsiflow,falsifyme-selfinstall} entfernen
 //   - Instruction-Dateien ~/.falsifyme-instructions.{sh,ps1} + Marker-Zeilen
-//     aus ~/.bashrc bzw. PowerShell-Profil entfernen (idempotent)
+//     aus ~/.bashrc / ~/.bash_profile / ~/.profile / PowerShell-Profil
+//     entfernen (idempotent): dot-source „FalsifyMe-Agent-Integration“ UND
+//     PATH-Einträge von `falsify install` (Marker „Falsify-CLI“)
 //   - ~/.Falsify_Private (FALSIFY_HOME: .env-Keys, SQLite-Verlauf, Logs =
 //     private Wissensdaten) entfernen — Key-Inhalt wird VORHER nach
 //     ~/.Falsify.env.uninstall-backup gesichert, sofern Werte enthalten sind
@@ -16,8 +18,14 @@
 //   - Desktop-Icons FalsifyMe*.lnk entfernen
 //   - npm-Global-Shims (falsify) entfernen, falls vorhanden
 // Safteguards: --dry-run zeigt nur; --keep-env behält FALSIFY_HOME;
-// --project-root <dir> entfernt zusätzlich den markierten FalsifyMe-Block
-// aus AGENTS.md / FALSIFYME-WORKFLOW.md des Zielprojekts (Bootstrap-Write).
+// --project-root <dir> entfernt zusätzlich aus dem Zielprojekt:
+//   - den markierten FalsifyMe-Block aus AGENTS.md / FALSIFYME-WORKFLOW.md
+//     (Bootstrap-Write, Marker FALSIFYME-BOOTSTRAP-BEGIN/END),
+//   - den markierten .gitignore-Block („# >>> FalsifyMe (lokal …) <<<“),
+//   - den Identitäts-Anker FalsifyME.md (checkout-lokal, nie committen).
+// Ohne --project-root wird zusätzlich der cwd-Versuch gemacht (wie gehabt).
+// Ziel: „als wäre FalsifyMe nie da gewesen“ – kein Marker, keine PATH-Zeile,
+// kein Anker, kein Icon, kein Shim bleibt zurück.
 // Idempotent: fehlende Pfade sind kein Fehler.
 // ─────────────────────────────────────────────────────────────────────────────
 import fs from "node:fs/promises";
@@ -28,7 +36,12 @@ import { spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const home = os.homedir();
+// Test-/CI-Escape-Hatch (nur Tests): FALSIFY_UNINSTALL_HOME verlegt ALLE
+// Pfade (Profile, Skills, Core, Private, Desktop) in ein isoliertes
+// Verzeichnis – die echte Benutzerumgebung bleibt unberuehrt. Im Produktiv-
+// betrieb nie setzen.
+const homeOverride = process.env.FALSIFY_UNINSTALL_HOME;
+const home = homeOverride || os.homedir();
 const args = new Set(process.argv.slice(2));
 const dryRun = args.has("--dry-run");
 const keepEnv = args.has("--keep-env");
@@ -49,6 +62,9 @@ const instructionFiles = [path.join(home, ".falsifyme-instructions.sh"), path.jo
 const envBackup = path.join(home, ".Falsify.env.uninstall-backup");
 const MERGE_BEGIN = "<!-- FALSIFYME-BOOTSTRAP-BEGIN -->";
 const MERGE_END = "<!-- FALSIFYME-BOOTSTRAP-END -->";
+const GITIGNORE_BEGIN = "# >>> FalsifyMe (lokal – nicht committen) <<<";
+const GITIGNORE_END = "# <<< FalsifyMe (lokal) <<<";
+const ANCHOR_FILE = "FalsifyME.md";
 
 let removed = 0;
 let skipped = 0;
@@ -83,6 +99,9 @@ async function removeFile(p) {
 // (OneDrive, GPO). USERPROFILE\Desktop weicht dort ab. Fallback-Kette:
 // GetFolderPath -> USERPROFILE\Desktop -> os.homedir()/Desktop.
 function desktopPath() {
+  // Test-/CI-Hatch: mit FALSIFY_UNINSTALL_HOME wird NIE der echte Desktop
+  // angesehen (PowerShell GetFolderPath kennt die Env-Override nicht).
+  if (homeOverride) return path.join(home, "Desktop");
   if (process.platform !== "win32") return path.join(home, "Desktop");
   try {
     const r = spawnSync("powershell.exe", ["-NoProfile", "-Command", "[Environment]::GetFolderPath('Desktop')"], {
@@ -142,20 +161,55 @@ async function cleanProjectInstruction(dir) {
   }
 }
 
+// Marker, die FalsifyMe in Shell-/Profil-Dateien hinterlassen kann:
+//  - dot-source-Zeilen der Bootstrap-Instructions („FalsifyMe-Agent-Integration“)
+//  - PATH-Einträge von `falsify install` („Falsify-CLI“, cli/falsify.sh install)
+// Entfernt werden ALLE Zeilen, die einen Marker enthalten (idempotent, ehrlich).
 async function removeProfileMarkers() {
   const targets = [
-    { file: path.join(home, ".bashrc"), marker: "FalsifyMe-Agent-Integration" },
-    { file: path.join(home, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1"), marker: "FalsifyMe-Agent-Integration" },
+    path.join(home, ".bashrc"),
+    path.join(home, ".bash_profile"),
+    path.join(home, ".profile"),
+    path.join(home, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1"),
   ];
-  for (const { file, marker } of targets) {
+  const markers = ["FalsifyMe-Agent-Integration", "Falsify-CLI"];
+  for (const file of targets) {
     if (!existsSync(file)) continue;
     const lines = (await fs.readFile(file, "utf8")).split("\n");
-    const next = lines.filter((l) => !l.includes(marker));
+    const next = lines.filter((l) => !markers.some((m) => l.includes(m)));
     if (next.length === lines.length) continue;
-    if (dryRun) { logAction("Marker-Zeile entfernen", `${file} (${marker})`); continue; }
+    if (dryRun) { logAction("Marker-Zeilen entfernen", `${file} (${markers.join(" / ")})`); continue; }
     await fs.writeFile(file, next.join("\n"), "utf8");
-    logAction("Marker-Zeile entfernt", file);
+    logAction("Marker-Zeilen entfernt", file);
   }
+}
+
+// Identitäts-Anker FalsifyME.md + markierter .gitignore-Block (UI-126,
+// core/identity.mjs ensureAnchorGitIgnored). Beides ist checkout-lokal und
+// muss bei der Deinstallation mit verschwinden – „als wäre FalsifyMe nie da“.
+function stripGitignoreBlock(text) {
+  const b = text.indexOf(GITIGNORE_BEGIN);
+  const e = text.indexOf(GITIGNORE_END);
+  if (b === -1 || e === -1 || e < b) return { text, changed: false };
+  const before = text.slice(0, b).replace(/\s+$/, "");
+  const after = text.slice(e + GITIGNORE_END.length).replace(/^\s+/, "");
+  let joined = before + (after ? "\n" + after : "");
+  if (joined && !joined.endsWith("\n")) joined += "\n"; // Datei-Endung wie vorher
+  return { text: joined, changed: true };
+}
+
+async function cleanProjectAnchor(dir) {
+  if (!dir || !existsSync(dir)) return;
+  const anchor = path.join(dir, ANCHOR_FILE);
+  if (existsSync(anchor)) await removeFile(anchor);
+  const gitignore = path.join(dir, ".gitignore");
+  if (!existsSync(gitignore)) return;
+  const source = await fs.readFile(gitignore, "utf8");
+  const { text, changed } = stripGitignoreBlock(source);
+  if (!changed) return;
+  if (dryRun) { logAction("FalsifyMe-Block aus .gitignore entfernen", gitignore); return; }
+  await fs.writeFile(gitignore, text, "utf8");
+  logAction("FalsifyMe-Block aus .gitignore entfernt", gitignore);
 }
 
 async function backupEnvKeys() {
@@ -170,6 +224,7 @@ async function backupEnvKeys() {
 }
 
 async function removeNpmShims() {
+  if (homeOverride) return; // Test-/CI-Hatch: nie echte globale Shims anfassen
   const prefix = String(spawnSync((process.platform === "win32" ? "npm.cmd" : "npm"), ["prefix", "-g"], { encoding: "utf8" }).stdout || "").trim();
   if (!prefix) return;
   const shims = ["falsify", "falsify.cmd", "falsify.ps1"].map((s) => path.join(prefix, s));
@@ -184,6 +239,8 @@ async function main() {
   await stopWorkers();
   await cleanProjectInstruction(projectRoot);
   await cleanProjectInstruction(process.cwd());
+  await cleanProjectAnchor(projectRoot);
+  await cleanProjectAnchor(process.cwd());
   for (const d of skillDirs) await removeDir(d);
   for (const f of instructionFiles) await removeFile(f);
   await removeProfileMarkers();
@@ -202,7 +259,7 @@ async function main() {
   console.log("");
   console.log(dryRun
     ? `Dry-Run abgeschlossen: ${skipped} Aktionen würden ausgeführt (--keep-env / --project-root verfügbar).`
-    : `Deinstallation abgeschlossen: ${removed} Element(e) entfernt${removed ? "" : " (nichts zu tun)"}. FalsifyMe ist vollständig rückabgewickelt.`);
+    : `Deinstallation abgeschlossen: ${removed} Element(e) entfernt${removed ? "" : " (nichts zu tun)"}. FalsifyMe ist vollständig rückabgewickelt – als wäre es nie da gewesen (Ausnahme: der Key-Backup unter ${envBackup}, falls Keys gesetzt waren).`);
   if (existsSync(envBackup)) console.log(`Hinweis: API-Keys liegen gesichert unter ${envBackup} (nur dort, nicht gelöscht).`);
 }
 

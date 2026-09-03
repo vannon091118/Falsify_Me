@@ -87,8 +87,9 @@ export function showSummary({ questions, apiKeyEntered, skipDock, install }) {
   if (!apiKeyEntered) say("  • API-Key: unverändert gelassen");
   say("Nächste Schritte:");
   say(`  • ${cmd("doctor")}          – Runtime-Vertragsprüfung (Key-Status!)`);
-  say(`  • ${cmd("scope new", '"<dein Auftrag 1:1>"')} – ersten Scope anlegen`);
-  say(`  • ${cmd("submit", "--scope <id> --plan-file plan.txt --root <dir> --files \"a,b\"")} – prüfen lassen`);
+  say(`  • ${cmd("start", '"<dein Auftrag 1:1>"')} – Auftrag starten (Ticket binden; die Scope-ID bestimmt FalsifyMe automatisch)`);
+  say(`  • ${cmd("submit", "--header \"<dein Auftrag 1:1>\" --plan-file plan.txt --root <dir> --files \"a,b\"")} – prüfen lassen`);
+  say(`  • ${cmd("resume")} / ${cmd("history")} – letzten offenen Auftrag wieder aufnehmen / Verlauf & Auswirkung ansehen`);
   if (skipDock) say("  • Dock: übersprungen (--skip-dock) — ui/start-dock.cmd manuell");
   else if (install.isWindows) say("  • Dock-Fenster wurde gestartet — dort siehst du deine Jobs live (TUI).");
   else say("  • Sichtbares Dock ist Windows-only; Worker: node ui/worker.mjs");

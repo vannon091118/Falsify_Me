@@ -2,26 +2,28 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # AGENT SKILL: FalsifyMe Pflicht-Check (Bash - LLM-Standard) · FalsifyMe 2.0
 # -----------------------------------------------------------------------------
-# SCOPE-PROTOKOLL (nicht verhandelbar):
-#   1. PLAN ist IMMER die Init-Aktion eines Scopes. User-Input 1:1 wird zum
-#      HEADER des Prompts (falsify scope new) und bleibt in allen Scope-Prompts.
-#   2. 1 Scope = 1 Artefakt (SQLite), von FalsifyMe aktualisiert: User-Input,
-#      letzter vollständiger zusammenfassender Befund, ALLE Befunde.
-#      Jeder Job startet das Modell NEU (Context = nur 1 Scope).
-#   3. Loop bis Scope erfuellt (das LETZTE Review entscheidet):
-#      - VERDICT: PLAN     -> Plan ueberarbeiten (HEADER behalten), erneut einreichen
+# TICKET-PROTOKOLL (nicht verhandelbar):
+#   1. Der Agent schreibt den Job als TICKET („was soll gemacht werden“) und
+#      liefert es bei JEDER Iteration 1:1 als --user-input (HEADER, nie
+#      umformuliert). Er verwaltet KEINE Scope-ID – FalsifyMe bestimmt die
+#      Scope-Zuordnung automatisch (neuer Scope beim ersten Ticket, sonst
+#      Fortsetzung desselben Tickets). Ein Aufrufpfad fuer Start UND Loop.
+#   2. 1 Scope = 1 Artefakt (SQLite), von FalsifyMe aktualisiert. Jeder Job
+#      startet das Modell NEU (Context = nur 1 Scope).
+#   3. Loop bis der Scope erfuellt ist (das LETZTE Review entscheidet):
+#      - VERDICT: PLAN     -> Iteration ueberarbeiten, erneut einreichen
+#                             (immer mit DEMSELBEN Ticket = --user-input 1:1)
 #      - VERDICT: RESEARCH -> FalsifyMe braucht weitere Daten: read-only
 #                             recherchieren, Befunde ergaenzen, erneut einreichen
 #      - VERDICT: WRITE    -> FREIGABE: READ-ONLY -> WRITE. Jetzt umsetzen, dann
 #                             die Umsetzung erneut reviewen (WRITE-/REVIEW-Loop)
 #   4. FalsifyMe selbst bleibt read-only zum Projekt (einzige Schreibausnahme:
 #      der identitätstragende FalsifyME.md-Anker – nie Scopes/Verdicts/Regeln).
-#   5. Nach dem finalen Review endet der Modellkontext; der naechste Scope
-#      startet frisch (getrennt, kein Vermischen).
+#   5. --scope <id> ist ein OPERATOR-/DIAGNOSE-Flag und im Agent-Pfad VERBOTEN
+#      (der Agent darf die Scope-Zuordnung nie selbst entscheiden).
 #
-# Verwendung:
-#   bash agent-skill-falsify.sh --user-input "<User-Input 1:1>" --plan plan.txt --root /path --files "app.js,lib/auth.js"
-#   bash agent-skill-falsify.sh --scope <scope-id> --plan plan.txt --root /path --files "app.js,lib/auth.js"   (Loop)
+# Verwendung (JEDE Iteration – Start UND Fortsetzung sind EIN Pfad):
+#   bash agent-skill-falsify.sh --user-input "<User-Input 1:1 / Ticket>" --plan plan.txt --root /path --files "app.js,lib/auth.js"
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Skript-Lage robust aufloesen → V2_ROOT
@@ -92,30 +94,16 @@ ensure_dock_window() {
   return 1
 }
 
-# ── Scope sicherstellen: PLAN ist IMMER die Init-Aktion ─────────────────────
-ensure_scope() {
-  local scope_id="$1"
-  local user_input="$2"
-  local root_dir="${3:-}"
-  if [ -n "$scope_id" ]; then
-    echo "$scope_id"
-    return 0
-  fi
+# ── Ticket sicherstellen (Agent-Pfad): --user-input ist bei JEDER Iteration
+# Pflicht (Ticket = User-Input 1:1). Die Scope-ID bestimmt FalsifyMe ueber
+# --header beim Submit (Auto-Anlage/Fortsetzung) – der Agent waehlt nichts.
+# --scope im Agent-Pfad wird abgelehnt (Operator-Flag, kein Agent-Vertrag).
+ensure_ticket() {
+  local user_input="$1"
   if [ -z "$user_input" ]; then
-    log_error "Beim Scope-Start ist --user-input Pflicht (User-Input 1:1 -> HEADER). Bei Loop-Fortsetzung --scope angeben."
+    log_error "--user-input ist bei JEDER Iteration Pflicht (Ticket = User-Input 1:1, der HEADER des Scopes)."
     return 2
   fi
-  # Logs auf stderr: diese Funktion wird per Command-Substitution aufgerufen
-  # (scope=$(ensure_scope ...)); stdout muss EXAKT die Scope-ID liefern.
-  [ -n "$root_dir" ] || { log_error "Beim Scope-Start ist --root Pflicht; Scope wird nicht ohne Projekt-Root angelegt." >&2; return 2; }
-  log_step "PLAN = Init: Scope anlegen - User-Input wird 1:1 zum HEADER..." >&2
-  local out
-  out=$(node "$V2_DIR/cli/main.mjs" scope new "$user_input" --root "$root_dir" 2>&1) || { log_error "$out" >&2; return 2; }
-  local id
-  id=$(echo "$out" | sed -n 's/^SCOPE_ID=//p' | head -1)
-  [ -n "$id" ] || { log_error "Scope konnte nicht angelegt werden: $out" >&2; return 2; }
-  log_ok "Scope angelegt: $id (HEADER = User-Input 1:1)" >&2
-  echo "$id"
   return 0
 }
 
@@ -125,11 +113,10 @@ falsify_mandatory_check() {
   local root_dir="$2"
   local files_list="$3"
   local diff_file="${4:-}"
-  local scope_id="${5:-}"
-  local user_input="${6:-}"
+  local user_input="${5:-}"
 
   if [ -z "$plan_file" ] || [ -z "$root_dir" ] || [ -z "$files_list" ]; then
-    log_error "Verwendung: falsify_mandatory_check <plan-file> <root-dir> <files-list> [diff-file] [scope-id] [user-input]"
+    log_error "Verwendung: falsify_mandatory_check <plan-file> <root-dir> <files-list> [diff-file] [user-input]"
     return 2
   fi
   if [ ! -f "$plan_file" ]; then
@@ -140,12 +127,11 @@ falsify_mandatory_check() {
   # ── 0. Fenster sicherstellen (bis zu 3, IMMER offen!) ────────────────────
   ensure_dock_window || return 3
 
-  # ── 0b. Scope: beim Start anlegen (PLAN = Init, HEADER = User-Input 1:1) ──
-  local scope
-  scope=$(ensure_scope "$scope_id" "$user_input" "$root_dir") || return $?
+  # ── 0b. Ticket (User-Input 1:1) – Scope bestimmt FalsifyMe automatisch ───
+  ensure_ticket "$user_input" || return $?
 
   log_step "FalsifyMe Pflicht-Check wird gestartet..."
-  log_info "Scope: $scope"
+  log_info "Ticket (HEADER 1:1): $user_input"
   log_info "Plan: $plan_file"
   log_info "Root: $root_dir"
   log_info "Dateien: $files_list"
@@ -158,7 +144,7 @@ falsify_mandatory_check() {
     "--plan-file" "$plan_file"
     "--root" "$root_dir"
     "--files" "$files_list"
-    "--scope" "$scope"
+    "--header" "$user_input"
   )
   [ -n "$diff_file" ] && submit_args+=("--diff-file" "$diff_file")
 
@@ -229,18 +215,18 @@ falsify_mandatory_check() {
   # ── 2. Ergebnis auswerten (Loop-Routing) ─────────────────────────────────
   case "$verdict" in
     WRITE)
-      log_ok "VERDICT: WRITE → Freigabe: READ-ONLY → WRITE (Scope $scope)"
+      log_ok "VERDICT: WRITE → Freigabe: READ-ONLY → WRITE (Scope wird von FalsifyMe verwaltet)"
       log_info "Protokoll: falsify log $job_id"
       return 0
       ;;
     RESEARCH)
       log_warn "VERDICT: RESEARCH → FalsifyMe braucht weitere Daten!"
-      log_warn "Read-only recherchieren (Dateien lesen, Befunde sammeln), Artefakt ergänzen, erneut einreichen."
+      log_warn "Read-only recherchieren (Dateien lesen, Befunde sammeln), Artefakt ergänzen, erneut einreichen – mit DEMSELBEN Ticket (--user-input 1:1)."
       log_info "Datenbedarf/Kritik: falsify log $job_id"
       return 1
       ;;
     PLAN)
-      log_error "VERDICT: PLAN → Iteration überarbeiten (HEADER behalten), erneut einreichen."
+      log_error "VERDICT: PLAN → Iteration überarbeiten und erneut einreichen (gleiches Ticket = --user-input 1:1)."
       log_error "Kritik: falsify log $job_id"
       return 1
       ;;
@@ -261,7 +247,6 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   root_dir=""
   files_list=""
   diff_file=""
-  scope_id=""
   user_input=""
 
   while [[ $# -gt 0 ]]; do
@@ -270,21 +255,24 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
       --root)      root_dir="$2"; shift 2 ;;
       --files)     files_list="$2"; shift 2 ;;
       --diff)      diff_file="$2"; shift 2 ;;
-      --scope)     scope_id="$2"; shift 2 ;;
       --user-input) user_input="$2"; shift 2 ;;
+      --scope|--header)
+        echo "FEHLER: --scope/--header sind hier nicht erlaubt. Der Agent liefert das Ticket ueber --user-input (1:1); die Scope-ID bestimmt FalsifyMe automatisch (--scope ist Operator-Flag)." >&2
+        exit 2
+        ;;
       -h|--help)
         echo "AGENT SKILL: FalsifyMe Pflicht-Check (Bash) · FalsifyMe 2.0"
         echo ""
-        echo "SCOPE-PROTOKOLL: PLAN ist IMMER Init (User-Input 1:1 als HEADER)."
+        echo "TICKET-PROTOKOLL: Der Agent schreibt den Job als Ticket (User-Input 1:1)."
+        echo "FalsifyMe bestimmt die Scope-ID automatisch (Start UND Fortsetzung = EIN Pfad)."
         echo "Loop: PLAN → überarbeiten · RESEARCH → read-only recherchieren · WRITE → Freigabe."
         echo ""
-        echo "Verwendung:"
-        echo "  bash agent-skill-falsify.sh --user-input \"<User-Input 1:1>\" --plan plan.txt --root /path --files \"a.js,b.js\""
-        echo "  bash agent-skill-falsify.sh --scope <scope-id> --plan plan.txt --root /path --files \"a.js,b.js\"   (Loop)"
+        echo "Verwendung (JEDE Iteration):"
+        echo "  bash agent-skill-falsify.sh --user-input \"<User-Input 1:1 / Ticket>\" --plan plan.txt --root /path --files \"a.js,b.js\""
         echo ""
         echo "Optionen:"
-        echo "  --user-input <text>  User-Input 1:1 – wird HEADER des Scopes (beim Start Pflicht)"
-        echo "  --scope <id>         Scope-ID (bei Loop-Fortsetzung Pflicht)"
+        echo "  --user-input <text>  Ticket = User-Input 1:1 (HEADER) – bei JEDER Iteration Pflicht;"
+        echo "                       FalsifyMe legt den Scope an oder setzt die Fortsetzung automatisch"
         echo "  --plan <datei>       Plan-/Iterations-Datei (PFLICHT)"
         echo "  --root <verz>        Arbeitsverzeichnis (PFLICHT)"
         echo "  --files <liste>      Zugriffs-Whitelist, kommagetrennt (PFLICHT)"
@@ -302,6 +290,6 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     esac
   done
 
-  falsify_mandatory_check "$plan_file" "$root_dir" "$files_list" "$diff_file" "$scope_id" "$user_input"
+  falsify_mandatory_check "$plan_file" "$root_dir" "$files_list" "$diff_file" "$user_input"
   exit $?
 fi

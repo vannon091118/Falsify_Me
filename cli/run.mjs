@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 import { openDb, closeDb, falsifyHome } from "../artifacts/db.mjs";
 import { createJob, getJob, jobFilesList, jobDone, claimJob, registerWorker, heartbeatWorker, reapStaleJobs, jobRuntimeConfig, classifyFailure } from "../artifacts/jobs.mjs";
 import { enforceQueueConsistency } from "../artifacts/invariants.mjs";
-import { getScope, updateScopeAfterReview, addFinding, getFindings, nextRound } from "../artifacts/scopes.mjs";
+import { getScope, createScope, resolveScopeForCheckout, updateScopeAfterReview, addFinding, getFindings, nextRound } from "../artifacts/scopes.mjs";
 import { loadApiKey, loadApiKeyForNames, keyEnvFile, keyNames } from "../core/keys.mjs";
 import { loadConfig, snapshotConfig, configFromSnapshot, isLocalApiBase } from "../core/config.mjs";
 import { enforceRateLimit } from "../core/ratelimit.mjs";
@@ -119,7 +119,12 @@ Optionen:
   --affected <liste>   Betroffene Daten, kommagetrennt (optional)
   --root <dir>         Arbeitsverzeichnis für den Agent-Datenzugriff (Default: cwd)
   --files <liste>      Zugriffs-Whitelist (kommagetrennt, relativ zu --root) – PFLICHT bei --submit und fremdem --root
-  --scope <id>         Scope-ID (HEADER = User-Input 1:1 aus dem Scope-Artefakt)
+  --scope <id>         Operator-/Diagnose: Scope-ID explizit waehlen. IM AGENT-PFAD VERBOTEN –
+                       FalsifyMe bestimmt die Zuordnung allein ueber das Ticket (--header).
+  --header <ticket>    Ticket = User-Input 1:1 (HEADER). FalsifyMe bestimmt den Scope
+                       automatisch: kein offener Scope mit diesem Ticket → neuer Scope
+                       (ID von FalsifyMe gemintet); genau einer → Fortsetzung; mehrere →
+                       fail-closed (Exit 2, Liste). Agenten verwenden NUR --header.
   --model <id>         Modell-ID (Default: ${cfg.model})
   --lang de|en         Sprache der Kritik (Default: ${cfg.lang})
   --max-rpm <n>        Rate-Limit (Default: ${cfg.maxRpm})
@@ -162,6 +167,7 @@ let jobId = null;
 let rootArg = null;
 let filesArg = null;
 let scopeArg = null;
+let headerArg = null;
 let agentIntent = null;
 let affectedArg = null;
 // Für neue Jobs wird dieser Wert beim Submit atomar eingefroren; bei der
@@ -192,6 +198,7 @@ for (let i = 0; i < args.length; i++) {
     case "--job-id": jobId = next(); break;
     case "--root": rootArg = next(); break;
     case "--files": filesArg = next(); break;
+    case "--header": headerArg = next(); break;
     case "--scope": scopeArg = next(); break;
     default:
       if (a.startsWith("-")) { console.error(`Unbekannte Option: ${a}`); usage(); process.exit(2); }
@@ -278,6 +285,39 @@ if (submitMode) {
       closeDb();
       process.exit(2);
     }
+  }
+  // ── UI-127 (Ticket-Workflow, 2026-09-03): OHNE --scope bestimmt FalsifyMe die
+  //     Scope-Zuordnung allein ueber das Ticket (--header = User-Input 1:1).
+  //     Der Agent liefert niemals eine Scope-ID (kein SCOPE_ID-Parsing, kein
+  //     Zurueckreichen). Fail-closed: mehrere offene Scopes mit identischem
+  //     Ticket → Exit 2 mit Liste (nie raten).
+  if (!scope && headerArg) {
+    const header = String(headerArg).trim();
+    if (!header) {
+      console.error(red("FEHLER: --header darf nicht leer sein (Ticket = User-Input 1:1)."));
+      closeDb();
+      process.exit(2);
+    }
+    const resolved = resolveScopeForCheckout(db, checkoutId, header);
+    if (resolved.kind === "ambiguous") {
+      console.error(red(`FEHLER: Mehrere offene Scopes mit identischem Ticket – FalsifyMe kann die Zuordnung nicht eindeutig bestimmen.`));
+      for (const s of resolved.scopes) {
+        console.error(`  · ${s.id}  (angelegt ${s.created_at}, Phase ${s.phase}, ${Number(s.open_conflicts || 0)} offene Konflikte)`);
+      }
+      console.error("Aufloesung: falsify scope show <id> → Scope abschliessen (falsify scope list) oder --header praezisieren.");
+      closeDb();
+      process.exit(2);
+    }
+    if (resolved.kind === "new") {
+      scope = createScope(db, header, { checkoutId });
+      console.log(green(`Scope automatisch bestimmt: ${scope.id}  · neuer Scope fuer das Ticket (ID von FalsifyMe, nicht vom Agent).`));
+    } else {
+      scope = resolved.scope;
+      console.log(green(`Scope automatisch bestimmt: ${scope.id}  · Fortsetzung des offenen Tickets (FalsifyMe entscheidet, der Agent nicht).`));
+    }
+  }
+  if (!scope && !headerArg) {
+    console.warn(yellow("Job OHNE Scope-Anker und OHNE Ticket (--header) – nur fuer Direkt-/CI-Runs ohne FalsiFlow. Agents reichen IMMER mit --header \"<Ticket 1:1>\" ein."));
   }
   let filesList = context.files;
   // ── UI-094: Whitelist-Nachforderung (RESEARCH) automatisch mergen ───────

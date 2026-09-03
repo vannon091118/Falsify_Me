@@ -1584,3 +1584,75 @@ VERIFY: node --test --test-concurrency=1 tests/identity.test.mjs; git diff --che
 RESULT: 8/8 gruen inkl. neuem Test (FalsifyME.md in .gitignore, idempotent,
 bestehende Inhalte erhalten). README (Bootstrap-Schritt 6 + Anchor-Hinweis),
 WIRING §16 nachgezogen; Aenderungen uncommitted.
+
+ID: UI-127
+TASK: Ticket-Workflow + Auto-Scope: FalsifyMe bestimmt die Scope-Zuordnung
+allein ueber das Ticket (User-Input 1:1) — der Agent waehlt, parst und reicht
+nie eine Scope-ID zurueck. artifacts/scopes.mjs: resolveScopeForCheckout
+(0 aktiv = neu, genau 1 = Fortsetzung, mehrere = fail-closed Exit 2, Terminale
+zaehlen nicht); artifacts/db.mjs: Index (checkout_id, header) NACH den
+ALTER-Migrationen (alte Bestands-DBs) und fail-closed bei Index-Fehler.
+cli/run.mjs: `--header` (Pflicht im Agent-Pfad; unscoped Submit warnt ehrlich
+fuer CI-/Direkt-Runs; `--scope` bleibt Operator-Flag). Neue Verben:
+`falsify start "<Ticket>"` (cli/start.mjs), `falsify resume [--header …]`
+(cli/resume.mjs), `falsify history [--scope <id>]` mit Wirkung je Auftrag
+(Freigaben/Blockaden). Verdrahtung cli/main.mjs + cli/help.mjs + cli/falsify.sh.
+STATUS: DONE
+DEPENDS_ON: UI-126 (Konvention: isolierte Verifikation)
+VERIFY: node --test --test-concurrency=1 tests/ticketflow.test.mjs; git diff --check
+RESULT: 7/7 gruen (Resolution new/continue/ambiguous, Submit-Auto-Anlage +
+Fortsetzung am selben Scope, ambiguous Exit 2 ohne Job, unscoped-Warnung,
+start/resume/history inkl. Wirkungs-Zeile). Regression: datamodel 7/7,
+research-additions/selfreview/foreign-project/queue 27/27, identity 8/8,
+selfreview+identity 13/13. Skill-/Doku-/Template-Schicht (falsifyme.md,
+falsiflow.md, AGENT-SKILL-README, agent-skill-falsify.sh/.mjs/.ps1,
+config.json, bootstrap-Templates, onboard steps, README/WIRING/AGENTS) auf
+Ticket-Sprache umgestellt; Agent-Skills lehnen --scope ab.
+
+ID: UI-128
+TASK: Dock-Sichtbarkeit der Scope-Auto-Zuordnung + Pruefauftrag: FM-EVT-
+Event fuer Scope-Aufloesung (outcome new/continue/ambiguous) und klare
+Beschriftung des Handoff-Zustands als „Pruefauftrag an externen Agenten
+(Ticket + Falsifikation)" im Dock.
+STATUS: PLAN
+DEPENDS_ON: UI-127 (Zuordnung existiert; TUI spiegelt nur, CON-004)
+VERIFY: sichtbarer E2E-Lauf im Dock-Fenster (nicht headless)
+RESULT: —
+
+ID: UI-129
+TASK: Ticket-Sprache in Skills/Doku: keine widerspruechlichen Parallel-
+Protokolle mehr — ein Aufrufpfad (--user-input/--header bei jeder Iteration),
+`--scope` nur noch als Operator-Flag dokumentiert; README (Workflow-Tabelle +
+CLI-Block), WIRING §6/§16, AGENTS.md-Bullets, AGENT-SKILL-README,
+falsiflow.md, falsifyme.md, agent-skill-falsify.config.json synchron.
+STATUS: DONE
+DEPENDS_ON: UI-127
+VERIFY: grep: kein Agent-Aufrufpfad mehr mit --scope; Doku-Konsistenz
+RESULT: umgestellt; Agent-Skripte/Templates lehnen --scope im Agent-Pfad ab.
+
+ID: UI-130
+TASK: Clickable-Installer/-Uninstaller: `FalsifyMe-Setup.cmd` (Doppelklick,
+Node-Version-Guard, ruft node install.mjs mit sichtbarem Fenster) und
+`FalsifyMe-Deinstall.cmd` (Bestätigungs-Dialog, ruft node uninstall.mjs,
+reicht --dry-run/--keep-env/--project-root durch) im Repo-Root.
+STATUS: DONE
+DEPENDS_ON: UI-125 (Konvention: keine Runtime beruehren)
+VERIFY: node --check auf .cmd-inhaltliche Logik via uninstall-Tests; manueller
+Doppelklick-Lauf durch den Nutzer
+RESULT: Dateien angelegt (ASCII, CRLF-kompatibel, pause bei Fehler).
+
+ID: UI-131
+TASK: Deinstallation vollstaendig („als waere FalsifyMe nie da gewesen"):
+uninstall.mjs entfernt zusaetzlich PATH-Marker-Zeilen von `falsify install`
+(Marker Falsify-CLI) aus .bashrc/.bash_profile/.profile/PowerShell-Profil,
+den markierten .gitignore-Block und den Identitaets-Anker FalsifyME.md des
+Zielprojekts (--project-root/cwd). Test-/CI-Escape-Hatch
+FALSIFY_UNINSTALL_HOME (nie echte Profile/Desktop/npm-Shims).
+STATUS: DONE
+DEPENDS_ON: UI-126 (Anker/.gitignore existieren) + UI-130
+VERIFY: node --test --test-concurrency=1 tests/uninstall.test.mjs
+RESULT: 4/4 gruen (dry-run aendert nichts; Marker/Skills/Core/Private/Projekt-
+Marker/Anker weg bei erhaltenem Fremdinhalt; idempotent; --keep-env behaelt
+FALSIFY_HOME). Nebenfund behoben: ensureAnchorGitIgnored mutiert beim
+Selbstpruefen des FalsifyMe-Repos nie die eigene .gitignore (selfreview-Test
+hatte das Repo-Repo verschmutzt).

@@ -1,6 +1,6 @@
 ---
 name: falsifyme
-description: Pflichtprüfung vor jeder Code-Änderung mit FalsiFlow. Bei Installation, Workflow-Start oder Codeänderung verwenden: Scope anlegen, User-Input unverändert als Header übernehmen, read-only prüfen und erst bei VERDICT WRITE freigeben.
+description: Pflichtprüfung vor jeder Code-Änderung mit FalsiFlow. Bei Workflow-Start, "start"/"start job"/"resume"/"history" oder Codeänderung verwenden: Job als Ticket schreiben (User-Input 1:1), read-only prüfen, erst bei VERDICT WRITE freigeben. Die Scope-ID bestimmt FalsifyMe automatisch – der Agent liefert nur das Ticket.
 ---
 
 # FalsifyMe / FalsiFlow
@@ -15,22 +15,27 @@ keine Verdicts, keine Regeln).
 ## Session-Start
 
 1. Lies diesen Skill einmal zu Beginn der Session.
-2. Lege genau einen Scope für den aktuellen Auftrag an.
-3. Übernimm den User-Input unverändert als Scope-Header.
-4. Verwende denselben Scope für alle Folgeprüfungen.
+2. Schreibe den Job als **Ticket**: übernimm den User-Input unverändert 1:1
+   (`--user-input "<User-Input exakt>"` bei jeder Iteration).
+3. **Die Scope-ID bestimmst du NIE** – FalsifyMe ordnet das Ticket automatisch
+   zu (neuer Scope beim ersten Ticket, Fortsetzung beim offenen Ticket).
+4. `falsify start "<Ticket>"` bindet einen Auftrag sichtbar (ohne Job),
+   `falsify resume [--header "<Ticket>"]` nimmt den letzten offenen Auftrag
+   wieder auf, `falsify history [--scope <id>]` erklärt Verlauf & Auswirkung.
 
 ```bash
-falsify scope new "<User-Input exakt>"
+falsify start "<User-Input exakt>"     # optionaler, sichtbarer Einstieg
 ```
 
 ## Vor jeder Änderung
 
 Erstelle einen kurzen Plan und reiche nur die erlaubten Dateien als Whitelist
-ein:
+ein. **Jede Iteration nutzt denselben Aufruf** – der einzige Identitätsanker
+ist das Ticket (`--user-input` 1:1, wird als `--header` an FalsifyMe gereicht):
 
 ```bash
 bash ./skills/agent-skill-falsify.sh \
-  --scope <scope-id> \
+  --user-input "<User-Input exakt>" \
   --plan plan.txt \
   --root /absoluter/pfad/zum/projekt \
   --files "src/a.js,src/b.js"
@@ -50,9 +55,10 @@ bash ~/.agents/skills/falsifyme/agent-skill-falsify.sh \
 ```
 
 Bis `VERDICT: WRITE` vorliegt, bleibt der Agent read-only. `PLAN` bedeutet
-Plan überarbeiten, `RESEARCH` bedeutet weitere read-only-Daten beschaffen,
-`WRITE` gibt die konkrete Änderung frei. Nach der Änderung wird ein Review im
-selben Scope eingereicht.
+Iteration überarbeiten, `RESEARCH` bedeutet weitere read-only-Daten
+beschaffen, `WRITE` gibt die konkrete Änderung frei. Nach der Änderung wird
+ein Review eingereicht – mit DEMSELBEN Ticket (`--user-input` 1:1). Der
+Agent-Pfad verwendet nie `--scope <id>` (Operator-/Diagnose-Flag).
 
 Der Skill bestätigt nach dem Einreichen, dass der Job im Dock-Fenster sichtbar
 geworden ist (laufendes Worker-Fenster über `--check`, Job-Claim = Status nicht

@@ -5,7 +5,8 @@
 # USER AGENT = externe Arbeits-/Write-Instanz
 # Bis VERDICT: WRITE bleibt der USER AGENT READ-ONLY.
 # Exit 0 = VERDICT: WRITE; Exit 1 = PLAN/RESEARCH; Exit 2/3 = keine Freigabe.
-# Derselbe Scope wird fuer PLAN -> RESEARCH -> WRITE -> IMPLEMENTATION REVIEW verwendet.
+# Dasselbe Ticket (User-Input 1:1) wird fuer PLAN -> RESEARCH -> WRITE ->
+# IMPLEMENTATION REVIEW verwendet; die SCOPE-ID bestimmt FalsifyMe automatisch.
 # Wird automatisch aus dem PowerShell-Profil geladen (siehe Marker unten).
 # Danach: Invoke-FalsifyMeCheck -UserInput "<auftrag>" `
 #   -PlanFile plan.txt -RootDir C:\projekt -Files "a.js,b.js"
@@ -19,9 +20,10 @@ function Invoke-FalsifyMeCheck {
         [Parameter(Mandatory=$true)][string]$UserInput,
         [Parameter(Mandatory=$true)][string]$PlanFile,
         [Parameter(Mandatory=$true)][string]$RootDir,
-        [Parameter(Mandatory=$true)][string]$Files,
-        [string]$ScopeId = ""
+        [Parameter(Mandatory=$true)][string]$Files
     )
+    # Scope-ID bestimmt FalsifyMe automatisch – -ScopeId ist Operator-Flag,
+    # kein Agent-Vertrag (der Agent-Skill lehnt es ab).
     $skill = Join-Path $script:FALSIFYME_SKILLS_DIR "agent-skill-falsify.ps1"
     $checkArgs = @(
         "-UserInput", $UserInput,
@@ -29,7 +31,6 @@ function Invoke-FalsifyMeCheck {
         "-RootDir", $RootDir,
         "-Files", $Files
     )
-    if ($ScopeId) { $checkArgs += @("-ScopeId", $ScopeId) }
     & $skill @checkArgs
     return $LASTEXITCODE
 }

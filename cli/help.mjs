@@ -8,8 +8,15 @@ Verwendung:
   falsify jobs                            Warteschlange: QUEUED / RUNNING / DONE / ERROR
   falsify stats [--json]                  Progression-Statistik (User-Anker): X Fehler in Y Tasks, Z Jobs,
                                           Verdicts, Findings, SQLite-Nutzung – read-only aus der Queue
-  falsify history [--last n]              letzte Befunde aus der DB
-  falsify scope new "<user-input>"        Scope anlegen (HEADER = User-Input 1:1)
+  falsify start "<ticket>" [--root <dir>]  Auftrag starten: Ticket 1:1 binden; FalsifyMe
+                                          bestimmt die Scope-ID automatisch (neu/Fortsetzung,
+                                          nie der Agent). Zeigt den naechsten submit-Befehl.
+  falsify resume [--header "<ticket>"]     letzten offenen Auftrag wieder aufnehmen (ohne
+                                          Scope-ID; Zustand + fertiger Fortsetzungs-Befehl)
+  falsify history [--last n]              Verlauf & Auswirkung: neueste Auftraege mit
+                                          Freigaben/Blockaden; --scope <id> = voller Verlauf
+  falsify scope new "<user-input>"        Scope anlegen (HEADER = User-Input 1:1; Operator/
+                                          Diagnose – der Agent-Pfad nutzt falsify start)
   falsify scope show <id> [--full]        Scope-Artefakt (Header, Phase, letzter Befund, alle Befunde)
   falsify scope trace <id>                GAP-Loop je Runde: Welle/Verdict/Intent/Befund + Loop-Ausgang
   falsify scope list [--all]              aktive (oder alle) Scopes

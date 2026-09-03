@@ -35,6 +35,20 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   Historisch (vor dem Batch-Commit 2026-09-01) war der Default fälschlich
   `~/.Falsify`; `uninstall.mjs` räumt Altdaten ab (Key-Backup nach
   `~/.Falsify.env.uninstall-backup`).
+- Clickable-Items im Repo-Root: `FalsifyMe-Setup.cmd` (Installation per
+  Doppelklick, ruft `node install.mjs`, sichtbares Fenster) und
+  `FalsifyMe-Deinstall.cmd` (Bestätigungs-Dialog, ruft `node uninstall.mjs`,
+  durchreicht `--dry-run`/`--keep-env`/`--project-root`).
+- **Deinstallation = „als wäre FalsifyMe nie da gewesen"** (uninstall.mjs,
+  UI-131): zusätzlich zu Core/Private/Skills/Instructions/Icons/Shims werden
+  auch die PATH-Marker-Zeilen von `falsify install` (Marker `Falsify-CLI`,
+  NICHT nur `FalsifyMe-Agent-Integration`) aus `.bashrc`/`.bash_profile`/
+  `.profile`/PowerShell-Profil entfernt, sowie mit `--project-root` der
+  markierte `.gitignore`-Block (`# >>> FalsifyMe (lokal …)`) und der
+  Identitäts-Anker `FalsifyME.md` des Zielprojekts. Test-/CI-Escape-Hatch:
+  `FALSIFY_UNINSTALL_HOME=<tmp>` verlegt ALLE Pfade isoliert (nie echte
+  Profile/Desktop/npm-Shims). `ensureAnchorGitIgnored` mutiert beim
+  Selbstprüfen des FalsifyMe-Repos die eigene `.gitignore` nie.
 - `ensureFalsifyHome()` schreibt eine `.env`-**Vorlage mit leeren Werten**
   (`NVIDIA_API_KEY=`, `OPENAI_API_KEY=`, `FALSIFY_API_KEY=`). Datei-existiert
   heißt NICHT Key-konfiguriert: `falsify doctor` meldet dann `Kein API-Key`.
@@ -292,6 +306,15 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   macht FalsifyMe zum letzten Git-Check-Gate; optional → kein Enforcement;
   **keine stille Gate-Aktivierung** (Modus-Kopfzeile in der Instruction-
   Datei; UI-075 im Batch-Commit 2026-09-01 umgesetzt).
+- **Ticket-Protokoll (UI-127/129, 2026-09-03):** Der Agent schreibt den Job
+  als Ticket (User-Input 1:1) und liefert es bei JEDER Iteration — FalsifyMe
+  bestimmt die Scope-Zuordnung automatisch (`resolveScopeForCheckout` in
+  artifacts/scopes.mjs: 0 aktive = neu, genau 1 = Fortsetzung, mehrere =
+  fail-closed Exit 2). Agent-Pfad: `falsify start "<Ticket>"` · `falsify
+  submit --header "<Ticket 1:1>" …` · `falsify resume [--header …]` ·
+  `falsify history [--scope <id>]`. `--scope <id>` ist Operator-/Diagnose-
+  Flag, KEIN Agent-Vertrag (Agent-Skills lehnen es ab); unscoped Submit ohne
+  Ticket warnt ehrlich (CI-/Direkt-Run).
 - Kernprinzip: FalsifyMe = kritische Peer-Review durch einen unabhängigen
   Betrachter („Thinker-with-files", eigene Konversation, Kontext getrennt,
   Anti-Self-Check-Bias): Alles wird unabhängig geprüft, bevor der USER AGENT

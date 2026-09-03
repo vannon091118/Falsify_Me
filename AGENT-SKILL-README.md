@@ -5,17 +5,21 @@ read-only, bis FalsifyMe für denselben Scope `VERDICT: WRITE` liefert.
 
 ## Verbindliches Protokoll
 
-1. Einen Scope mit dem unveränderten User-Input anlegen:
+Der Agent schreibt den Job als **Ticket** (User-Input 1:1). Die **Scope-ID
+bestimmt FalsifyMe automatisch** – der Agent wählt, parst oder reicht nie eine
+Scope-ID zurück. Start und Fortsetzung sind EIN Aufrufpfad:
+
+1. Ticket binden (optional, sichtbar):
 
    ```bash
-   falsify scope new "User-Input exakt übernehmen"
+   falsify start "User-Input exakt übernehmen"
    ```
 
-2. Plan oder Iteration mit derselben Scope-ID einreichen:
+2. Plan oder Iteration einreichen – bei JEDER Iteration mit demselben Ticket:
 
    ```bash
    bash skills/agent-skill-falsify.sh \
-     --scope <scope-id> \
+     --user-input "User-Input exakt übernehmen" \
      --plan plan.txt \
      --root /absoluter/pfad/zum/projekt \
      --files "src/a.js,src/b.js"
@@ -23,8 +27,15 @@ read-only, bis FalsifyMe für denselben Scope `VERDICT: WRITE` liefert.
 
 3. Das Ergebnis auswerten:
    - Exit `0`: `WRITE`; Umsetzung ist freigegeben.
-   - Exit `1`: `PLAN` oder `RESEARCH`; nicht schreiben, sondern den Loop fortsetzen.
+   - Exit `1`: `PLAN` oder `RESEARCH`; nicht schreiben, sondern den Loop
+     fortsetzen (gleiches Ticket).
    - Exit `2`/`3`: Fehler; nicht weitermachen.
+
+4. Wiederaufnehmen & Verlauf: `falsify resume [--header "<Ticket>"]` zeigt den
+   letzten offenen Auftrag mit fertigem Fortsetzungs-Befehl;
+   `falsify history [--scope <id>]` erklärt, was passiert ist und wie
+   FalsifyMe sich ausgewirkt hat (Freigaben/Blockaden je Auftrag).
+   `--scope <id>` ist Operator-/Diagnose-Flag, KEIN Agent-Vertrag.
 
 Nach dem Einreichen bestätigt der Skill, dass der Job im Dock-Fenster sichtbar
 geworden ist (Fenster-Claim; Status verlässt `QUEUED`), bevor er blockierend
@@ -33,10 +44,13 @@ der Agent sieht eine Warnung mit `falsify state`-Hinweis.
 
 ## Modi
 
-- `PLAN` ist die Init-Aktion und hält den Header unverändert.
+- `PLAN` überarbeitet die Iteration und hält den Header (das Ticket) unverändert.
 - `RESEARCH` bedeutet, dass weitere Informationen read-only beschafft werden
-  müssen.
+  müssen (Whitelist-Nachforderung wird beim nächsten Submit automatisch ergänzt).
 - `WRITE` ist ausschließlich eine Freigabe an den aufrufenden Agenten.
+
+Der FalsifyMe-Verlauf pro Auftrag bleibt in SQLite erhalten und wird nie
+gelöscht (`falsify history`).
 
 ## Pflichtprotokoll nach jeder Arbeit
 
