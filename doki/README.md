@@ -2,9 +2,31 @@
 
 DOKI is a side-channel with no authority over FalsifyMe. It opens `falsify.db` read-only and persists its own derived state in `doki.db`.
 
+## Fail-open contract
+
+DOKI is strictly optional for the FalsifyMe production lifecycle.
+
+```text
+DOKI failure
+  -> DOKI fallback / unavailable state / failed DOKI job
+  -> FalsifyMe continues unchanged
+
+DOKI MUST NOT
+  -> block FalsifyMe
+  -> pause FalsifyMe
+  -> change a FalsifyMe lifecycle state
+  -> change a FalsifyMe verdict or gate
+  -> trigger or suppress a FalsifyMe abort
+  -> authorize or perform a FalsifyMe write
+```
+
+This is enforced structurally by the current staging implementation: no FalsifyMe module is imported, `falsify.db` is opened with `readOnly: true`, and all derived state is persisted only in the separate DOKI database. The current staging diff contains only `doki/*` files relative to `main`.
+
 Runtime contract:
 
 `terminal loop_event -> read-only snapshot -> observation -> history comparison -> deterministic correlation -> Q-LEARNING -> MODEL WECHSEL -> PROMPT -> LLM CALL -> DokiMessage -> ENDE RUNTIME -> SQLite persistence`
+
+The DOKI runtime itself may terminate with fallback or failure, but that termination belongs only to DOKI. FalsifyMe does not consume DOKI as a required lifecycle dependency.
 
 No FalsifyMe module is imported. The interface is the documented table/JSON contract.
 
