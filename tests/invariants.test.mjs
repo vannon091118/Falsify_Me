@@ -102,6 +102,42 @@ test("STATISCH: Writer nur aus Heimatmodulen + Orchestrierern (GANZER Baum, Komm
   assert.deepEqual(violations, []);
 });
 
+/**
+ * Freeze-Vertrag (a37fc42, M2-Vorbehalt dauerhaft erzwungen): loop_state-
+ * DATEN-Writes duerfen in Produktion NUR in der zentralen Engine
+ * (artifacts/loops.mjs applyTransition) sowie als Initial-Zustand NEUER Jobs
+ * (QUEUED bei Submit in cli/run.mjs, RE_REVIEW_QUEUED beim Child in
+ * artifacts/handoff.mjs) stehen. Jeder andere UPDATE/INSERT auf loop_state
+ * bricht den Test — kein Seiteneingang an der Transition-Engine vorbei.
+ * Kommentare werden entfernt, String-Literale (die SQL) BLEIBEN sichtbar —
+ * genau umgekehrt wie beim Writer-Scan oben, weil die SQL-Writes in Strings
+ * stehen. Nicht-vakuös: exakt die 4 bekannten Schreibstellen muessen gefunden
+ * werden (zaehlt 0 = Regex kaputt = FAIL).
+ */
+test("STATISCH: loop_state-DATENWrites nur ueber Engine + Job-Initialisierung (Freeze-Vertrag)", () => {
+  // Rohe Zeilen, kein Kommentar-Stripping noetig: genau 4 Produktions-
+  // Zeilen enthalten loop_state UND (UPDATE|INSERT) — am Freeze (a37fc42)
+  // per Scan verifiziert. Nur diese vier sind zulaessig.
+  const writes = [];
+  const violations = [];
+  for (const file of prodSources()) {
+    const abs = path.join(ROOT, file);
+    const lines = fs.readFileSync(abs, "utf8").split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!/\bloop_state\b/.test(line) || !/\b(UPDATE|INSERT)\b/.test(line)) continue;
+      writes.push(`${file}:${i + 1}`);
+      const ok =
+        file === "artifacts/loops.mjs" || // zentrale Transition-Engine
+        (file === "artifacts/handoff.mjs" && /'RE_REVIEW_QUEUED'/.test(line)) || // Child-Initial
+        (file === "cli/run.mjs" && /'QUEUED'/.test(line)); // Submit-Initial
+      if (!ok) violations.push(`${file}:${i + 1}: ${line.trim()}`);
+    }
+  }
+  assert.equal(writes.length, 4, `Genau die 4 bekannten Schreibstellen muessen gefunden werden (nicht-vakuoer Scan): ${writes.join(", ")}`);
+  assert.deepEqual(violations, []);
+});
+
 test("STATISCH: Der Scan-Mechanismus erkennt neue Aufrufer selbst (Selbstzertifizierung)", () => {
   // Fixture-Lauf: jobToRunning-Aufruf bleibt sichtbar; Erwähnungen in
   // Kommentar, Block-Kommentar und String zählen NICHT als Aufruf.
