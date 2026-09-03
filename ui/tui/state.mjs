@@ -1,6 +1,6 @@
 // FalsifyMe TUI - UI-Zustandsspeicher
 // Verantwortung: Zustandsdefinitionen, erlaubte Uebergaenge, initiale Struktur.
-// Mutationen AUSSCHLIESSLICH ueber events.mjs (apply/tick/focusSlot) -> Domain-Helfer.
+// Mutationen AUSSCHLIESSlich ueber events.mjs (apply/tick/focusSlot) -> Domain-Helfer.
 // Pure, kein I/O, keine React-Imports.
 import { createRing } from "./ring.mjs";
 import { createPhases } from "./progress.mjs";
@@ -103,6 +103,10 @@ const makeSlot = (idx) => ({
   // gesetzt NUR durch die gleichnamigen FM-EVT-Events des run-Kindprozesses).
   scopeAuto: null, // { outcome: "new"|"continue", scopeId, ticket } | null
   handoff: null,   // { id, ticket, probes } | null (Prüfauftrag an externen Agenten)
+  // DOKI (DOKI G, presentation-only): narrativer Spiegel-Status. Kein
+  // Eigenleben — gesetzt NUR durch das doki-FM-EVT durch dieselbe Tuer wie
+  // alle anderen Events; Reset beim neuen Job (kein Uebertrag).
+  doki: { status: "IDLE", narrator: null, authority: "NONE", contextDigest: null, lines: createRing(80) },
   files: 0,
   filesList: [], // echte Scan-Dateien (files-Event mit list)
   events: createRing(80),  // strukturierte Aktivitaets-Events des Slots
@@ -141,6 +145,9 @@ export const createUiState = () => {
     activity: null,
     model: null,
     loopState: null, // UI-123: Spiegel des aktiven Slots
+    scopeAuto: null, // UI-128: Spiegel (Auto-Scope-Anzeige)
+    handoff: null,   // UI-128: Spiegel (Prüfauftrag-Anzeige)
+    doki: slots[0].doki, // DOKI: Spiegel des aktiven Slots (presentation-only)
     files: 0,
     filesList: [],
     events: slots[0].events,

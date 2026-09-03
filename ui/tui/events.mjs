@@ -1,13 +1,11 @@
 // FalsifyMe TUI - Event-Verarbeitung
 // Verantwortung: Event-Contract + EINZIGER State-Writer (apply) + Zeit-Tick.
-// Events sind pro SLOT geroutet (evt.slot bzw. evt.window, sonst Fokus-Slot):
-// 3 Fenster-Slots koennen parallel laufen, sichtbar im EINEN Terminal (pid).
-// Business-Logik (Verdict, Jobs, Scope) bleibt ausserhalb der UI.
-// Pure, kein I/O.
+// DOKI bleibt presentation-only und kommt als weiterer Event-Typ durch dieselbe Tuer.
 import { canTransition, shortId, MAX_SLOTS, SLOT_TERMINAL, activeSlotOf, globalIdle, LOOP_LABEL, loopLabelOf } from "./state.mjs";
 import * as findings from "./findings.mjs";
 import * as progress from "./progress.mjs";
 import * as verdict from "./verdict.mjs";
+import { createRing } from "./ring.mjs";
 
 // Nach dieser Zeit ohne ein einziges Event endet STARTING ehrlich in IDLE
 // (kein kuenstliches "Denken" bei haengendem Start).
@@ -16,7 +14,7 @@ export const SOFT_CAP_MS = 2500;
 export const EVENT_TYPES = Object.freeze([
   "boot", "job", "state", "activity", "finding", "phase", "phase_done",
   "verdict", "output", "files", "done", "focus", "selftest", "stats", "model", "loop",
-  "scope_auto", "handoff",
+  "scope_auto", "handoff", "doki",
 ]);
 
 const slotOf = (state, evt) => {
@@ -42,6 +40,7 @@ export const refreshGlobal = (state, now = Date.now()) => {
   state.loopState = target.loopState ?? null; // UI-123: Spiegel des Fokus-Slots
   state.scopeAuto = target.scopeAuto ?? null; // UI-128: Spiegel (Auto-Scope-Anzeige)
   state.handoff = target.handoff ?? null;     // UI-128: Spiegel (Prüfauftrag-Anzeige)
+  state.doki = target.doki;                   // DOKI: Spiegel (presentation-only)
   state.files = target.files;
   state.events = target.events;
   state.output = target.output;
@@ -90,6 +89,9 @@ export const apply = (state, evt, now = Date.now()) => {
       target.loopState = null; // neuer Job = neuer Loop (UI-123)
       target.scopeAuto = null; // UI-128: neuer Job, neue Zuordnung (Alt-Anzeige weg)
       target.handoff = null;   // UI-128: neuer Job, neuer Prüfauftrag
+      // DOKI: Statusfelder neutral, der Narrativ-Ring bleibt slotalias erhalten
+      // (gleiche Semantik wie der Output-Ring: begrenzt bestehen bleiben).
+      target.doki = { status: "IDLE", narrator: null, authority: "NONE", contextDigest: null, lines: target.doki?.lines ?? createRing(80) };
       target.files = 0;
       target.state = "STARTING";
       target.bootAt = now;
@@ -203,6 +205,21 @@ export const apply = (state, evt, now = Date.now()) => {
       slotOf(state, evt).output.push(typeof evt.line === "string" ? evt.line : "");
       return true;
     }
+    case "doki": {
+      // DOKI G (presentation-only): narrativer Spiegel-Status durch dieselbe
+      // Tuer wie alle Events — kein Eigenleben, keine UI-eigene Wahrheit.
+      const slot = slotOf(state, evt);
+      const d = slot.doki ?? { status: "IDLE", narrator: null, authority: "NONE", contextDigest: null, lines: createRing(80) };
+      if (typeof evt.status === "string") d.status = evt.status.slice(0, 40);
+      if (evt.narrator != null) d.narrator = String(evt.narrator).slice(0, 80);
+      d.authority = "NONE";
+      if (evt.contextDigest != null) d.contextDigest = String(evt.contextDigest).slice(0, 128);
+      if (evt.line != null) d.lines.push(String(evt.line).slice(0, 400));
+      slot.doki = d;
+      slot.events.push({ t: "doki", status: d.status, narrator: d.narrator, ts: now });
+      refreshGlobal(state, now);
+      return true;
+    }
     case "loop": {
       // UI-123: Spiegel des persistierten jobs.loop_state (Presentation-only,
       // CON-004). Nur bekannte Loop-Zustände werden übernommen; alles andere
@@ -276,29 +293,12 @@ export const apply = (state, evt, now = Date.now()) => {
       return false;
   }
 };
-
-// Zeit-Tick: temporale Uebergaenge, die nicht von Events abhaengen.
-// Pro Slot: STARTING ohne Folge-Events endet ehrlich in IDLE.
-// Global: Boot-Intro ohne Job endet ehrlich im Warte-Zustand — ABER nur,
-// wenn der echte Selftest abgeschlossen ist (testResult pass/fail). Laeuft
-// der Selftest noch (Steps vorhanden, aber kein Ergebnis), bleibt das
-// Boot-Intro aktiv, damit der Benutzer den echten Fortschritt sieht
-// (ui/README-tui.md, Spec: Boot & Selftest).
 export const tick = (state, now = Date.now()) => {
-  for (const slot of state.slots) {
-    if (slot.state === "STARTING" && now - slot.bootAt >= SOFT_CAP_MS) {
-      setState(slot, "IDLE", now);
-    }
-  }
+  for (const slot of state.slots) if (slot.state === "STARTING" && now - slot.bootAt >= SOFT_CAP_MS) setState(slot, "IDLE", now);
   if (state.jobsStarted === 0 && state.state === "STARTING" && now - state.bootAt >= SOFT_CAP_MS) {
-    // Selftest noch am Laufen (Steps da, aber kein Ergebnis)? Boot halten.
-    // Selftest fehlgeschlagen (testResult=fail)? Boot im Fehlerzustand
-    // halten — NICHT in den normalen Idle fallen (ui/README-tui.md, Spec §6.6).
     const selftestRunning = Array.isArray(state.testSteps) && state.testSteps.length > 0 && state.testResult == null;
     const selftestFailed = state.testResult === "fail";
-    if (!selftestRunning && !selftestFailed) {
-      state.state = "IDLE";
-    }
+    if (!selftestRunning && !selftestFailed) state.state = "IDLE";
   }
   refreshGlobal(state, now);
 };
