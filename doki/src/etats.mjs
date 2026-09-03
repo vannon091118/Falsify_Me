@@ -38,6 +38,12 @@ export function etats(previous = {}, event = {}, rules = {}) {
     event_id: signal.eventId,
     sequence: signal.seq,
   };
+  // Raw observation text (model output) passes through as OPAQUE data only:
+  // it is stored for traceability, never scored, never weighted, never a
+  // narrative authority. The ladder (rules.ladder) decides relevance — not
+  // the text itself. (Contract: doki/tests/etats.test.mjs „machine cannot
+  // infer narrative relevance from model output".)
+  if (typeof event.text === 'string') next.text = event.text;
 
   const deltas = typeof rules.movements === 'function'
     ? rules.movements(previous, next, signal)
