@@ -122,7 +122,12 @@ Bei `WRITE` gibt dir FalsifyMe die Freigabe als **versionierten Handoff**
 1. `falsify handoff brief --job-id <id>` — die Arbeitsanweisung für den
    Coding-Agent: erlaubte Dateien, Basiszustand, Gegenprüfungs-Ergebnis.
 2. Der Coding-Agent (einziger Writer) setzt die Änderung um.
-3. `falsify handoff complete --file report.json --root <projekt>` —
+3. `falsify handoff report --job-id <id> --root <projekt> [--out report.json]` —
+   FalsifyMe misst den Repo-Zustand selbst und füllt den Write-Report vor
+   (IDs, before/after/diff-Digests, geänderte Dateien). Du ergänzt nur noch
+   deine Absicht: `--writer-id <id>` (bei `NO_CHANGE`/`ABORTED` zusätzlich
+   `write_status` im Report). Der Report erteilt keine Freigabe.
+4. `falsify handoff complete --file report.json --root <projekt>` —
    FalsifyMe misst selbst nach (Content-Digests, Whitelist, Korrelation) und
    reichte das **Re-Review automatisch** als neuen Job ein
    (`RE_REVIEW_QUEUED`) — kein manueller Re-Submit.
@@ -723,7 +728,7 @@ artifacts/   SQLite (WAL), Scopes, Findings, Jobs, atomarer Worker-Claim,
 core/        Agent, Prompts, Verdict, Config, Keys, Sandbox, Rate-Limit,
              Handoff-Vertrag, Change-Digests, 10X-Protokoll-Validatoren
 cli/         CLI-Kommandos und Bash-Forwarder (falsify),
-             falsify handoff brief|complete (Loop-Übergabepunkt)
+             falsify handoff brief|report|complete (Loop-Übergabepunkt)
 tests/       Security- und Regressionstests (inkl. Full-Loop-E2E + Negative-Matrix)
 ui/          Terminal-UI (Phase 1+2, live verdrahtet) + Worker-Fenster +
              Teststarter/Beobachtung (tui-demo.mjs nur für Tests/Demo)

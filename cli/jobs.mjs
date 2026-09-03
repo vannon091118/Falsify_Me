@@ -23,7 +23,7 @@ export function runPing(id) {
   if (!id) fail("Nutzung: falsify ping <job-id>");
   const db = openDb();
   const job = getJob(db, id);
-  if (!job) fail(`Unbekannter Job: ${id}`);
+  if (!job) fail(`Unbekannter Job: ${id} (alle Jobs: falsify jobs)`);
   const t0 = new Date(job.started_at || job.created_at || Date.now()).getTime();
   const elapsed = Math.max(0, Math.round((Date.now() - t0) / 1000));
   console.log(`STATUS ${job.status} ${elapsed}s`);
@@ -35,7 +35,7 @@ export function runAbort(id) {
   if (!id) fail("Nutzung: falsify abort <job-id>");
   const db = openDb();
   const job = getJob(db, id);
-  if (!job) fail(`Unbekannter Job: ${id}`);
+  if (!job) fail(`Unbekannter Job: ${id} (alle Jobs: falsify jobs)`);
   if (job.status.startsWith("DONE") || job.status.startsWith("ERROR")) {
     console.log(`Job ${id} ist bereits beendet (${job.status}).`);
     closeDb();
@@ -50,7 +50,7 @@ export function runStatus(id) {
   if (!id) fail("Nutzung: falsify status <job-id>");
   const db = openDb();
   const job = getJob(db, id);
-  if (!job) fail(`Unbekannter Job: ${id}`);
+  if (!job) fail(`Unbekannter Job: ${id} (alle Jobs: falsify jobs)`);
   console.log(job.status);
   console.log(`created: ${job.created_at || "?"}`);
   if (job.started_at) console.log(`started: ${job.started_at}`);
@@ -85,5 +85,11 @@ export function runJobs() {
   console.log(d.length ? d.map((j) => `${j.id} ${j.verdict || ""}`.trim()).join("\n") : "(keine)");
   console.log("=== ERROR ===");
   console.log(e.length ? e.map((j) => `${j.id} ${j.error || ""}`.trim()).join("\n") : "(keine)");
+  if (!all.length) {
+    console.log("");
+    console.log("Queue ist leer – noch kein Auftrag eingereicht. Erster Lauf:");
+    console.log('  falsify start "<dein Auftrag 1:1>"  (Ticket binden, Scope bestimmt FalsifyMe)');
+    console.log('  falsify submit --header "<dein Auftrag 1:1>" --plan-file plan.txt --root <projekt> --files "a,b"');
+  }
   closeDb();
 }

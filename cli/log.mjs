@@ -10,7 +10,7 @@ export function runLog(id) {
   if (!id) fail("Verwendung: falsify log <job-id>");
   const db = openDb();
   const job = getJob(db, id);
-  if (!job) fail(`Unbekannter Job: ${id}`);
+  if (!job) fail(`Unbekannter Job: ${id} (alle Jobs: falsify jobs)`);
   console.log(`Job: ${job.id}`);
   console.log(`Status: ${job.status}`);
   if (job.scope_id) {

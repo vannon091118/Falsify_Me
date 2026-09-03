@@ -125,9 +125,12 @@ export async function runDoctor() {
   console.log("");
   if (problems.length) {
     console.log(`doctor: ${problems.length} Problem(e) gefunden`);
+    console.log("  Hilfe: falsify onboard (interaktiver Dialog fuer Endpunkt/Modell/Key) – oder die genannten Fixes oben umsetzen.");
     process.exitCode = 2;
   } else {
     console.log("doctor: alles ok");
+    console.log("  Naechster Schritt: falsify start \"<dein Auftrag 1:1>\" – Ticket binden, dann");
+    console.log("  falsify submit --header \"<dein Auftrag 1:1>\" --plan-file plan.txt --root <projekt> --files \"a,b\"");
   }
 }
 

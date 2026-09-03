@@ -24,6 +24,10 @@ Verwendung:
   falsify anchor record <typ> …            bestätigten Decision-Record im Anker speichern
   falsify handoff brief --job-id <id>     Coder-Arbeitsanweisung aus dem freigegebenen
                                           Handoff rendern (Whitelist, Digest, Twin-Proben)
+  falsify handoff report --job-id <id> --root <dir> [--out report.json]
+                                          Write-Report generieren: FalsifyMe misst
+                                          Digests/changed_files selbst vor; der Agent
+                                          bezeugt nur writer_id/write_status
   falsify handoff complete --file <report.json> --root <dir>
                                           Externen Write-Report konsumieren;
                                           Re-Review wird automatisch eingereicht

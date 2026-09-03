@@ -1762,3 +1762,31 @@ Marker/Anker weg bei erhaltenem Fremdinhalt; idempotent; --keep-env behaelt
 FALSIFY_HOME). Nebenfund behoben: ensureAnchorGitIgnored mutiert beim
 Selbstpruefen des FalsifyMe-Repos nie die eigene .gitignore (selfreview-Test
 hatte das Repo-Repo verschmutzt).
+
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-137
+TASK: Handoff-Report-Generator `falsify handoff report` (Deepen-Resultat
+2026-09-03): der externe Coding-Agent konnte die v1-Report-Digests
+(before/after/diff, changed_files) nicht von Hand kennen – der Loop hing am
+Rueckweg von WRITE_AUTHORIZED. Neu: FalsifyMe misst den Repo-Zustand selbst
+(snapshotRoot/compareSnapshots, dieselben Funktionen, die `complete`
+validiert) und fuellt alle maschinenmessbaren Felder des Write-Reports vor;
+der Agent bezeugt nur Absicht (writer_id, write_status). Read-only: kein
+DB-Write, kein Loop-Uebergang, kein FM-EVT-Event; validateChangeReport/
+`complete` bleiben der einzige, unveraenderte Gate (kein Fake-Report).
+STATUS: DONE
+DEPENDS_ON: UI-123/UI-127 (Handoff-Pfad existiert), Produktions-Loop (§18)
+VERIFY: node --test --test-force-exit --test-concurrency=1
+tests/handoff-report.test.mjs; Regression tests/loop.test.mjs
+tests/full-loop-negative.test.mjs tests/full-loop-e2e.test.mjs;
+bash scripts/run-tests.sh fast
+RESULT: PASS – 3/3 neue Tests (positiv: generierter Report besteht den
+unveraenderten Gate und `handoff complete` erzeugt das echte
+Re-Review-Child mit voller Korrelation; negativ: nach der Generierung
+erneut geaenderter Zustand → Exit 3 mit after_digest-Ursache, kein Child;
+Guards: Job ohne Handoff Exit 3, fehlende Handoff-Datei Exit 3,
+existierende --out Exit 2 ohne Clobber, unbekannte Option Exit 2).
+Regression gruen: loop+full-loop-negative 30/30, full-loop-e2e 1/1.
+Grenze: der Generator erteilt keine Freigabe – `falsify handoff complete`
+bleibt der einzige Gate (misst selbst nach); NO_CHANGE/ABORTED setzt der
+Agent im generierten Report (ehrliche Hinweiszeile).

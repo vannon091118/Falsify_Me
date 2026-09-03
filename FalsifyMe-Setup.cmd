@@ -31,6 +31,7 @@ echo    - Programm:    %USERPROFILE%\.Falsify_Core
 echo    - Private Daten (Keys/DB/Logs): %USERPROFILE%\.Falsify_Private
 echo    - Agent-Skills: %USERPROFILE%\.agents\skills\falsifyme
 echo    - Start:        Desktop-Icon "FalsifyMe" (sichtbares Dock-Fenster)
+echo    - Einrichten:   falsify onboard  (API-Key-Dialog)  bzw.  falsify doctor  (Pruefung)
 echo    - Deinstallieren: FalsifyMe-Deinstall.cmd (Doppelklick)
 echo  ============================================================
 echo.

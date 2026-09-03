@@ -1,9 +1,0 @@
-{
-  "eval_id": 3,
-  "eval_name": "trigger",
-  "prompt": "Bootstrap falsifyme",
-  "assertions": [
-    { "text": "Skill-Trigger funktioniert trotz Kurzform ohne Wort 'Skill' (description enthält 'bootstrap falsifyme')", "passed": true, "evidence": "description frontmatter: 'bootstrap falsifyme' als Trigger-Phrase gelistet; Ausführung liefert Abschlussbericht" },
-    { "text": "Self-Install-Ablauf verifiziert statt Neuinstallation bei vorhandener Installation (idempotent)", "passed": true, "evidence": "A1-A5 grün; install.mjs idempotent (up to date)" }
-  ]
-}

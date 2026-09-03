@@ -25,7 +25,9 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   im produktionscode sind damit no-op statt Konflikt.
 
 
-## Runtime & Installation (Docs-weichen-von-Code-Fallen)
+## Repo-Römer
+
+(This block is the temporary scan ledger for this session. Each file below answers the two session questions. When the scan is complete, the block is removed.)
 
 - `FALSIFY_HOME` = `~/.Falsify_Private` (`falsifyHome()` in
   `artifacts/db.mjs`, Default; per Env-Variable überschreibbar). Dort liegen
@@ -533,6 +535,15 @@ nachgewiesen.`
   autorisiert nie); `validateHandoff` lehnt Secrets (SEC-001) und
   WIDERSPRUCH/UNKLAR-Proben ab. `renderCoderBrief` ist reine Ableitung —
   der Coder konsumiert (REQ-004), FalsifyMe schreibt nie.
+- `falsify handoff report` (cli/handoff.mjs, UI-137): der einzige Weg, den
+  v1-Write-Report korrekt zu erzeugen — der Agent kann die Digests
+  (before/after/diff, changed_files) nicht von Hand kennen. FalsifyMe misst
+  den Repo-Zustand selbst (dieselben `snapshotRoot`/`compareSnapshots` wie
+  `complete`, Whitelist-gebunden) und füllt alle maschinenmessbaren Felder
+  vor; der Agent bezeugt nur Absicht (`writer_id`, `write_status` bei
+  NO_CHANGE/ABORTED). Read-only: kein DB-Write, kein Loop-Übergang, kein
+  FM-EVT; `validateChangeReport`/`complete` bleiben der einzige,
+  unveränderte Gate — ein generierter Report erteilt keine Freigabe.
 - E2E-Befund (2026-09-03): der Handoff baute `probeResults` aus den Raw-
   Twin-Results OHNE `evidenceOk` — ein Gate-freigegebener WRITE erzeugte
   ein vom eigenen Validator abgelehntes Handoff. Lektion: Evidence-Prüfung

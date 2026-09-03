@@ -1,8 +1,0 @@
-=== EVAL 1+2+3: Beweise sammeln ===
-/c/Users/Vannon/.agents/skills/falsifyme-selfinstall/SKILL.md
-A1 PASS: Selfinstall-Skill installiert
-A2 PASS: node --help Exit 0
-A3: doctor exit=2 (API-Key-Hinweis erwartet, kein Installfehler)
-A4: worker --check: RUNNING 8208 (Fenster 1)
-/c/Users/Vannon/.agents/skills/falsifyme/agent-skill-falsify.mjs
-A5 PASS: agent-skill .mjs installiert

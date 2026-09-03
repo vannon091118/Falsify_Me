@@ -13,7 +13,7 @@ export function runAnswer(rest) {
   if (!id) fail("Verwendung: falsify answer <job-id> [--file <pfad>]");
   const db = openDb();
   const job = getJob(db, id);
-  if (!job) fail(`Unbekannter Job: ${id}`);
+  if (!job) fail(`Unbekannter Job: ${id} (alle Jobs: falsify jobs)`);
   const scope = job.scope_id ? getScope(db, job.scope_id) : null;
   const finding = job.scope_id ? db.prepare("SELECT * FROM findings WHERE job_id = ? LIMIT 1").get(id) : null;
   const content = [

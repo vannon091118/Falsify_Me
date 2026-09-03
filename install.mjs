@@ -48,6 +48,20 @@ const npmCli = npmCliCandidates.find((c) => c && existsSync(c));
 // Keys aus der env KORREKT entfernen (sie auf undefined zu setzen, wirft auf
 // Windows EINVAL beim Spawn eines Kindprozesses).
 const npmEnv = { ...process.env };
+// Der äußere Aufruf kann `npm install -g` sein. Der kopierte Core bleibt
+// trotzdem eine lokale Installation mit eigenen node_modules.
+delete npmEnv.npm_config_global;
+delete npmEnv.npm_config_prefix;
+delete npmEnv.npm_config_location;
+delete npmEnv.npm_config_install_global;
+delete npmEnv.npm_config_local;
+// Ein äußerer `npm install -g` darf den lokalen Core-Install nicht in
+// den globalen Prefix umleiten.
+delete npmEnv.npm_config_global;
+delete npmEnv.npm_config_prefix;
+delete npmEnv.npm_config_location;
+delete npmEnv.npm_config_install_global;
+delete npmEnv.npm_config_local;
 delete npmEnv.npm_config_ignore_scripts;
 delete npmEnv.npm_config_allow_scripts;
 const runNpm = (args) => {
@@ -70,7 +84,7 @@ await fs.mkdir(coreDir, { recursive: true });
 await fs.mkdir(privateDir, { recursive: true });
 await fs.mkdir(path.join(privateDir, "logs"), { recursive: true });
 await copyTree(root, coreDir);
-runNpm(["install", "--omit=dev", "--no-audit", "--no-fund"]);
+runNpm(["install", "--location=project", "--ignore-scripts", "--omit=dev", "--no-audit", "--no-fund"]);
 
 await writeSkillManifest({ sourceRoot: root, coreDir, packageVersion: nextSkillManifest.packageVersion });
 await fs.writeFile(path.join(coreDir, "install-location.json"), JSON.stringify({

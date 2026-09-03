@@ -1103,7 +1103,7 @@ async function main() {
       });
       console.log(green(`HANDOFF_ID=${handoff.handoff_id}`));
       console.log(dim(`Handoff (v1, maschinenlesbar): ${handoffPath}`));
-      console.log(dim(`→ Nach der Umsetzung: falsify handoff complete --file <report.json> (Re-Review wird automatisch eingereicht).`));
+      console.log(dim(`→ Nach der Umsetzung: falsify handoff complete --file <report.json> (Report: falsify handoff report --job-id <job-id> --root <root> --writer-id <id>; Re-Review wird automatisch eingereicht).`));
     } catch (e) {
       console.warn(yellow(`⚠ Handoff-Erzeugung fehlgeschlagen (${e.message}) – die WRITE-Freigabe selbst bleibt bestehen; Re-Review benötigt einen manuellen Submit.`));
     }

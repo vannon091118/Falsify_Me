@@ -156,8 +156,19 @@ export default function IdleView({ snap, cols, rows }) {
     { w: "labelTop" },
     { w: "labelMid" },
     { w: "labelBot" },
-    { w: "text", text: "KEIN JOB AKTIV · JOBS KOMMEN VON AGENTS/WORKER", color: "gray" },
+    { w: "text", text: "KEIN JOB AKTIV · PRÜFAUFTRÄGE STARTEN PER CLI", color: "gray" },
   ];
+  // Erster Lauf (noch kein Job in dieser Sitzung): der Warte-Screen erklaert,
+  // wie ein Pruefauftrag entsteht. Ohne Anleitung weiss ein neuer Nutzer nicht,
+  // dass Auftraege per `falsify`-CLI starten (das Dock ist Beobachtung, kein
+  // Eingabe-Einstieg). Nach dem ersten Job verschwindet der Block wieder.
+  if ((snap.jobsStarted ?? 0) === 0 && rows >= 16) {
+    block.push({ w: "text", text: "SO STARTEST DU EINEN PRÜFAUFTRAG", color: "cyan", bold: true });
+    block.push({ w: "text", text: '1) falsify start "<dein Auftrag 1:1>" – Ticket binden', color: "white" });
+    block.push({ w: "text", text: '2) falsify submit --header "<dein Auftrag 1:1>" --plan-file plan.txt', color: "white" });
+    block.push({ w: "text", text: "   --root <projekt> --files \"a,b\"   (Whitelist = Zugriffsrahmen)", color: "white" });
+    block.push({ w: "text", text: "(Die Prüfung erscheint dann live in diesem Fenster.)", color: "gray" });
+  }
   // Progression-Anker (kompakt, nur wenn Platz) – zwischen Status und History.
   const prog = progressionLines(snap.stats, inner);
   if (prog.length && rows >= 14) {

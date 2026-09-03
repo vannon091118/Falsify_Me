@@ -162,7 +162,9 @@ function scopeList(rest) {
   const db = openDb();
   const scopes = listScopes(db, { onlyActive });
   if (!scopes.length) {
-    console.log(onlyActive ? "(keine aktiven Scopes)" : "(keine Scopes)");
+    console.log(onlyActive
+      ? '(keine aktiven Scopes – erster Auftrag: falsify start "<Ticket>")'
+      : '(keine Scopes – erster Auftrag: falsify start "<Ticket>")');
     closeDb();
     return;
   }

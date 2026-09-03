@@ -46,10 +46,10 @@ Invarianten (jede Aenderung wird dagegen geprueft):
 ## 1. SO IST DIE LANDKARTE (30 Sekunden)
 
 ```
+WIRING.md                  ← DIESER INDEX (Projektroot)
 ui/                        ← Terminal-UI (Phase 1+2, live verdrahtet)
   PLAN.md                  ← Persistente Task-Chain; offene Tasks bleiben sichtbar
   README-tui.md            ← Start, Tasten, Event-Contract, Design-Check
-  WIRING.md                ← DIESER INDEX
   START-TUI.cmd            ← LIVE-START: Intro → WARTE AUF EINGABE; kein Auto-Job
   │                           erster Lauf = opt-in Desktop-Icons-Frage; -desktop erzeugt Icons
   TEST-TUI.cmd             ← TEST-START (Suite + Headless-Demo + Abort-Check)
@@ -80,7 +80,7 @@ artifacts/loopflow.mjs     ← Übergangs-Dienst (§18): advanceLoop(event) — 
                              EINZIGE Runtime↔Loop-State-Kopplung (kein Zyklus)
 artifacts/handoff.mjs      ← completeHandoff-Orchestrierung (§18): Child-Jobs
                              NUR via jobs.createJob / Idempotenz (Schema v9)
-cli/handoff.mjs            ← falsify handoff brief|complete (§18)
+cli/handoff.mjs            ← falsify handoff brief|report|complete (§18)
 cli/settings.mjs           ← settings show/set + models (siehe §6)
   tui/views/               ← React/Ink Views (NUR Darstellung, stateless)
 worker.mjs                 ← PRODUKT: TUI-Host (createTui + Parser-Feed, Phase 2)
@@ -806,7 +806,7 @@ e2e-getestet. Abschluss-Record: `plan/feature-runtime-loop-production-1.md`.
 | `core/handoff.mjs` | v1-Handoff-Vertrag: `buildHandoff` (nur nach Gate), `validateHandoff` (strikt, SEC-001-Secret-Scan), `renderCoderBrief` (pure Ableitung der Coder-Arbeitsanweisung, fail-closed) |
 | `core/changes.mjs` | Gemessene Wahrheit über Repo-Zustände: `snapshotRoot` (Content+Git-HEAD, KEIN mtime), `compareSnapshots`, `validateChangeReport` (Report-Korrelation + Whitelist) |
 | `core/protocols.mjs` | Strukturierte A1–A10/F1–F10-Validatoren — bewusst NICHT im Release-Pfad (Prompt-Vorbedingung: die System-Prompts erzeugen noch keine Records; Schaltung = TASK-017-Rest) |
-| `cli/handoff.mjs` | `falsify handoff brief --job-id <id>` (Coder konsumiert) + `falsify handoff complete --file report.json --root <dir>` (Completion → automatisches Re-Review) |
+| `cli/handoff.mjs` | `falsify handoff brief --job-id <id>` (Coder konsumiert) + `falsify handoff report --job-id <id> --root <dir> [--out]` (Write-Report-Generator, UI-137: FalsifyMe misst Digests/changed_files selbst vor, Agent bezeugt nur writer_id/write_status; read-only, keine Freigabe) + `falsify handoff complete --file report.json --root <dir>` (Completion → automatisches Re-Review; einziger Gate) |
 | `cli/run.mjs` | Submit/Direkt-Run: `header_digest` + Basis-`change_digest` eingefroren; WRITE-Pfad: Handoff nur nach `computeVerdict`, Evidence-Prüfung pro Probe im Handoff reproduziert |
 
 Korrelationspflicht des Childs: `parent_job_id`, `handoff_id`, `iteration_id`,
