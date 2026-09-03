@@ -1,5 +1,7 @@
 import { digestJson } from './hash.mjs';
 
+const NARRATORS = Object.freeze(['Buffy','Basher','Thinker','Vannon','Squizzle','Devin','Argos','Ghost','Spark','Glitch','Null','Echo','Flux','Sage']);
+const MOODS = Object.freeze(['calm','curious','focused','alert','concerned','celebratory']);
 const MATCH_RULES = Object.freeze([
   ['FIX', /\b(fix|bug|hotfix|patch|repair|fehler|korr)\b/i],
   ['DOC', /\b(doku|archiv|changelog|readme|plan|comment|docs)\b/i],
@@ -11,8 +13,7 @@ const MATCH_RULES = Object.freeze([
 
 export function buildHistory(db, snapshot) {
   const jobId = snapshot.loop_event.job_id;
-  const rows = db.prepare(`SELECT loop_event_id, snapshot_json, snapshot_digest FROM observations
-    WHERE job_id = ? ORDER BY rowid ASC`).all(jobId);
+  const rows = db.prepare(`SELECT loop_event_id, snapshot_json, snapshot_digest FROM observations WHERE job_id = ? ORDER BY rowid ASC`).all(jobId);
   const current = snapshot.loop_event;
   const late = rows.some((row) => {
     try {
@@ -36,13 +37,13 @@ function strings(snapshot) {
   ].filter((x) => typeof x === 'string');
 }
 
-export function narrativeAnalysis(snapshot) {
+export function narrativeAnalysis(snapshot, history = { refs: [] }) {
   const findings = snapshot.findings ?? [];
   const values = strings(snapshot);
   const matches = [];
   for (const [name, pattern] of MATCH_RULES) {
-    const matched = values.filter((value) => pattern.test(value));
-    if (matched.length) matches.push({ rule: `match.${name.toLowerCase()}.v1`, count: matched.length });
+    const count = values.filter((value) => pattern.test(value)).length;
+    if (count) matches.push({ rule: `match.${name.toLowerCase()}.v1`, count });
   }
 
   const verdictCounts = {};
@@ -54,11 +55,16 @@ export function narrativeAnalysis(snapshot) {
     waveCounts[wave] = (waveCounts[wave] ?? 0) + 1;
   }
 
+  const rawKey = `${snapshot.loop_event?.id ?? ''}|${snapshot.job?.verdict ?? ''}|${history.historyDigest ?? ''}`;
+  const index = parseInt(digestJson(rawKey).slice(0, 8), 16) % NARRATORS.length;
+  const correlationInput = findings.filter((f) => f.wave !== 'evil').length && findings.filter((f) => f.wave === 'evil').length;
+  const mood = snapshot.job?.verdict === 'BLOCKER' ? 'alert' : correlationInput ? 'focused' : 'curious';
+
   const stats = {
     finding_count: findings.length,
     verdict_counts: verdictCounts,
     wave_counts: waveCounts,
-    history_event_refs: [],
+    history_event_refs: history.refs,
     active_state: snapshot.job?.loop_state ?? snapshot.loop_event?.to_state ?? null,
     from_state: snapshot.loop_event?.from_state ?? null,
     to_state: snapshot.loop_event?.to_state ?? null,
@@ -67,7 +73,7 @@ export function narrativeAnalysis(snapshot) {
     correlation_inputs: { thinker_findings: findings.filter((f) => f.wave !== 'evil').length, evil_findings: findings.filter((f) => f.wave === 'evil').length },
   };
 
-  return { stats, matches, tracked: { findings, job: snapshot.job ?? null, scope: snapshot.scope ?? null } };
+  return { stats, matches, narrator: NARRATORS[index], mood, tracked: { findings, job: snapshot.job ?? null, scope: snapshot.scope ?? null }, catalogs: { narrators: NARRATORS, moods: MOODS } };
 }
 
 export function correlation(snapshot) {
