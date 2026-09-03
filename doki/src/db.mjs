@@ -29,11 +29,6 @@ export function openDokiDb(path) {
       id INTEGER PRIMARY KEY AUTOINCREMENT, update_id TEXT, job_id TEXT, kind TEXT NOT NULL,
       detail TEXT NOT NULL, created_at TEXT NOT NULL
     );
-    CREATE TABLE IF NOT EXISTS q_table(
-      state_key TEXT NOT NULL, action TEXT NOT NULL, q_value REAL NOT NULL,
-      visits INTEGER NOT NULL, source_event_id TEXT NOT NULL, updated_at TEXT NOT NULL,
-      PRIMARY KEY(state_key, action)
-    );
     CREATE TABLE IF NOT EXISTS prompt_runs(
       prompt_id TEXT PRIMARY KEY, update_id TEXT NOT NULL, prompt_digest TEXT NOT NULL,
       report_digest TEXT NOT NULL, prompt_json TEXT NOT NULL, created_at TEXT NOT NULL
@@ -44,12 +39,22 @@ export function openDokiDb(path) {
     );
     CREATE TABLE IF NOT EXISTS rotation_state(
       id INTEGER PRIMARY KEY CHECK(id = 1), window_key TEXT NOT NULL,
-      reswitch_count INTEGER NOT NULL, call_count INTEGER NOT NULL, token_count INTEGER NOT NULL,
-      updated_at TEXT NOT NULL
+      reswitch_count INTEGER NOT NULL DEFAULT 0, call_count INTEGER NOT NULL DEFAULT 0,
+      token_count INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS anomalies(
       id INTEGER PRIMARY KEY AUTOINCREMENT, update_id TEXT, kind TEXT NOT NULL,
       detail TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS persona_state(
+      narrator TEXT PRIMARY KEY, mood TEXT NOT NULL, recall_count INTEGER NOT NULL DEFAULT 0,
+      fatigue REAL NOT NULL DEFAULT 0, emotional_weight REAL NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS persona_relationships(
+      narrator TEXT NOT NULL, other_narrator TEXT NOT NULL, relation REAL NOT NULL DEFAULT 0,
+      interaction_count INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL,
+      PRIMARY KEY(narrator, other_narrator)
     );
   `);
   return db;
