@@ -34,18 +34,47 @@ const h = React.createElement;
 // Fallback-stdin fuer TUI ohne Konsole (z.B. gefuettert via Pipe): Ink
 // verlangt setRawMode-faehige Streams, sonst wirft es "Raw mode is not
 // supported". Dieser Stream ist ein TTY-faehiger Stummel - Input kommt nie an.
+//
+// UI-150 Blackscreen-Fix: Wenn ein echter stdin uebergeben wird (z.B. aus
+// dem Worker), pruefen wir isRawModeSupported BEVOR wir ihn direkt
+// weiterreichen. Windows cmd.exe-Fenster haben oft isTTY=true aber
+// isRawModeSupported=false — Ink wirft dann "Raw mode is not supported" und
+// der Alt-Screen bleibt schwarz (Blackscreen). Loesung: Wrapper, der die
+// Read-Delegation beibehalt, aber isRawModeSupported faked und setRawMode
+// als No-Op behandelt. Die TUI bleibt visuell funktional; Tastatur-Input
+// ([T] Toggle, [Q] Abort) wird ueber die Prozess-Signale (SIGINT) abgefangen.
+//
+// Ink benoetigt zusaetzlich ref()/unref() auf dem stdin-Stream (App.js:225,
+// 137, 297, 305) — ohne diese laeuft der Effekt-Cleanup-StackException.
+//
+// UI-150 Nachtrag: Ink ruft auch addListener/on/removeListener (App.js:206).
+// Object.create + Object.assign(new EventEmitter()) verliert die Prototype-
+// Methoden (on/addListener/emit) — deshalb ein ECHTER EventEmitter-Subclass.
+class FakeStdin extends EventEmitter {
+  constructor(src) {
+    super();
+    this.src = src ?? null;
+    this.isTTY = src?.isTTY ?? true;
+    this.isRawModeSupported = true; // Ink will das sehen; setRawMode bleibt No-Op
+    this.columns = src?.columns;
+    this.rows = src?.rows;
+    // data-Events vom echten stdin weiterleiten (fuer [T]-Toggle, [Q] Abort)
+    src?.on?.("data", (chunk) => this.emit("data", chunk));
+    src?.on?.("end", () => this.emit("end"));
+  }
+  setRawMode() { return this; }
+  ref() {}
+  unref() {}
+  setEncoding(...a) { return this.src?.setEncoding?.(...a); }
+  pause(...a) { return this.src?.pause?.(...a); }
+  resume(...a) { return this.src?.resume?.(...a); }
+  read(...a) { return this.src?.read?.(...a) ?? null; }
+}
 const fakeStdin = (options) => {
   const s = options?.stdin;
-  if (s) return s;
-  if (process.stdin.isTTY) return process.stdin;
-  const stub = new EventEmitter();
-  stub.isTTY = true;
-  stub.setRawMode = () => stub;
-  stub.setEncoding = () => {};
-  stub.pause = () => {};
-  stub.resume = () => {};
-  stub.read = () => null;
-  return stub;
+  const raw = s ?? (process.stdin.isTTY ? process.stdin : null);
+  if (raw && raw.isRawModeSupported) return raw;
+  return new FakeStdin(raw);
 };
 
 const DEFAULT_DIMS = () => {
