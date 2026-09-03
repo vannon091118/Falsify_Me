@@ -125,6 +125,34 @@ Produktionspfad: DOKI entscheidet nichts, es folgt der FalsifyMe-Wahrheit.
   Coordination-Mechanismus.
 - Headless-Worker: keine Bridge (bewusst — DOKI ist Dock-/Darstellungslane).
 
+## Reiner Kern (MIRROR_V1 — PLATZHALTER-ETUDE, nicht verdrahtet)
+
+Fünf PURE Module bilden den narrativen Transition-Kern als Platzhalter-Logik
+mit echten, getesteten Invarianten. Kein Aufrufer in bridge/runtime —
+Aktivierung (Schema v3 + Writer) ist eigener Task.
+
+```text
+Grenz-Ereignis (source_event_id Pflicht — Falsify erreicht DOKI nur als Beobachtung)
+  → signals.eventSignal (null = ehrliches Nichtwissen)
+  → atled (Bewegung; DEFAULT-Werte sind KEINE Beobachtung und wirken nie)
+  → impact (MESSGROESSE mit Evidenz-Referenzen, nie erzählerische Wahrheit)
+  → ylamona (UNBACKED_MOVE / NO_SIGNAL / NO_MATCH; Ruhestand: 3 in ≥2 Läufen)
+  → primitives (strukturiert, kein Text) → blocks.selectBlocks (Anker-Gate)
+  → reactionContract (VOR jeder Prosa; rage/insult/obscene vertraglich verboten)
+  → etats.step (die EINE Maschine: Übergang + abgeleitete Werte + Entscheidung)
+```
+
+Harte Regeln: Leiter `OBSERVED → PERSISTED → DERIVED → NARRATIVELY_RELEVANT`
+(genau eine Stufe je Schritt; die Maschine lügt sich nichts hoch —
+`prompt_relevant` ist false bis ein echter Relevanz-Filter existiert);
+`scoreBlock` ist der EINZIGE Recall-Freigaber (anchor_ok + state_key-Match,
+kein LLM-Parameterpfad) — der kreative Score ist separates Record, gedeckelt
+(0.3) und entscheidet nur den Tiebreak unter verankerten Gleichen; ein Block
+sagt sich einmal je Muster. MIRROR_V1: state↔etats, delta↔atled,
+threshold↔dlohserht, decay↔yaced, history↔yrotsih, anomaly↔ylamona
+(Freeze-Vertrag: doki/tests/mirror.test.mjs). q_table bleibt Relikt —
+der Kern referenziert sie nicht (getestet).
+
 ## Configuration
 
 `DOKI_API_BASE`, `DOKI_API_KEY`, `DOKI_GREEN_MODEL`, `DOKI_THINKER_MODEL`, `DOKI_TIMEOUT_MS`, `DOKI_MAX_CALLS`, and `DOKI_TOKEN_BUDGET` configure model access and local budget.

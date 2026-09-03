@@ -2098,3 +2098,36 @@ Dokumentation und das Konto-Protokoll in Docs/nim-konto-modelle-2026-09-03.md.
 RESULT: PASS — Die Modellentscheidung liegt sichtbar beim Nutzer; Katalog und
 Konto-Entitlement werden getrennt, kein automatischer Modellwechsel bei
 Kapazitäts-/Key-Fehlern, und die gewählte ID wird im Probe-Request verifiziert.
+
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-151
+TASK: DOKI reiner Kern als PLATZHALTER-ETUDE (2026-09-03, Pitch „Eine zentrale
+pure State Machine"): fünf PURE Module in doki/src — signals (nicht-fiktiver
+Katalog: FM-EVT-/LOOP-/VERDICT-Spiegel, Provenienz DEFAULT≠OBSERVED, Leiter
+OBSERVED→PERSISTED→DERIVED→NARRATIVELY_RELEVANT mit Kappe 7, Grenz-Ereignis
+mit source_event_id-Pflicht, patternKey phase|verdict|wave, User-Kanal ehrlich
+NONE), atled (Bewegung/Impact als MESSGROESSE, yaced/dlohserht gespiegelt),
+ylamona (UNBACKED_MOVE/NO_SIGNAL/NO_MATCH + Ruhestand 3-in-≥2-Läufen,
+creative=null, Evidenz-Spur bleibt), blocks (Primitive textfrei, scoreBlock
+als EINZIGER Recall-Freigaber ohne LLM-Parameterpfad, creativeScore separat
++ gedeckelt 0.3, selectBlocks einmal-je-Muster, reactionContract mit
+forbidden_modes rage/insult/obscene), etats (die EINE Maschine: step/run/
+yrotsih/digestOf; Maschine setzt nur OBSERVED, prompt_relevant ehrlich false
+bis echter Relevanz-Filter). MIRROR_V1-Freeze-Vertrag (state↔etats,
+delta↔atled, threshold↔dlohserht, decay↔yaced, rotate↔etator, history↔yrotsih,
+anomaly↔ylamona) als Test. Bewusst NICHT: keine Schema-v3-Tabellen (leere
+Tabellen = „Persistiert ≠ genutzt“), q_table bleibt Relikt, keine Verdrahtung
+in bridge/runtime/worker (kein Autoritäts-/Live-Pfad-Vertrag verletzt).
+STATUS: DONE
+DEPENDS_ON: §18b (DOKI-Live-Bridge als Beobachter), UI-137 (FM-EVT-Vokabular)
+VERIFY: node --test doki/tests/mirror.test.mjs doki/tests/etats.test.mjs
+doki/tests/blocks.test.mjs (28/28: MIRROR-V1-Spiegel exakt reverse(),
+Reinheit — kein FalsifyMe-Import/kein I/O/fetch/DB-Vokabular im Kern,
+Vokabular-Drift statisch gegen ui/tui/events.mjs + ensemble-state.mjs +
+narrator-catalog.mjs + artifacts/loops.mjs + ui/tui/verdict.mjs, Grenz-Regel
+fail-closed, DEFAULT erzeugt keine Wirkung, Determinismus seq-invariant,
+Anker-Gate: kreativ rettet unverankert NIE, einmal je Muster, Ruhestand,
+q_table unberührt); bash scripts/run-tests.sh fast
+RESULT: PASS — Platzhalter-Kern mit echten Invarianten; Beweis statt
+Behauptung: jeder Recall freigegebene Block trägt anchor_ok aus echter
+Evidenz, kreativer LLM-Score ist strukturell machtlos gegen das Gate.

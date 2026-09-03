@@ -45,6 +45,9 @@ doki/tests/reconstruction.test.mjs
 doki/tests/replay.test.mjs
 doki/tests/full-feature-skeleton.test.mjs
 doki/tests/narrator-catalog.test.mjs
+doki/tests/mirror.test.mjs
+doki/tests/etats.test.mjs
+doki/tests/blocks.test.mjs
 "
 
 case "$TIER" in

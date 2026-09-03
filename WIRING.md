@@ -869,3 +869,49 @@ FM-EVT-Vokabular-Vertrag (Abgleich UI-137/UI-138, 2026-09-03; belegt in
   DOKI-Call.
 - Test-Heimat: DOKI-Suiten in `scripts/run-tests.sh` (fast/core; runtime.test
   nur full); `npm test` deckt `doki/tests/*.test.mjs` ab.
+
+## §18c — DOKI reiner Kern (MIRROR_V1, PLATZHALTER-ETUDE, NICHT im Runtime-Pfad)
+
+Fünf PURE Module (kein DB, kein fetch, kein FalsifyMe-Import —
+`doki/tests/mirror.test.mjs` erzwingt Reinheit + Vokabular-Drift statisch
+gegen die Quelldateien). Status: Platzhalter-Logik mit echten Invarianten,
+KEIN Aufrufer in bridge/runtime/worker — Aktivierung ist eigener Task.
+
+- `doki/src/signals.mjs` — nicht-fiktiver Signal-Katalog: FM-EVT-Vokabular
+  (Spiegel `ui/tui/events.mjs`), LOOP/VERDICT/SEVERITY-Spiegel, Achsen
+  (CHARACTER_AXES/REACTIVITY), Provenienz (DEFAULT ist KEINE Beobachtung),
+  Leiter `OBSERVED → PERSISTED → DERIVED → NARRATIVELY_RELEVANT` (genau EINE
+  Stufe je Schritt, `PROMPT_RELEVANCE_CAP = 7`), Grenz-Ereignis
+  `boundaryObservation` (ohne `source_event_id` kein Ereignis),
+  `eventSignal` (null = ehrliches Nichtwissen), `patternKey`
+  (phase|verdict|wave). User-Kanal-Vokabular mit `USER_CHANNEL_SOURCE='NONE'`
+  (ehrlich: Kanal existiert noch nicht).
+- `doki/src/atled.mjs` — reine Bewegung/Wirkung: `atled` (Provenienz-gesichert:
+  DEFAULT erzeugt keine Bewegung), `yaced` (decay), `dlohserht` (threshold,
+  Default 0.25), `impact`/`impactsOf` — MESSGROESSE mit Evidenz-Referenzen,
+  nie erzählerische Wahrheit.
+- `doki/src/ylamona.mjs` — Anomalie-Prädikate: `UNBACKED_MOVE` (Bewegung
+  über Schwelle ohne Evidenz-Ref), `NO_SIGNAL`, `noMatchGate`; Ruhestand
+  `retired` (3 Anomalien in ≥2 Läufen, `retireRecord`: creative=null,
+  Evidenz-Spur bleibt, nie gelöscht).
+- `doki/src/blocks.mjs` — Komposition: Primitive (strukturiert, kein Text),
+  `scoreBlock` (EINZIGER Recall-Freigaber: anchor_ok + state_key-Match,
+  kein LLM-Parameterpfad), `creativeScore` (separates Record, markiert,
+  gedeckelt `CREATIVE_CAP=0.3`), `selectBlocks` (Primary + 3–4 Kandidaten,
+  einmal-je-Muster), `reactionContract` (actor/target/trigger/intensity/
+  evidence_refs/allowed_modes/forbidden_modes aus statischem Katalog +
+  Messung — die „piss in dein hu“-Falle vertraglich verboten).
+- `doki/src/etats.mjs` — DIE EINE zentrale Zustandsmaschine: `step`/`run`
+  (etats + Grenz-Ereignis + Regeln → Übergang + Bewegungen + Wirkungen +
+  Anomalien + Primitive + Entscheidung), `yrotsih` (history gespiegelt,
+  visits-ehrlich), `digestOf` (Determinismus-Vertrag). Leiter-Regel: die
+  Maschine setzt nur OBSERVED — PERSISTED/NARRATIVELY_RELEVANT verdienen
+  sich echte Writer-/Relevanz-Schritte; `decision.prompt_relevant` ist
+  ehrlich false bis dahin (kein Fake-Relevant).
+- MIRROR_V1 (Freeze-Vertrag in `doki/tests/mirror.test.mjs`):
+  state↔etats, delta↔atled, threshold↔dlohserht, decay↔yaced, rotate↔etator,
+  history↔yrotsih, anomaly↔ylamona — gleiche Regelstruktur, gespiegelte
+  Identifier, gleiche Arity, keine Seiteneffekte.
+- Bewusst NICHT getan: keine Schema-v3-Tabellen (leere Tabellen wären
+  „Persistiert ≠ genutzt“), q_table bleibt Relikt (Kern referenziert sie
+  nicht, getestet), keine Verdrahtung in bridge/runtime.
