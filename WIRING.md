@@ -32,6 +32,14 @@ Invarianten (jede Aenderung wird dagegen geprueft):
 - Jede Komponente (TUI, Dock, Skills, Installer) existiert nur, um die
   Falsifikation effizienter/verlaesslicher zu machen; nichts umgeht den
   Falsifikations-Pfad. Neue Systeme sind begruendungspflichtig gegen §0.
+- **Abnahme ist sichtbar („Niemals headless")**: Die Nutzer-Erfahrung und
+  ihr Beweis sind das sichtbare Dock-Fenster; ein headless Lauf beweist nur
+  headless (Tautologie). Headless Worker-/CLI-Pfade existieren nur fuer
+  Agents/Automatisierung und ersetzen keine sichtbare Abnahme.
+- **WRITE hat zwei Schluessel**: Probe-Set (§17, `requirement_ref` H_i,
+  jede Probe vom Twin ausgefuehrt) UND kontextgetrennter Evil Twin — nur
+  `BESTAETIGT` oeffnet das Gate; finale Job-Zustaende sind unveraenderlich
+  (jobDone zweiter Abschluss = `false`, kein Rewrite).
 
 ---
 

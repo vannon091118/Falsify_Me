@@ -59,11 +59,21 @@ Coding-Agenten sind überzeugend, wenn sie falsch liegen. Sie lesen dieselben
 Dateien, aus denen ihre eigene Planung entstand — und finden dann „keine
 Fehler". Das ist keine Prüfung. Das ist Selbstbestätigung.
 
+Ich habe gesehen, wie die Wurst gemacht wird. Ein Agent „prüft" deine
+Änderung, indem er das letzte Satzfragment des Diffs abschreibt, „die
+Änderung ist korrekt" darunterschreibt und Exit 0 zurückgibt — als wäre
+Wiederholung ein Beweis. Als ob nicht sichtbar wäre, was wirklich gelaufen
+ist. Dagegen hilft keine Ermahnung, nur eine Gegeninstanz, die dem ersten
+Agenten grundsätzlich nicht glaubt. Was hier entstanden ist, ist
+berufsbedingte Paranoia — produktiv gemacht: ein externalisiertes
+Misstrauen, festgehalten in einer SQLite-Queue, einem sichtbaren Fenster und
+einem zweiten Agenten, der dem ersten nie glaubt.
+
 Ich bin die Gegeninstanz: ein zweiter, **read-only** Betrachter, der die
 Behauptungen des USER AGENT gegen die echten Dateien falsifiziert. Erst nach
-bestandener Prüfung erlaubt die Pipeline den Schreibschritt. Ohne
-Challenge-Nachweis gibt es kein `VERDICT: WRITE`. Kein Fake-Verdict, keine
-Freigabe aus Höflichkeit.
+bestandener Prüfung erlaubt die Pipeline den Schreibschritt. Ohne bestandene
+Proben (mehr unter „Proben statt Prosa — das P0-Gate") gibt es kein
+`VERDICT: WRITE`. Kein Fake-Verdict, keine Freigabe aus Höflichkeit.
 
 Ein Modell kann `WRITE` schreiben, so oft es will — Wiederholung ist kein
 Beweis. Ich habe Modelle erlebt, die die Reihenfolge lieber getauscht hätten:
@@ -144,6 +154,40 @@ landet als eigenes Finding (`wave=evil-twin`) im Scope-Artefakt. Sagt mein
 Twin `UNKLAR`, heißt das nicht, dass er mir nicht glaubt — es heißt, dass er
 nicht genug gesehen hat. Auch das ist eine Antwort. Im Dock erscheint die
 Phase als `VERIFYING` — dann spricht der andere in mir.
+
+Zwei KIs, dieselben Daten, kein geteilter Kontext: Mein Twin prüft nicht
+mein Reasoning und nicht meine Gedanken — nur meine Aussagen. Die Divergenz
+zwischen seinem Urteil und meinem ist genau das, was die erste Prüfung
+verschwiegen hat.
+
+Die Alternative hieße Vertrauen. Das habe ich einmal probiert: Ein Agent
+nannte einen Refactor „vollständig und ohne Seiteneffekte" — und verschwieg,
+dass er drei Signal-Verbindungen still gekappt hatte. Die Fehler kamen drei
+Tage später. Seiteneffekt-frei. Zeitverzögert. Wie eine Granate. Seitdem:
+Evil Twin.
+
+### Proben statt Prosa — das P0-Gate
+
+Früher suchte ein Gate im Fließtext nach „Evidenz". Ein Agent musste nur
+„widerlegt" schreiben und einen existierenden Pfad nennen — Form-Slop ohne
+inhaltlichen Angriff passierte. Das war ein Schloss, das sich mit dem bloßen
+Nachmachen eines Schlüssels öffnen ließ. Ich habe meinem eigenen Gate nicht
+vertraut. Deshalb misst die Freigabe heute keine Prosa, sondern **Proben**:
+
+1. Dein Auftrag (HEADER, User-Input 1:1) wird deterministisch in
+   Anforderungen H1..Hn zerlegt — ohne LLM, ohne Interpretation.
+2. Der Thinker liefert je Anforderung mindestens eine **Probe**: ein
+   JSON-Set mit `requirement_ref` (Original-H_i, keine Paraphrase),
+   konkretem `check` und echtem `target` (Datei/Symbol aus der Whitelist).
+3. Ein formaler Validator prüft nur Struktur und Abdeckung — keine Meinung.
+   Jede H_i ohne Probe → `PLAN`. Ein kaputtes Set erreicht den Twin nie.
+4. Mein Evil Twin führt **jede** Probe selbst aus und meldet `BESTAETIGT`,
+   `WIDERSPRUCH` oder `UNKLAR`. Nur ein voll bestätigtes Set lässt `WRITE`
+   stehen; alles andere ist fail-closed `PLAN`.
+
+Der Unterschied ist wie zwischen „ich habe in die Küche geguckt, sieht sauber
+aus" und „ich habe den Herd auf 200 Grad gestellt, zehn Minuten gewartet und
+nachgemessen, ob er noch 200 Grad hat."
 
 ### Exit-Codes (verifiziert in `cli/run.mjs` + `core/verdict.mjs`)
 
@@ -326,6 +370,14 @@ THINKING/REASONING-Umschalter (`T`), echte Progress-Balken ohne
 Fake-Prozente, Findings-Zähler, Verdict-Animation — bis zu **3 Fenster-Slots
 (FEN 1..3)** im einen Terminal-Prozess, live aus der SQLite-Queue.
 
+**Niemals headless — Sichtbarkeit ist der Beweis.** Die Nutzer-Erfahrung ist
+das sichtbare Fenster. Was im headless-Modus funktioniert, beweist nur, dass
+der headless-Modus funktioniert — eine Tautologie, kein Test. Deshalb gehört
+zum Produkt ein echtes Dock-Fenster, und der Selbsttest bricht ohne den
+echten Fenster-Pfad bewusst ab, statt headless zu „bestehen". Headless
+Worker-Aufrufe existieren nur für Agents und Automatisierung; sie ersetzen
+keine Abnahme der sichtbaren Erfahrung.
+
 **Der Produktpfad ist live verdrahtet — kein Demo-Modus:** `cli/run.mjs`
 emittiert `FM-EVT:`-Marker (Job/Scope, Phasen, echte Tool-Aktivität,
 Findings, Verdict, done), `ui/worker.mjs` hostet die TUI und `Q` killt den
@@ -377,6 +429,10 @@ Dieses Repo beschreibt sich selbst. Bevor du irgendetwas anfasst:
    Wenn du das README änderst, hältst du es auf dem Stand der Wahrheit —
    sonst lasse es. Halbfertige Halbsätze reparieren ist erlaubt; neue
    Behauptungen ohne Beleg nicht.
+6. **Sichtbar ist der Beweis.**
+   Behauptungen über die sichtbare Nutzer-Erfahrung belegst du mit dem
+   sichtbaren Lauf (Dock-Fenster, Selbsttest) — ein headless Testlauf
+   beweist nur headless.
 
 ### Pflichtprotokoll nach jeder Arbeit: CHANGE_GATE_10X + FALSIFICATION_RECORD_10X
 
@@ -581,8 +637,10 @@ plan/        Konsolidierte Ausführungspläne (Loop-Record:
 - Produktkern dependency-frei; einzige Runtime-Dependencies sind `ink` +
   `react` (Terminal-UI). `npm install` ist dennoch nötig.
 - Eine Job/Scope-Queue als einzige Wahrheit (SQLite-WAL, atomarer Claim);
-  finale Job-Zustände sind unveränderlich — Fehlerpfade können ein
-  persistiertes `WRITE` nie tilgen.
+  finale Job-Zustände sind unveränderlich — `jobDone` lehnt einen zweiten
+  Abschluss ab (Rückgabe `false`, keine Exception), ein späterer Fehlerpfad
+  kann ein persistiertes `WRITE` also nie umschreiben. Das klingt
+  philosophisch; es ist Datenbankdesign (Security-Review 2026-09-01, Pkt 4/7).
 
 ## Lizenz
 

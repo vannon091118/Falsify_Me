@@ -296,6 +296,11 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   Betrachter („Thinker-with-files", eigene Konversation, Kontext getrennt,
   Anti-Self-Check-Bias): Alles wird unabhängig geprüft, bevor der USER AGENT
   schreibt; ohne Challenge-Nachweis gibt es kein `VERDICT: WRITE`.
+- **Niemals headless — User-Experience ist das sichtbare Fenster:** Die
+  Abnahme einer Nutzer-Erfahrung ist der sichtbare Lauf (Dock-Fenster,
+  Selbsttest); ein headless Lauf beweist nur headless (Tautologie) und zählt
+  nicht als UX-Beweis. Headless Worker-/CLI-Pfade existieren nur für Agents
+  und Automatisierung (README „Terminal-UI & Worker-Dock", WIRING §0).
 - Deinstallation muss vollständig rückabwickeln (uninstall.mjs: Worker,
   Core, Private, Skills, Instructions, Profil-Marker, AGENTS.md-Block,
   FALSIFY_HOME mit Key-Backup nach `~/.Falsify.env.uninstall-backup`,
