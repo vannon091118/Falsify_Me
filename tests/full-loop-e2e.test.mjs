@@ -228,6 +228,14 @@ test("Full-Loop E2E: WRITE-Gate → Handoff → externer Write → automatisches
     assert.ok(types.includes("handoff_emitted"), "handoff_emitted");
     assert.ok(types.includes("change_captured"), "change_captured");
     assert.ok(types.includes("re_review_queued"), "re_review_queued");
+    // Event-Kette ist lückenlos: previous.to_state == current.from_state, in
+    // INSERT-Reihenfolge via rowid (die Audit-Spur folgt der Realität).
+    const chain = db3.prepare("SELECT event_type, from_state, to_state FROM loop_events WHERE job_id = ? ORDER BY rowid ASC").all(parent.id);
+    for (let i = 1; i < chain.length; i++) {
+      if (chain[i].from_state && chain[i - 1].to_state) {
+        assert.equal(chain[i].from_state, chain[i - 1].to_state, `Event-Kette bei ${chain[i].event_type}`);
+      }
+    }
     // 6a. Kausale Loop-Kette am echten Child (TASK-011): der tatsächliche
     // Worker-Claim (claimNextJob) schiebt RE_REVIEW_QUEUED → RE_REVIEW_RUNNING;
     // erst der persistierte finale NICHT-WRITE-Verdict schließt den Loop auf

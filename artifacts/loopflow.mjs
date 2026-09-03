@@ -91,3 +91,31 @@ export function advanceLoop(db, jobId, { event, verdict = null, windowIdx = null
   const result = applyTransition(db, jobId, toState, { eventType, payload, scopeId });
   return { ok: true, ...result };
 }
+
+/**
+ * Handoff-Emission: bindet handoff_id UND die WRITE_AUTHORIZED-Transition in
+ * EINER Transaktion (Korrelation + Lifecycle-Wechsel atomar). Läuft über die
+ * Transitionstabelle (kein Raw-Update): QUEUED (Erstlauf) oder
+ * RE_REVIEW_RUNNING (Re-Review-WRITE) → WRITE_AUTHORIZED; ein terminaler Loop
+ * wird nie überschrieben (SEC-004 — applyTransition wirft, Transaktion rollt
+ * zurück, handoff_id bleibt ungesetzt). Dieses Modul besitzt die Transaktion
+ * (anders als advanceLoop), weil handoff_id + loop_state EINE Einheit sind.
+ *
+ * @returns {{ok:true, from, to}|{ok:false, reason}}
+ */
+export function markWriteAuthorized(db, jobId, { handoffId, changeDigest = null, scopeId = null } = {}) {
+  if (!handoffId) return { ok: false, reason: "handoff_id fehlt" };
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const result = applyTransition(db, jobId, "WRITE_AUTHORIZED", {
+      eventType: "handoff_emitted", handoffId, changeDigest, scopeId,
+      payload: { handoff_id: handoffId },
+    });
+    db.prepare("UPDATE jobs SET handoff_id = ? WHERE id = ?").run(handoffId, jobId);
+    db.exec("COMMIT");
+    return { ok: true, ...result };
+  } catch (e) {
+    try { db.exec("ROLLBACK"); } catch { /* egal */ }
+    return { ok: false, reason: e.message };
+  }
+}

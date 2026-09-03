@@ -35,7 +35,11 @@ const TERMINAL_LOOP_STATES = Object.freeze(["DONE", "LOOP_BLOCKED", "ABORTED", "
 // — die Transitionstabelle ist die Wahrheit; der Loop-Limit-Pfad in
 // artifacts/handoff.mjs geht NUR über diese Tabelle (kein rohes UPDATE).
 const TRANSITIONS = Object.freeze({
-  "QUEUED": ["RUNNING", "ERROR", "ABORTED"],
+  // QUEUED → WRITE_AUTHORIZED: der FIRST-RUN-Handoff-Pfad. Erstlauf-Jobs
+  // bleiben im Loop-Protokoll auf QUEUED (Claim-/finalize-Advance überspringen
+  // Nicht-Re-Reviews bewusst — kein Phantom-State), die Handoff-Emission
+  // (markWriteAuthorized in loopflow.mjs) ist ihre ERSTE echte Loop-Transition.
+  "QUEUED": ["RUNNING", "WRITE_AUTHORIZED", "ERROR", "ABORTED"],
   "RUNNING": ["WRITE_AUTHORIZED", "ERROR", "ABORTED"],
   "WRITE_AUTHORIZED": ["WAITING_FOR_AGENT", "LOOP_BLOCKED", "ERROR", "ABORTED"],
   "WAITING_FOR_AGENT": ["WRITE_IN_PROGRESS", "LOOP_BLOCKED", "ERROR", "ABORTED"],

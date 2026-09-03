@@ -452,6 +452,11 @@ nachgewiesen.`
   setzt:
   - `RE_REVIEW_QUEUED`: `completeHandoff` erzeugt das Child (EINE
     Transaktion mit Parent-Übergängen).
+  - `WRITE_AUTHORIZED`: `markWriteAuthorized` in artifacts/loopflow.mjs bei
+    der Handoff-Emission (QUEUED beim Erstlauf ODER RE_REVIEW_RUNNING beim
+    Re-Review) — handoff_id + Transition in EINER Transaktion, läuft über
+    die Transitionstabelle (kein Raw-Update; QUEUED → WRITE_AUTHORIZED ist
+    der legalisierte First-Run-Handoff-Pfad).
   - `RE_REVIEW_RUNNING`: der EINZIGE Claim-Übergangs-Owner ist `claimJob`
     in artifacts/jobs.mjs — `claimNextJob` (worker) UND der `--job-id`-Pfad
     (worker-Kind/Direkt-Run) rufen BEIDE nur diese eine Funktion; die

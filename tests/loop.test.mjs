@@ -589,7 +589,7 @@ test("loops: Terminal-Matrix — DONE/ABORTED/ERROR/LOOP_BLOCKED bleiben bei Re-
       assert.equal(loops.getLoopState(s.db, p), "ABORTED", "ABORTED bleibt auch nach NO_CHANGE-Re-Delivery unverändert");
       // Loop-Limit auf OFFENEM Produktionspfad (WRITE_AUTHORIZED + RE_REVIEW_QUEUED)
       // → terminales LOOP_BLOCKED (kein illegaler Übergang, kein hängender Loop).
-      for (const openState of ["WRITE_AUTHORIZED", "RE_REVIEW_QUEUED"]) {
+      for (const openState of ["WRITE_AUTHORIZED", "WAITING_FOR_AGENT", "WRITE_IN_PROGRESS", "CHANGE_CAPTURED", "RE_REVIEW_QUEUED"]) {
         const q = jobs.createJob(s.db, { scopeId, payload: "p", root: dir, files: "app.js", mode: "write" });
         s.db.prepare("UPDATE jobs SET loop_state = ?, loop_count = 5, max_loop_count = 5 WHERE id = ?").run(openState, q);
         const hq = { handoff_id: `h-${openState}`, job_id: q, scope_id: scopeId, before_snapshot: beforeSnap };
@@ -668,6 +668,44 @@ test("loops: jobDone lehnt einen zweiten Abschluss ab — kein Umschreiben eines
     assert.equal(jobs.getJob(s.db, child).status, "DONE PLAN", "Status bleibt DONE PLAN");
     assert.equal(loops.getLoopState(s.db, child), "DONE", "Loop bleibt DONE (kein ERROR über DONE)");
     assert.equal(loops.listLoopEvents(s.db, child).filter((e) => e.event_type === "loop_error").length, 0, "kein loop_error-Event");
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("loops: Handoff-Emission vollzieht WRITE_AUTHORIZED über die Transitionstabelle (kein Raw-Bypass)", async () => {
+  const s = await setupDb();
+  try {
+    const loops = await mod("artifacts/loops.mjs");
+    const loopflow = await mod("artifacts/loopflow.mjs");
+    const jobs = await mod("artifacts/jobs.mjs");
+    const scopes = await mod("artifacts/scopes.mjs");
+    const scopeId = scopes.createScope(s.db, "WriteAuth-Header").id;
+
+    // Erstlauf: loop_state=QUEUED, Verdict WRITE persistiert → Handoff-Emission
+    // ist die ERSTE echte Loop-Transition (QUEUED → WRITE_AUTHORIZED).
+    const first = jobs.createJob(s.db, { scopeId, payload: "p", root: ".", files: "a.js", mode: "write" });
+    s.db.prepare("UPDATE jobs SET loop_state = 'QUEUED' WHERE id = ?").run(first);
+    jobs.jobDone(s.db, first, "WRITE", null);
+    const wa = loopflow.markWriteAuthorized(s.db, first, { handoffId: "h-1", changeDigest: "d", scopeId });
+    assert.equal(wa.ok, true, JSON.stringify(wa));
+    assert.equal(wa.to, "WRITE_AUTHORIZED");
+    assert.equal(loops.getLoopState(s.db, first), "WRITE_AUTHORIZED");
+    assert.equal(jobs.getJob(s.db, first).handoff_id, "h-1", "handoff_id atomar mit der Transition");
+    // Event mit echtem from_state QUEUED → WRITE_AUTHORIZED (Kette lückenlos).
+    const ev = loops.listLoopEvents(s.db, first).filter((e) => e.event_type === "handoff_emitted");
+    assert.equal(ev.length, 1, "genau ein handoff_emitted-Event");
+    assert.equal(ev[0].from_state, "QUEUED");
+    assert.equal(ev[0].to_state, "WRITE_AUTHORIZED");
+
+    // SEC-004: ein terminaler Loop wird von der Handoff-Emission nie überschrieben.
+    const terminal = jobs.createJob(s.db, { scopeId, payload: "p", root: ".", files: "a.js", mode: "write" });
+    s.db.prepare("UPDATE jobs SET loop_state = 'LOOP_BLOCKED' WHERE id = ?").run(terminal);
+    const rej = loopflow.markWriteAuthorized(s.db, terminal, { handoffId: "h-2", scopeId });
+    assert.equal(rej.ok, false);
+    assert.match(rej.reason, /terminal|unumkehrbar/i);
+    assert.equal(loops.getLoopState(s.db, terminal), "LOOP_BLOCKED", "LOOP_BLOCKED bleibt unangetastet");
+    assert.equal(jobs.getJob(s.db, terminal).handoff_id, null, "kein handoff_id auf terminalem Loop");
   } finally {
     s.cleanup();
   }

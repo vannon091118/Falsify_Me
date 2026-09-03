@@ -43,6 +43,7 @@ import { requireProjectIdentity, assertScopeCheckout } from "../artifacts/projec
 import { snapshotRoot } from "../core/changes.mjs";
 import { buildHandoff, serializeHandoff } from "../core/handoff.mjs";
 import { recordLoopEvent, getLoopState } from "../artifacts/loops.mjs";
+import { markWriteAuthorized } from "../artifacts/loopflow.mjs";
 
 // TASK-005: header_digest bindet den exakten Scope-HEADER-Bytes an den Job.
 // Ein geänderter/fehlender HEADER vor THINKER-Start oder Re-Review-Creation
@@ -1019,13 +1020,16 @@ async function main() {
       });
       const handoffPath = path.join(falsifyHome(), "logs", `handoff-${jobId}.json`);
       fs.writeFileSync(handoffPath, serializeHandoff(handoff), "utf8");
-      recordLoopEvent(db, {
-        jobId, scopeId: scope ? scope.id : null, handoffId: handoff.handoff_id,
+      // WRITE_AUTHORIZED über die EINZIGE Transitionstabelle (kein Raw-Update):
+      // markWriteAuthorized bindet handoff_id + Loop-Übergang atomar (EINE
+      // Transaktion) und verbucht das handoff_emitted-Event mit echtem
+      // from_state (QUEUED beim Erstlauf, RE_REVIEW_RUNNING beim Re-Review).
+      const writeAuth = markWriteAuthorized(db, jobId, {
+        handoffId: handoff.handoff_id,
         changeDigest: handoff.before_snapshot?.digest ?? null,
-        eventType: "handoff_emitted", toState: "WRITE_AUTHORIZED",
-        payload: { handoff_id: handoff.handoff_id, path: handoffPath },
+        scopeId: scope ? scope.id : null,
       });
-      db.prepare("UPDATE jobs SET handoff_id = ?, loop_state = 'WRITE_AUTHORIZED' WHERE id = ?").run(handoff.handoff_id, jobId);
+      if (!writeAuth.ok) throw new Error(`WRITE_AUTHORIZED-Transition fehlgeschlagen: ${writeAuth.reason}`);
       // UI-123: Loop-Zustand dem Dock spiegeln (nur Anzeige, keine UI-Wahrheit).
       uiEvt({ t: "loop", s: "WRITE_AUTHORIZED" });
       console.log(green(`HANDOFF_ID=${handoff.handoff_id}`));
