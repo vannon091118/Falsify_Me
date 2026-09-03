@@ -16,19 +16,48 @@ function claimUpdate(db, updateId, eventId) {
   return true;
 }
 
-function makeReport(snapshot, history, analysis, updateId) {
+function persistPersonaState(db, analysis) {
+  const current = db.prepare('SELECT recall_count, fatigue, emotional_weight FROM persona_state WHERE narrator=?').get(analysis.narrator);
+  const recallCount = Number(current?.recall_count ?? 0) + 1;
+  const fatigue = Math.min(100, Number(current?.fatigue ?? 0) * 0.9 + 1);
+  const emotionalWeight = Math.max(-100, Math.min(100, Number(current?.emotional_weight ?? 0) * 0.92 + (analysis.mood === 'alert' ? 3 : analysis.mood === 'focused' ? 1 : 0)));
+  db.prepare(`INSERT INTO persona_state(narrator,mood,recall_count,fatigue,emotional_weight,updated_at)
+    VALUES(?,?,?,?,?,?) ON CONFLICT(narrator) DO UPDATE SET mood=excluded.mood, recall_count=excluded.recall_count,
+    fatigue=excluded.fatigue, emotional_weight=excluded.emotional_weight, updated_at=excluded.updated_at`).run(
+    analysis.narrator, analysis.mood, recallCount, fatigue, emotionalWeight, now());
+  return { narrator: analysis.narrator, mood: analysis.mood, recall_count: recallCount, fatigue, emotional_weight: emotionalWeight };
+}
+
+function persistRelationship(db, analysis, history) {
+  const previous = db.prepare('SELECT message_json FROM dialog_messages ORDER BY rowid DESC LIMIT 1').get();
+  if (!previous) return null;
+  try {
+    const prev = JSON.parse(previous.message_json).narrator_ref;
+    if (!prev || prev === analysis.narrator) return null;
+    const relation = db.prepare('SELECT relation, interaction_count FROM persona_relationships WHERE narrator=? AND other_narrator=?').get(analysis.narrator, prev);
+    const nextRelation = Math.max(-100, Math.min(100, Number(relation?.relation ?? 0) + 1));
+    const interactions = Number(relation?.interaction_count ?? 0) + 1;
+    db.prepare(`INSERT INTO persona_relationships(narrator,other_narrator,relation,interaction_count,updated_at)
+      VALUES(?,?,?,?,?) ON CONFLICT(narrator,other_narrator) DO UPDATE SET relation=excluded.relation,
+      interaction_count=excluded.interaction_count, updated_at=excluded.updated_at`).run(analysis.narrator, prev, nextRelation, interactions, now());
+    return { narrator: analysis.narrator, other_narrator: prev, relation: nextRelation, interaction_count: interactions };
+  } catch { return null; }
+}
+
+function makeReport(snapshot, history, analysis, personaState, relationship, updateId) {
   const report = {
-    schema:'doki.phase_report/v3', report_id:'', update_id:updateId, loop_event_ref:snapshot.loop_event.id,
+    schema:'doki.phase_report/v4', report_id:'', update_id:updateId, loop_event_ref:snapshot.loop_event.id,
     job_id:snapshot.loop_event.job_id, scope_id:snapshot.loop_event.scope_id ?? null,
     phase:snapshot.job?.loop_state ?? snapshot.loop_event.to_state,
     from_state:snapshot.loop_event.from_state, to_state:snapshot.loop_event.to_state,
     verdict_ref:snapshot.job?.verdict ?? null,
     wave_refs:[...new Set((snapshot.findings??[]).map((f)=>f.wave))],
     history_refs:history.refs, statistics:analysis.stats, matches:analysis.matches,
-    narrator:analysis.narrator, mood:analysis.mood, tracked:analysis.tracked,
+    narrator:analysis.narrator, mood:analysis.mood, persona_state:personaState,
+    relationship:relationship, tracked:analysis.tracked,
     correlation_status:correlation(snapshot),
-    facts_digest:digestJson({ snapshot, analysis, history:history.refs }),
-    rule_versions:{runtime:RUNTIME_VERSION, prompt:'doki.prompt.x-output.v1'}, report_digest:''
+    facts_digest:digestJson({ snapshot, analysis, history:history.refs, personaState, relationship }),
+    rule_versions:{runtime:RUNTIME_VERSION, prompt:'doki.prompt.x-output.v2'}, report_digest:''
   };
   report.report_digest=digestJson(report);
   report.report_id=digestJson({schema:report.schema,report_digest:report.report_digest});
@@ -68,7 +97,9 @@ export async function processEvent({falsifyDb,dokiDb,eventId,env=process.env}){
     dokiDb.prepare('INSERT INTO observations(update_id,loop_event_id,job_id,scope_id,event_type,from_state,to_state,snapshot_json,snapshot_digest,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(updateId,eventId,snapshot.loop_event.job_id,snapshot.loop_event.scope_id??null,snapshot.loop_event.event_type,snapshot.loop_event.from_state,snapshot.loop_event.to_state,JSON.stringify(snapshot),snapshotDigest,now());
     const history=buildHistory(dokiDb,snapshot);
     const analysis=narrativeAnalysis(snapshot,history);
-    const report=makeReport(snapshot,history,analysis,updateId);
+    const personaState=persistPersonaState(dokiDb,analysis);
+    const relationship=persistRelationship(dokiDb,analysis,history);
+    const report=makeReport(snapshot,history,analysis,personaState,relationship,updateId);
     dokiDb.prepare('INSERT INTO phase_reports(report_id,update_id,report_json,report_digest,created_at) VALUES(?,?,?,?,?)').run(report.report_id,updateId,JSON.stringify(report),report.report_digest,now());
     const r=await narrate({report,snapshot,history,analysis,updateId,env,falsifyDb,dokiDb});
     const message={schema:'doki_message/v1',message_id:digestJson(updateId),update_ref:updateId,phase_report_ref:report.report_id,mode:r.mode,render_path:r.renderPath,reswitch_count:0,narrator_ref:analysis.narrator,body:r.body,evidence_refs:report.wave_refs,anomaly_refs:[],authority:'NONE'};
