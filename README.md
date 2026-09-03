@@ -657,6 +657,7 @@ Zielprojekts. Idempotent; fehlende Pfade sind kein Fehler.
 ## CLI
 
 ```bash
+falsify --version               # Version des installierten Pakets
 falsify ensure-home | doctor
 falsify anchor init|check|rebind|clone|record [--root <dir>]
 falsify start "<ticket>" [--root <dir>]        # Auftrag binden (Scope-ID bestimmt FalsifyMe)

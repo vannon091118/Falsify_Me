@@ -3,8 +3,12 @@
 // -----------------------------------------------------------------------------
 // Lese-Zugriffe auf die SQLite-Warteschlange (artifacts/jobs.mjs).
 // ─────────────────────────────────────────────────────────────────────────────
+import path from "node:path";
 import { openDb, closeDb } from "../artifacts/db.mjs";
-import { getJob, listJobs, setJobAbort } from "../artifacts/jobs.mjs";
+import { getJob, listJobs, setJobAbort, listWorkers } from "../artifacts/jobs.mjs";
+
+// Fensterzahl wie ui/worker.mjs (Umgebung konsistent): 1..N Slot-Registrierungen.
+const MAX_WINDOWS = Number(process.env.FALSIFY_MAX_WINDOWS || 3);
 import { exitCodeOf } from "../core/verdict.mjs";
 import { fail } from "./util.mjs";
 
@@ -52,6 +56,21 @@ export function runStatus(id) {
   if (job.done_at) console.log(`done: ${job.done_at}`);
   if (job.verdict) console.log(`verdict: ${job.verdict}`);
   if (job.scope_id) console.log(`scope: ${job.scope_id}`);
+  // User-Test-Befund (2026-09-03): QUEUED ohne lebenden Worker ist der eine
+  // Onboarding-Moment, in dem ein neuer User orientierungslos wartet. Ehrlich
+  // hinschauen statt schweigen – kein Fake-Status, nur ein Hinweis.
+  if (job.status === "QUEUED") {
+    const workers = listWorkers(db, MAX_WINDOWS).filter((w) => w.alive);
+    if (!workers.length) {
+      console.log("");
+      console.log("⚠ Kein Worker-Fenster läuft – dieser Job bleibt QUEUED, bis ein Fenster ihn übernimmt.");
+      if (process.platform === "win32") {
+        console.log("  Start: Desktop-Icon \"FalsifyMe\" oder ui\\start-dock.cmd 1 (sichtbar, \"Niemals headless\").");
+      } else {
+        console.log(`  Start: FALSIFY_WINDOW=1 node ${path.join("ui", "worker.mjs")} (im Installationsverzeichnis, z. B. ~/.Falsify_Core) – Linux/macOS ohne sichtbares Fenster.`);
+      }
+    }
+  }
   closeDb();
 }
 

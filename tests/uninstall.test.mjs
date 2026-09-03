@@ -16,7 +16,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -168,4 +168,52 @@ test("uninstall --keep-env: FALSIFY_HOME (Private) bleibt, Rest wird entfernt", 
     assert.ok(!fs.existsSync(path.join(home, ".agents", "skills", "falsifyme")), "Skills entfernt");
     assert.ok(!fs.existsSync(path.join(home, ".Falsify.env.uninstall-backup")), "kein Backup bei --keep-env (nichts entfernt)");
   } finally { cleanup(home, proj); }
+});
+// ── User-Test-Befund 2026-09-03: sich selbst kennen + QUEUED ohne Worker ────
+import { spawn } from "node:child_process";
+
+function runCliMain(args, home, cwd = ROOT) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [path.join(ROOT, "cli", "main.mjs"), ...args], {
+      cwd, env: { ...process.env, FALSIFY_HOME: home }, stdio: ["ignore", "pipe", "pipe"],
+    });
+    let out = "";
+    child.stdout.on("data", (c) => { out += c; });
+    child.stderr.on("data", (c) => { out += c; });
+    child.on("close", (code) => resolve({ code, out }));
+  });
+}
+
+test("CLI kennt sich selbst: falsify --version/-v/version liefert die package.json-Version", async () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+  for (const flag of ["--version", "-v", "version"]) {
+    const r = await runCliMain([flag], os.tmpdir());
+    assert.equal(r.code, 0, r.out);
+    assert.equal(r.out.trim(), pkg.version, `--version über ${flag}`);
+  }
+  const sh = spawnSync("bash", [path.join(ROOT, "cli", "falsify.sh"), "--version"], { encoding: "utf8", cwd: ROOT });
+  assert.equal(String(sh.stdout).trim(), pkg.version, "bash-Einstieg liefert dieselbe Version");
+});
+
+test("status QUEUED ohne lebenden Worker: ehrlicher Hinweis statt Schweigen", async () => {
+  const { openDb, closeDb } = await import(pathToFileURL(path.join(ROOT, "artifacts", "db.mjs")).href);
+  const { createJob } = await import(pathToFileURL(path.join(ROOT, "artifacts", "jobs.mjs")).href);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-status-"));
+  process.env.FALSIFY_HOME = tmp;
+  try {
+    const db = openDb();
+    const id = createJob(db, { scopeId: null, payload: "P", root: ROOT, files: "a.js", mode: "plan" });
+    closeDb();
+    const r = await runCliMain(["status", id], tmp);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /QUEUED/);
+    assert.match(r.out, /Kein Worker-Fenster läuft/);
+    assert.match(r.out, /start-dock\.cmd|ui[\\/]worker\.mjs/);
+    // Zweiter Kanal: doctor nennt denselben Befund (nur bei Queue-Last hart).
+    const d = await runCliMain(["doctor"], tmp);
+    assert.match(d.out, /Kein Worker-Fenster aktiv, aber 1 Job\(s\) QUEUED/);
+  } finally {
+    try { closeDb(); } catch { /* egal */ }
+    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 60 });
+  }
 });

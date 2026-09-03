@@ -1641,6 +1641,25 @@ VERIFY: node --check auf .cmd-inhaltliche Logik via uninstall-Tests; manueller
 Doppelklick-Lauf durch den Nutzer
 RESULT: Dateien angelegt (ASCII, CRLF-kompatibel, pause bei Fehler).
 
+ID: UI-132
+TASK: User-Test-Befund (unbekannter Tester, 2026-09-03): (a) `falsify
+--version|-v|version` fehlte – das Werkzeug kannte sich selbst nicht über
+diesen Einstieg; (b) Job QUEUED ohne lebendes Worker-Fenster liess den
+Nutzer orientierungslos warten (status schwieg, doctor prüfte Worker-
+Liveness nicht). (a) auf allen drei Einstiegen nachgerüstet (bash-CLI mit
+MSYS-cygpath-Quirk, node-CLI); (b) status druckt beim QUEUED-Zweig einen
+ehrlichen Hinweis mit plattformspezifischem Startbefehl; doctor meldet
+Worker-Liveness (hart nur bei Queue-Last, sonst Info mit Startbefehl).
+STATUS: DONE
+DEPENDS_ON: UI-130 (Konvention: CLI-Oberfläche)
+VERIFY: node --test --test-concurrency=1 tests/uninstall.test.mjs (inkl.
+Version + QUEUED-Hinweis); manueller Lauf: falsify --version auf bash +
+node-Einstieg
+RESULT: 6/6 grün; falsify --version → 0.8.2-beta auf bash + node;
+doctor (leere Queue) → ℹ️ Info statt Fehlalarm; status QUEUED ohne Worker
+→ ⚠ Hinweis mit ui\start-dock.cmd (Windows) bzw. FALSIFY_WINDOW=1 node
+ui/worker.mjs (Linux/macOS).
+
 ID: UI-131
 TASK: Deinstallation vollstaendig („als waere FalsifyMe nie da gewesen"):
 uninstall.mjs entfernt zusaetzlich PATH-Marker-Zeilen von `falsify install`

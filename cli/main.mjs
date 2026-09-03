@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runScope } from "./scope.mjs";
@@ -82,6 +83,12 @@ async function main() {
     case "settings": await runSettings(args.slice(1)); break;
     case "models": await runModels(args.slice(1)); break;
     case "help": case "-h": case "--help": console.log(HELP_TEXT); break;
+    case "--version": case "-v": case "version": {
+      // User-Test 2026-09-03: sich selbst kennen (auch auf dem node-Einstieg).
+      const pkg = JSON.parse(fs.readFileSync(path.join(RUNTIME_ROOT, "package.json"), "utf8"));
+      console.log(pkg.version);
+      break;
+    }
     default: fail(`Unbekannter Befehl: ${cmd} (falsify help)`);
   }
 }
