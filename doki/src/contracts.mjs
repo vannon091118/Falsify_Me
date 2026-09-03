@@ -1,0 +1,9 @@
+export const TERMINAL_STATES = Object.freeze(['DONE', 'LOOP_BLOCKED', 'ABORTED', 'ERROR']);
+export const ACTIVE_STATES = Object.freeze(['RUNNING', 'RE_REVIEW_RUNNING']);
+export const MESSAGE_MODES = Object.freeze(['NARRATIVE', 'FACTUAL_FALLBACK', 'UNAVAILABLE']);
+export const RENDER_PATHS = Object.freeze(['SMALL_MODEL', 'RESWITCH_THINKER_MODEL', 'FACTUAL_FALLBACK']);
+export const CORRELATIONS = Object.freeze(['CONVERGENT', 'PERSPECTIVE_DIFFERENCE', 'DIVERGENCE', 'UNAVAILABLE']);
+export const RUNTIME_VERSION = 'doki-runtime-v1';
+export const DEFAULT_MAX_RESWITCH = 5;
+export const DEFAULT_MAX_CALLS = 6;
+export const DEFAULT_TOKEN_BUDGET = 1500;
