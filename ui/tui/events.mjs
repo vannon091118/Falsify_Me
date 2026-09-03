@@ -16,6 +16,7 @@ export const SOFT_CAP_MS = 2500;
 export const EVENT_TYPES = Object.freeze([
   "boot", "job", "state", "activity", "finding", "phase", "phase_done",
   "verdict", "output", "files", "done", "focus", "selftest", "stats", "model", "loop",
+  "scope_auto", "handoff",
 ]);
 
 const slotOf = (state, evt) => {
@@ -39,6 +40,8 @@ export const refreshGlobal = (state, now = Date.now()) => {
   state.activity = target.activity;
   state.model = target.model;
   state.loopState = target.loopState ?? null; // UI-123: Spiegel des Fokus-Slots
+  state.scopeAuto = target.scopeAuto ?? null; // UI-128: Spiegel (Auto-Scope-Anzeige)
+  state.handoff = target.handoff ?? null;     // UI-128: Spiegel (Prüfauftrag-Anzeige)
   state.files = target.files;
   state.events = target.events;
   state.output = target.output;
@@ -85,6 +88,8 @@ export const apply = (state, evt, now = Date.now()) => {
       target.activity = null;
       target.model = null;
       target.loopState = null; // neuer Job = neuer Loop (UI-123)
+      target.scopeAuto = null; // UI-128: neuer Job, neue Zuordnung (Alt-Anzeige weg)
+      target.handoff = null;   // UI-128: neuer Job, neuer Prüfauftrag
       target.files = 0;
       target.state = "STARTING";
       target.bootAt = now;
@@ -206,6 +211,38 @@ export const apply = (state, evt, now = Date.now()) => {
       const known = LOOP_LABEL[evt.s];
       slot.loopState = known ? evt.s : null;
       slot.events.push({ t: "loop", s: slot.loopState, ts: now });
+      refreshGlobal(state, now);
+      return true;
+    }
+    case "scope_auto": {
+      // UI-128: Auto-Scope-Entscheidung sichtbar machen — WER den Scope
+      // bestimmt hat (FalsifyMe), WIE (neu/Fortsetzung) und worauf (Ticket-
+      // Kurzform). Reine Anzeige: die UI erfindet keine Zuordnung, sie
+      // spiegelt den runs-Output (fail-closed ambiguous kommt hier nie an —
+      // der Submit exitet vorher).
+      const slot = slotOf(state, evt);
+      const outcome = evt.outcome === "new" || evt.outcome === "continue" ? evt.outcome : null;
+      if (!outcome) return true; // unbekanntes outcome ehrlich ignorieren
+      slot.scopeAuto = {
+        outcome,
+        scopeId: shortId(evt.scope_id) ?? null,
+        ticket: typeof evt.ticket === "string" ? evt.ticket.slice(0, 80) : null,
+      };
+      slot.events.push({ t: "scope_auto", s: outcome, ts: now });
+      refreshGlobal(state, now);
+      return true;
+    }
+    case "handoff": {
+      // UI-128: Prüfauftrag an den externen Agenten SICHTBAR — Handoff-ID
+      // + Ticket-Bezug + Probe-Anzahl. Spiegel des Handoff-Briefs (der
+      // echte Brief liegt in FALSIFY_HOME/logs), keine UI-eigene Wahrheit.
+      const slot = slotOf(state, evt);
+      slot.handoff = {
+        id: typeof evt.id === "string" ? evt.id.slice(0, 40) : null,
+        ticket: typeof evt.ticket === "string" ? evt.ticket.slice(0, 80) : null,
+        probes: Number.isInteger(evt.probes) ? evt.probes : null,
+      };
+      slot.events.push({ t: "handoff", s: "emitted", ts: now });
       refreshGlobal(state, now);
       return true;
     }

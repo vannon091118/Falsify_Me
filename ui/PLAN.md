@@ -1683,6 +1683,70 @@ workerHeartbeatAgeMs in artifacts/jobs.mjs (nur Lesen); doctor unterscheidet
 frisch/stale/kein Worker (hart nur bei Queue-Last); submit/jobs/status
 warnen ehrlich mit Startbefehl.
 
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-134
+TASK: Live-403-Befund (Dock-Lauf auf doki, 2026-09-03): Job brach mit
+HTTP 403 „Authorization failed“ ab — Retry-Kaskade (ohne reasoning_effort,
+dann ohne Tools) half nicht, die Meldung nannte weder Modell noch Key-
+Herkunft. Diagnose: der Dock-Worker hatte den Key aus der GEERBTEN
+Prozess-Umgebung (die echte .env in FALSIFY_HOME ist eine leere Vorlage);
+NVIDIA lehnte den (vermutlich abgelaufenen/entitlement-losen) Key ab.
+Fix in core/agent.mjs: 401/403 wirft SOFORT (keine Degradations-Kette, die
+bei Auth nie hilft) mit Diagnose: Modellname + Key-Herkunft (.env-Datei vs.
+geerbte Prozess-Umgebung) + konkreter Fix (falsify onboard / .env-Pfad).
+Doctor meldet die Herkunft-Vorab („PROZESS-UMGEBUNG (geerbtes …)“ als
+hartes Problem). STATUS: DONE
+DEPENDS_ON: UI-133
+VERIFY: node --test --test-concurrency=1 tests/agent.test.mjs (9/9: 403-
+Einmalwurf mit Modell+Herkunft+Fix, 400-Degradation unverändert); FALSIFY_ENV-
+Manöver: doctor zeigt geerbtes Env-Key-Problem; Regression probes/loop/
+full-loop-e2e/full-loop-negative 50/50
+RESULT: 9/9 + 50/50 grün; Auth-Fehler sind jetzt in ~1 fetch-Runde
+beendet (vorher 3+ Runden Kryptik), Nutzer sieht WOHER der falsche Key
+ging und WO der richtige hingehört.
+
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-135
+TASK: UX-Bruch 2 (Skill-Schicht, gleicher 403-Lauf): das Agent-Skill-
+Skript druckte „✅ Job ist im Dock sichtbar … warte auf Verdict“ für einen
+bereits ERROR-finalen Job und „✅ Verdict: UNBEKANNT“ ohne Ursache — der
+angebunden Agent bekam KEINE Diagnose und stellte dem Nutzer Provider-
+Fragen (Screenshot-Befund). Fix in allen drei Varianten (sh/mjs/ps1):
+(a) Sofort-ERROR beim Claim-Poll wird als „endete SOFORT … typisch:
+Provider/Auth-Fehler“ gemeldet, nicht als ✅+warte; (b) ERROR-Ausgabe
+wird getrennt von UNBEKANNT geparsed (err_line) und als „Lauf-FEHLER
+(kein Verdict)“ mit Ursache gedruckt: 401/403 → Auth-Ursache + FIX
+(Key in .env, Dock NEU starten, gleiches Ticket), 429/5xx/timeout →
+transient + Retry-Rat; (c) UNBEKANNT mit err_line sagt explizit
+„NICHT eine inhaltliche Ablehnung“. STATUS: DONE
+DEPENDS_ON: UI-134
+VERIFY: bash -n sh-Variante; node --check mjs; PowerShell-Parser ps1;
+Simulierter 403-wait_output-Durchlauf zeigt Ursache+FIX; Sync in
+doki/skills (läuft dort als eigene Source-Kopie)
+RESULT: Skripte erzählen jetzt die Wahrheit: ERROR ist kein Verdict,
+✅ gibt es nur für echte Lauffähigkeit; der Agent bekommt Ursache+Fix
+statt zu raten.
+
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-136
+TASK: Test-Konsolidierung (Queue-Punkt aus dem Fremd-Report, 2026-09-03):
+33 Test-Dateien / 7342 Zeilen, jede dokumentiert einen konkreten Vorfall
+(keine Duplikate — consolidation debt war STRUKTUR, nicht Inhalt): AGENTS.md
+führte eine hardcoded 19-Dateien-„Kernsuite", der bereits 14 Dateien fehlten.
+Neu: scripts/run-tests.sh mit drei datenbasierten Tiers (jede Datei einzeln
+getaktet): fast = Unit-Verträge < 3 s/Datei (~8 s gesamt, jeder Commit),
+core = fast + Prozess-/DB-Suiten (~106 s, vor Push), full = npm test
+(alle 33, ~2 min). package.json: test:fast/test:core. AGENTS.md Kernsuite-
+Absatz durch Tier-Vertrag ersetzt (Pfadelisten pflegen sich nicht selbst);
+WIRING §8 + README Tests-Abschnitt nachgezogen. STATUS: DONE
+DEPENDS_ON: UI-133
+VERIFY: bash scripts/run-tests.sh fast → 108/108 (8.5 s); bash scripts/
+run-tests.sh core → 217/217 (105.8 s); npm test Vollbaseline → 254/254
+(124.7 s) — alle drei vor Commit gelaufen
+RESULT: Ein Einstieg statt drei verteilte Wahrheiten; die Queue-Meldung
+„tests konsolidieren" ist damit abgearbeitet — Inhalt unangetastet,
+Struktur gehärtet.
+
 ID: UI-131
 TASK: Deinstallation vollstaendig („als waere FalsifyMe nie da gewesen"):
 uninstall.mjs entfernt zusaetzlich PATH-Marker-Zeilen von `falsify install`

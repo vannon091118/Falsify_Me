@@ -201,6 +201,23 @@ function Invoke-FalsifyCheck {
         Write-Error2 "VERDICT: PLAN → Iteration überarbeiten und erneut einreichen (gleiches Ticket = -UserInput 1:1)."
         Write-Error2 "Kritik: falsify log $jobId"
     }
+    elseif ($verdict -eq "ERROR" -or $outText -match "HTTP 40[13]") {
+        # UI-135 (Live-403): Lauf-FEHLER ist keine inhaltliche Ablehnung —
+        # Ursache+Fix nennen, statt den Agenten raten zu lassen.
+        $errMatch = [regex]::Match($outText, "ERROR (.+)")
+        $err = if ($errMatch.Success) { $errMatch.Groups[1].Value } else { $verdict }
+        Write-Error2 ("Lauf-FEHLER (kein Verdict): " + $err.Substring(0, [Math]::Min(300, $err.Length)))
+        if ($err -match "HTTP 40[13]") {
+            Write-Error2 "URSACHE: Provider hat den API-Key abgelehnt (Auth) — KEINE Kritik an deinem Plan."
+            Write-Error2 "FIX: Key in %USERPROFILE%\.Falsify_Private\.env eintragen (falsify onboard), Dock-Fenster schließen + NEU starten, GLEICHES Ticket erneut einreichen."
+        }
+        elseif ($err -match "429|5\d\d|timeout|Überlastung") {
+            Write-Warn "URSACHE: Provider-Überlastung/Rate-Limit (transient). Kurz warten, GLEICHES Ticket erneut einreichen."
+        }
+        else {
+            Write-Info "Details: falsify log $jobId"
+        }
+    }
     else {
         Write-Error2 "VERDICT: $verdict → nicht freigegeben."
     }

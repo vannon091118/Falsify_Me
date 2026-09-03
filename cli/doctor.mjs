@@ -59,12 +59,25 @@ export async function runDoctor() {
     bad(`Config: ${e.message}`);
   }
 
-  // 3) API-Key
+  // 3) API-Key (inkl. Herkunft — User-Ticket 2026-09-03: ein geerbter
+  // Prozess-Env-Key lief Job-los durch und brach erst mit HTTP 403 im Lauf;
+  // doctor muss DIESE Falle sichtbar machen, nicht nur „Key da/nicht da“).
   try {
-    const { loadApiKey, keyEnvFile } = await import("../core/keys.mjs");
+    const { loadApiKey, keyEnvFile, keyNames } = await import("../core/keys.mjs");
     const key = loadApiKey();
-    if (key) ok(`API-Key gefunden (${keyEnvFile()})`);
-    else bad(`Kein API-Key (${keyEnvFile()})`);
+    if (key) {
+      let fromFile = false;
+      try {
+        const envContent = fs.readFileSync(keyEnvFile(), "utf8");
+        fromFile = keyNames().some((n) => envContent.split(/\r?\n/).some((l) => l.startsWith(`${n}=`) && l.slice(n.length + 1).trim()));
+      } catch { /* .env fehlt/unlesbar → Key kann nur aus der Prozess-Env kommen */ }
+      const envName = fromFile ? null : keyNames().find((n) => process.env[n]?.trim());
+      if (fromFile) ok(`API-Key gefunden (${keyEnvFile()})`);
+      else if (envName) bad(`API-Key kommt aus der PROZESS-UMGEBUNG (geerbtes ${envName}), NICHT aus ${keyEnvFile()} — riskant: unsichtbar für andere Shells, kollidiert mit der .env-Verwaltung. Fix: Key in ${keyEnvFile()} eintragen und die Umgebungsvariable entfernen.`);
+      else ok(`API-Key gefunden (${keyEnvFile()})`);
+    } else {
+      bad(`Kein API-Key (${keyEnvFile()})`);
+    }
   } catch (e) {
     bad(`Key-Check fehlgeschlagen: ${e.message}`);
   }

@@ -99,6 +99,10 @@ const makeSlot = (idx) => ({
   // (Produktions-Loop, artifacts/loops.mjs). Kein UI-eigener Zustand, keine
   // Transition-Logik — das UI spiegelt, es entscheidet nicht (CON-004).
   loopState: null, // "WRITE_AUTHORIZED" | "WAITING_FOR_AGENT" | ... | null
+  // UI-128: Auto-Scope-Entscheidung + Prüfauftrag (reine Anzeige-Spiegel,
+  // gesetzt NUR durch die gleichnamigen FM-EVT-Events des run-Kindprozesses).
+  scopeAuto: null, // { outcome: "new"|"continue", scopeId, ticket } | null
+  handoff: null,   // { id, ticket, probes } | null (Prüfauftrag an externen Agenten)
   files: 0,
   filesList: [], // echte Scan-Dateien (files-Event mit list)
   events: createRing(80),  // strukturierte Aktivitaets-Events des Slots

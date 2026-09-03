@@ -4,7 +4,9 @@
 // Streaming (Reasoning grau, Kritik weiß, ⟳ Tool-Aufrufe), 429-/Netz-Retry,
 // Leere-Antwort-Handling, Runden-Limit. Reine Funktion ohne DB-Zugriff.
 // ─────────────────────────────────────────────────────────────────────────────
+import fs from "node:fs";
 import { makeTools } from "./tools.mjs";
+import { keyEnvFile, keyNames } from "./keys.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -112,6 +114,9 @@ export async function runAgent({ systemPrompt, userContent, model, apiKey, apiBa
     try {
       round = await fetchRound(body);
     } catch (e) {
+      // Auth-Fehler (401/403) brechen JETT sofort ab – weniger Keys/Parameter
+      // helfen nie, wenn der Key selbst abgelehnt wird (User-Ticket 2026-09-03).
+      if (/HTTP 40[13]/.test(String(e.message))) throw e;
       if (/HTTP 4\d\d/.test(String(e.message)) && toolRounds === 0) {
         // F-3-Fix (Live-E2E 2026-09-02): Erst Retry NUR ohne reasoning_effort,
         // Tools bleiben — Groq lehnt `reasoning_effort=high` mit 400 ab und der
@@ -285,6 +290,29 @@ async function fetchRoundWith(body, { apiKey, apiBase, timeoutMs = 180000, deadl
     }
     if (!res.ok) {
       const t = await res.text().catch(() => "");
+      // Auth-Befund (User-Ticket 2026-09-03): 401/403 ist NICHT transient –
+      // sofort failen OHNE Retry-Kaskade, mit Diagnose statt Kryptik. Häufigste
+      // Ursache: der Key kam aus der Prozess-Env (geerbt), nicht aus der
+      // .env von FALSIFY_HOME — dann sagt der Hinweis, WO der falsche Key
+      // herkommt und WO der richtige liegen muss. Kein Key-Wert, kein Header.
+      if (res.status === 401 || res.status === 403) {
+        // Key-Herkunft ehrlich bestimmen: .env lesbar + gefüllt → Datei;
+        // .env fehlt/leer aber Prozess-Env gefüllt → geerbtes Env (die Falle
+        // aus dem 403-Livebefund: Dock-Fenster erben Keys aus der Shell).
+        let origin = null;
+        try {
+          const envFile = fs.readFileSync(keyEnvFile(), "utf8");
+          const hasAny = keyNames().some((n) => envFile.split(/\r?\n/).some((l) => l.startsWith(`${n}=`) && l.slice(n.length + 1).trim()));
+          if (hasAny) origin = `${keyEnvFile()} (Datei)`;
+        } catch { /* .env fehlt/unlesbar */ }
+        if (!origin) {
+          const envName = keyNames().find((n) => process.env[n]?.trim());
+          origin = envName
+            ? `Prozess-Umgebung (geerbtes ${envName}) – NICHT aus der .env-Datei`
+            : `${keyEnvFile()} (Datei)`;
+        }
+        throw new Error(`HTTP ${res.status}: Autorisierung vom Provider abgelehnt (Key ungültig/abgelaufen/ohne Berechtigung für Modell ${body.model}). Key-Herkunft: ${origin}. Fix: falsify onboard (Dialog) oder Key in ${keyEnvFile()} eintragen, dann Job neu einreichen.`.slice(0, 500));
+      }
       throw new Error(`HTTP ${res.status}: ${t.slice(0, 500)}`);
     }
 

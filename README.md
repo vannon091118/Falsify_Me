@@ -332,7 +332,7 @@ falsify submit --header "Mein Auftrag 1:1" --plan-file plan.txt --root <projekt>
 | Kein `bash` (Windows ohne Git Bash) | `FEHLER: bash wurde nicht gefunden …`, Exit 3 |
 | Node < 22.5 | npm-Warnung `EBADENGINE`; `falsify doctor` meldet die Node-Anforderung |
 | Kein Worker aktiv | `status`/`jobs`/`doctor`/`submit` warnen ehrlich (mit letzter Worker-Aktivität); Start: `falsify worker start 1` (Hintergrund) oder Desktop-Icon `FalsifyMe` (sichtbar) |
-| Provider nicht erreichbar | HTTP-Fehler von `falsify submit`/`run`, Exit 3 |
+| Provider lehnt Key ab (HTTP 401/403) | Job endet ehrlich als `ERROR` (kein Retry, kein Fake-Verdict); die Meldung nennt Modell + **Key-Herkunft** (.env-Datei vs. geerbte Prozess-Umgebung) + Fix (`falsify onboard`). `doctor` zeigt die Herkunft zusätzlich vor dem Lauf |
 | `falsify onboard` ohne Terminal | klare Meldung + Hinweis auf `settings set`, Exit 2 |
 
 ---
@@ -692,7 +692,9 @@ und übergibt die Auswertung an den USER AGENT.
 ## Tests (die echten, nicht die erfundenen)
 
 ```bash
-npm test                        # gesamte Testsuite (node --test tests/*.test.mjs)
+npm run test:fast               # Unit-Verträge, ~8 s (jeder Commit)
+npm run test:core               # + Prozess-/DB-Suiten, ~2 min (vor Push)
+npm test                        # gesamte Testsuite (alle 33 Dateien, Release)
 npm run test:security           # Security-/Regressionstests (tests/security.test.mjs)
 npm run selftest                # Produkt-E2E: CLI→Queue→sichtbares Fenster→Worker→
                                 # run.mjs→ERROR-Pfad ohne Key; Read-only-Checksummen

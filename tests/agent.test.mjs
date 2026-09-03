@@ -10,6 +10,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -177,6 +178,68 @@ test("Deadline-Budget: runAgent rechnet ein Gesamt-Zeitbudget ein (Eskalations-A
       (e) => /Überlastung/i.test(String(e.message)) && /Timeout nach \d+s/i.test(String(e.message)),
       "Round-Timeout wird als Ueberlastung mit Sekundenangabe kategorisiert"
     );
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+// ── User-Ticket 2026-09-03: HTTP 401/403 = sofort failen MIT Diagnose ───────
+// Ein abgelehnter Key (oder ein Modell ohne Berechtigung) ist NICHT transient:
+// keine Retry-Kaskade, keine Parameter-Degradation — sondern ein ehrlicher
+// Fehler, der sagt, woher der Key kam und wo der richtige hingehört.
+test("HTTP 403: sofortiger Abbruch mit Key-Herkunft-Diagnose, ohne Retry-Kaskade", async () => {
+  const { runAgent } = await mod("../core/agent.mjs");
+  const realFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return new Response(JSON.stringify({ status: 403, title: "Forbidden", detail: "Authorization failed" }), { status: 403, headers: { "Content-Type": "application/json" } });
+  };
+  const realEnv = process.env.FALSIFY_ENV;
+  process.env.FALSIFY_ENV = path.join(os.tmpdir(), `falsify-nonexistent-${Date.now()}/.env`);
+  delete process.env.NVIDIA_API_KEY;
+  process.env.OPENAI_API_KEY = "sk-geerbt-falsch";
+  try {
+    await assert.rejects(
+      runAgent({
+        systemPrompt: "s", userContent: "u", model: "test/model-xyz", apiKey: "sk-geerbt-falsch",
+        apiBase: "http://127.0.0.1:9", timeoutMs: 2000, retryBackoffMs: 1,
+        root: ROOT, whitelist: [],
+      }),
+      (e) => /HTTP 403/.test(String(e.message))
+        && /Autorisierung vom Provider abgelehnt/.test(String(e.message))
+        && /test\/model-xyz/.test(String(e.message))
+        && /Prozess-Umgebung \(geerbtes OPENAI_API_KEY\)/.test(String(e.message))
+        && /falsify onboard/.test(String(e.message)),
+      "403 wirft EINMAL mit Modellname + Key-Herkunft + Fix-Anleitung"
+    );
+    assert.ok(calls <= 2, `keine Retry-Kaskade bei Auth-Fehler (Aufrufe: ${calls})`);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realEnv === undefined) delete process.env.FALSIFY_ENV; else process.env.FALSIFY_ENV = realEnv;
+    delete process.env.OPENAI_API_KEY;
+  }
+});
+
+test("HTTP 400 (Modell-Spielerei): bestehende Degradations-Retry bleibt erhalten", async () => {
+  const { runAgent } = await mod("../core/agent.mjs");
+  const realFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return new Response(JSON.stringify({ error: { message: "reasoning_effort not supported" } }), { status: 400 });
+  };
+  try {
+    await assert.rejects(
+      runAgent({
+        systemPrompt: "s", userContent: "u", model: "m", apiKey: "k",
+        apiBase: "http://127.0.0.1:9", timeoutMs: 2000, retryBackoffMs: 1,
+        root: ROOT, whitelist: [],
+      }),
+      (e) => /HTTP 400/.test(String(e.message)),
+      "400 fliegt nach voller Degradation (3 Versuche)"
+    );
+    assert.ok(calls >= 3, `Degradations-Kette lief (Aufrufe: ${calls})`);
   } finally {
     globalThis.fetch = realFetch;
   }

@@ -245,6 +245,20 @@ export async function falsifyMandatoryCheck(options) {
   } else if (verdict === 'PLAN') {
     log('error', 'VERDICT: PLAN → Iteration überarbeiten und erneut einreichen (gleiches Ticket = userInput 1:1).');
     log('info', `Kritik: falsify log ${jobId}`);
+  } else if (verdict === 'ERROR' || /HTTP 40[13]/.test(submitOutput)) {
+    // UI-135 (Live-403): ein Lauf-FEHLER ist keine inhaltliche Ablehnung —
+    // der Agent muss Ursache+Fix sehen, sonst rät er (Provider-Fragen an den
+    // User sind der UX-Bruch, nicht die Lösung).
+    const err = (submitOutput.match(/ERROR (.+)/) || [])[1] || verdict;
+    log('error', `Lauf-FEHLER (kein Verdict): ${String(err).slice(0, 300)}`);
+    if (/HTTP 40[13]/.test(String(err))) {
+      log('error', 'URSACHE: Provider hat den API-Key abgelehnt (Auth) — KEINE Kritik an deinem Plan.');
+      log('error', 'FIX: Key in %USERPROFILE%\\.Falsify_Private\\.env eintragen (falsify onboard), Dock-Fenster schließen + NEU starten (sonst erbt es den alten Key), GLEICHES Ticket erneut einreichen.');
+    } else if (/429|5\d\d|timeout|Überlastung/i.test(String(err))) {
+      log('warn', 'URSACHE: Provider-Überlastung/Rate-Limit (transient). Kurz warten, GLEICHES Ticket erneut einreichen.');
+    } else {
+      log('info', `Details: falsify log ${jobId}`);
+    }
   } else {
     log('error', `VERDICT: ${verdict} → nicht freigegeben.`);
   }

@@ -312,9 +312,11 @@ if (submitMode) {
     if (resolved.kind === "new") {
       scope = createScope(db, header, { checkoutId });
       console.log(green(`Scope automatisch bestimmt: ${scope.id}  · neuer Scope fuer das Ticket (ID von FalsifyMe, nicht vom Agent).`));
+      uiEvt({ t: "scope_auto", outcome: "new", scope_id: scope.id, ticket: header });
     } else {
       scope = resolved.scope;
       console.log(green(`Scope automatisch bestimmt: ${scope.id}  · Fortsetzung des offenen Tickets (FalsifyMe entscheidet, der Agent nicht).`));
+      uiEvt({ t: "scope_auto", outcome: "continue", scope_id: scope.id, ticket: header });
     }
   }
   if (!scope && !headerArg) {
@@ -1091,6 +1093,14 @@ async function main() {
       if (!writeAuth.ok) throw new Error(`WRITE_AUTHORIZED-Transition fehlgeschlagen: ${writeAuth.reason}`);
       // UI-123: Loop-Zustand dem Dock spiegeln (nur Anzeige, keine UI-Wahrheit).
       uiEvt({ t: "loop", s: "WRITE_AUTHORIZED" });
+      // UI-128: Prüfauftrag sichtbar machen — das Fenster zeigt, DASS und WAS
+      // an den externen Agenten geht (Ticket + Falsifikation + Probe-Anzahl).
+      uiEvt({
+        t: "handoff",
+        id: handoff.handoff_id,
+        ticket: scope ? scope.header : null,
+        probes: Array.isArray(handoff.probe_results) ? handoff.probe_results.length : null,
+      });
       console.log(green(`HANDOFF_ID=${handoff.handoff_id}`));
       console.log(dim(`Handoff (v1, maschinenlesbar): ${handoffPath}`));
       console.log(dim(`→ Nach der Umsetzung: falsify handoff complete --file <report.json> (Re-Review wird automatisch eingereicht).`));
