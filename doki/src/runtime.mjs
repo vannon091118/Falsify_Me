@@ -20,8 +20,9 @@ function makeReport(snapshot, history, analysis, updateId) {
   const report = {
     schema:'doki.phase_report/v2', report_id:'', update_id:updateId, loop_event_ref:snapshot.loop_event.id,
     job_id:snapshot.loop_event.job_id, scope_id:snapshot.loop_event.scope_id ?? null,
-    phase:snapshot.job?.loop_state ?? snapshot.loop_event.to_state, from_state:snapshot.loop_event.from_state,
-    to_state:snapshot.loop_event.to_state, verdict_ref:snapshot.job?.verdict ?? null,
+    phase:snapshot.job?.loop_state ?? snapshot.loop_event.to_state,
+    from_state:snapshot.loop_event.from_state, to_state:snapshot.loop_event.to_state,
+    verdict_ref:snapshot.job?.verdict ?? null,
     wave_refs:[...new Set((snapshot.findings??[]).map((f)=>f.wave))],
     history_refs:history.refs, statistics:analysis.stats, matches:analysis.matches,
     tracked:analysis.tracked, correlation_status:correlation(snapshot),
@@ -46,7 +47,7 @@ async function narrate({report,snapshot,history,analysis,updateId,env,falsifyDb,
   }
   if(!sharedKeyWindowOpen(falsifyDb,snapshot.loop_event.id) || activeThinkerRunExists(falsifyDb)) return fallback(prompt,'DOKI Shared-Key-Fenster ist geschlossen.');
   try {
-    const result=await callModel(prompt.body,{env,shouldAbort:()=>!sharedKeyWindowOpen(falsifyDb,snapshot.loop_event.id)||activeThinkerRunExists(falsifyDb)},{env,shouldAbort:()=>!sharedKeyWindowOpen(falsifyDb,snapshot.loop_event.id)||activeThinkerRunExists(falsifyDb)});
+    const result=await callModel(prompt.body,{env,shouldAbort:()=>!sharedKeyWindowOpen(falsifyDb,snapshot.loop_event.id)||activeThinkerRunExists(falsifyDb)});
     dokiDb.prepare('INSERT OR REPLACE INTO rotation_state(id,window_key,reswitch_count,call_count,token_count,updated_at) VALUES(1,?,?,?,?,?)').run(snapshot.loop_event.job_id,0,1,0,now());
     return {mode:'NARRATIVE',renderPath:'THINKER_OUTPUT',body:result.text,prompt};
   } catch(error) {
