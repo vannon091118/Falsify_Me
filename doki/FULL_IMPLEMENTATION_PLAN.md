@@ -187,6 +187,34 @@ Attach observer events and final DOKI output to the existing visible Dock withou
 
 Run a real visible FalsifyMe workflow including Thinker, Evil Twin, external-agent waiting, DOKI buffering, free-slot acquisition, one Thinker call and final visible commit prose.
 
+## Commit protocol
+
+The implementation sequence is also the Git commit sequence on `codex/doki-rev2`.
+
+- Exactly one implementation point per commit.
+- No mixed-point commits.
+- No unrelated cleanup inside a feature-point commit.
+- Every commit must be independently reviewable against the plan point it implements.
+- After each commit, verify the changed scope and tests before starting the next point.
+- The branch remains `codex/doki-rev2` for the entire implementation sequence.
+- `main` is not modified by the implementation work.
+- A point is not considered complete merely because files exist; its acceptance/tests must pass before the next point begins.
+
+Commit naming convention:
+
+```text
+DOKI A: observer foundation
+DOKI B: ensemble foundation
+DOKI C: narrative layers
+DOKI D: historical rebuild
+DOKI E: narrator context
+DOKI F: Thinker orchestration
+DOKI G: Dock wiring
+DOKI H: full visible E2E
+```
+
+If a point must be split internally for a technical reason, the split must first be added explicitly to this plan as separate numbered sub-points. No silent subdivision and no silent regrouping.
+
 ## Required test matrix
 
 Unit: identity, deduplication, relationship direction, thread merge/split, belief evidence, memory reconstruction, emotional decay, narrator selection, narrator voice constraints, prompt determinism.
