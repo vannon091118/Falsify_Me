@@ -2,20 +2,81 @@ import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+export const DOKI_SCHEMA_VERSION = 1;
+
 export function openReadOnlyFalsifyDb(path) {
   return new DatabaseSync(resolve(path), { readOnly: true, timeout: 250 });
 }
 
-export function openDokiDb(path) {
-  mkdirSync(dirname(resolve(path)), { recursive: true });
-  const db = new DatabaseSync(resolve(path), { timeout: 250 });
-  db.exec('PRAGMA journal_mode=WAL;');
-  db.exec('PRAGMA synchronous=NORMAL;');
+function applySchemaV1(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS observations(
       update_id TEXT PRIMARY KEY, loop_event_id TEXT NOT NULL, job_id TEXT, scope_id TEXT,
       event_type TEXT, from_state TEXT, to_state TEXT, snapshot_json TEXT NOT NULL,
       snapshot_digest TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS observer_observations(
+      observation_id TEXT PRIMARY KEY, source_event_id TEXT NOT NULL UNIQUE,
+      session_id TEXT, job_id TEXT, seq INTEGER, source TEXT, event_type TEXT,
+      event_json TEXT NOT NULL, observed_text TEXT, observed_at TEXT NOT NULL,
+      observation_digest TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS observation_cursor(
+      id INTEGER PRIMARY KEY CHECK(id = 1), cursor_id TEXT, cursor_seq INTEGER,
+      cursor_digest TEXT, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS history_runs(
+      history_id TEXT PRIMARY KEY, base_cursor_id TEXT, input_digest TEXT NOT NULL,
+      rule_version TEXT NOT NULL, state_digest TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS character_states(
+      character_id TEXT PRIMARY KEY, state_json TEXT NOT NULL, state_digest TEXT NOT NULL,
+      rule_version TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS character_memory(
+      memory_id TEXT PRIMARY KEY, character_id TEXT NOT NULL, observation_id TEXT,
+      memory_kind TEXT NOT NULL, memory_json TEXT NOT NULL, source_digest TEXT NOT NULL,
+      rule_version TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS relationships(
+      from_character TEXT NOT NULL, to_character TEXT NOT NULL,
+      state_json TEXT NOT NULL, state_digest TEXT NOT NULL, rule_version TEXT NOT NULL,
+      updated_at TEXT NOT NULL, PRIMARY KEY(from_character, to_character),
+      CHECK(from_character <> to_character)
+    );
+    CREATE TABLE IF NOT EXISTS relationship_events(
+      effect_id TEXT PRIMARY KEY, observation_id TEXT NOT NULL,
+      from_character TEXT NOT NULL, to_character TEXT NOT NULL,
+      delta_json TEXT NOT NULL, evidence_json TEXT NOT NULL, rule_version TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS threads(
+      thread_id TEXT PRIMARY KEY, state_json TEXT NOT NULL, state_digest TEXT NOT NULL,
+      rule_version TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS thread_observations(
+      thread_id TEXT NOT NULL, observation_id TEXT NOT NULL,
+      relevance REAL NOT NULL, evidence_json TEXT NOT NULL,
+      PRIMARY KEY(thread_id, observation_id)
+    );
+    CREATE TABLE IF NOT EXISTS perspectives(
+      character_id TEXT NOT NULL, topic_key TEXT NOT NULL,
+      state_json TEXT NOT NULL, state_digest TEXT NOT NULL, rule_version TEXT NOT NULL,
+      updated_at TEXT NOT NULL, PRIMARY KEY(character_id, topic_key)
+    );
+    CREATE TABLE IF NOT EXISTS beliefs(
+      belief_id TEXT PRIMARY KEY, character_id TEXT NOT NULL, topic_key TEXT NOT NULL,
+      belief_json TEXT NOT NULL, evidence_json TEXT NOT NULL, rule_version TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS conflicts(
+      conflict_id TEXT PRIMARY KEY, conflict_json TEXT NOT NULL,
+      state_digest TEXT NOT NULL, rule_version TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS narrative_outputs(
+      output_id TEXT PRIMARY KEY, history_id TEXT, narrator_id TEXT NOT NULL,
+      prompt_digest TEXT NOT NULL, message_text TEXT NOT NULL,
+      call_count INTEGER NOT NULL CHECK(call_count = 1), created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS update_jobs(
       update_id TEXT PRIMARY KEY, loop_event_id TEXT UNIQUE NOT NULL, status TEXT NOT NULL,
@@ -52,5 +113,32 @@ export function openDokiDb(path) {
       detail TEXT NOT NULL, created_at TEXT NOT NULL
     );
   `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_character_memory_identity
+           ON character_memory(character_id, COALESCE(observation_id, ''), memory_kind);`);
+}
+
+function migrate(db) {
+  const version = Number(db.prepare('PRAGMA user_version').get().user_version ?? 0);
+  if (version > DOKI_SCHEMA_VERSION) {
+    throw new Error(`DOKI schema ${version} is newer than supported ${DOKI_SCHEMA_VERSION}`);
+  }
+  if (version === 0) {
+    db.exec('BEGIN');
+    try {
+      applySchemaV1(db);
+      db.exec(`PRAGMA user_version = ${DOKI_SCHEMA_VERSION}`);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+}
+
+export function openDokiDb(path) {
+  mkdirSync(dirname(resolve(path)), { recursive: true });
+  const db = new DatabaseSync(resolve(path), { timeout: 250 });
+  db.exec('PRAGMA foreign_keys = ON;');
+  migrate(db);
   return db;
 }
