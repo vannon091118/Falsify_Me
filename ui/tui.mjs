@@ -184,6 +184,9 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
       loopState: state.loopState ?? null,
       loopLabel: loopLabelOf(focused) ?? (state.loopState ? LOOP_LABEL[state.loopState] ?? null : null),
       loopColor: focused.loopState ? LOOP_COLOR[focused.loopState] ?? "gray" : null,
+      // UI-128: Auto-Scope + Prüfauftrag-Spiegel des Fokus-Slots.
+      scopeAuto: state.scopeAuto ?? null,
+      handoff: state.handoff ?? null,
       stateColor: bootFailed ? "red"
         : startupIntro ? STATE_COLOR.STARTING
         : idleNow ? "gray" : STATE_COLOR[focused.state],
@@ -208,6 +211,8 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
         loopState: s.loopState ?? null,
         loopLabel: loopLabelOf(s),
         loopColor: s.loopState ? LOOP_COLOR[s.loopState] ?? "gray" : null,
+        scopeAuto: s.scopeAuto ?? null,
+        handoff: s.handoff ?? null,
         jobId: s.jobId,
         scopeId: s.scopeId,
         verdict: verdict.view(s, now),
@@ -224,6 +229,8 @@ export const createTui = async ({ onAbort = () => {}, onExit = () => {}, options
         loopState: s.loopState ?? null,
         loopLabel: loopLabelOf(s),
         loopColor: s.loopState ? LOOP_COLOR[s.loopState] ?? "gray" : null,
+        scopeAuto: s.scopeAuto ?? null,
+        handoff: s.handoff ?? null,
         jobId: s.jobId,
         scopeId: s.scopeId,
         verdict: verdict.view(s, now),

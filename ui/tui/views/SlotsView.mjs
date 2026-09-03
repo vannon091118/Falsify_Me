@@ -48,6 +48,36 @@ export default function SlotsView({ snap, cols, rows }) {
       h(Text, { color: "gray" }, "│"),
     ));
 
+    // UI-128: Auto-Scope-Entscheidung sichtbar — WER (FalsifyMe) hat WIE
+    // (neu/Fortsetzung) welchen Scope zum Ticket bestimmt. Nur Anzeige des
+    // scope_auto-Events; ohne Event keine Zeile (kein Fake-Zustand).
+    if (p.scopeAuto) {
+      const sa = p.scopeAuto;
+      const what = sa.outcome === "new" ? "NEU ANGELEGT" : "FORTSETZUNG";
+      const ticketKurz = sa.ticket ? truncate(sa.ticket, Math.max(10, inner - 46), "…") : "–";
+      const line = ` SCOPE AUTO (${what}): ${sa.scopeId ?? "–"} · Ticket: ${ticketKurz}`;
+      els.push(h(Box, { key: `sa${i}`, width: cols },
+        h(Text, { color: "gray" }, "│"),
+        h(Text, { color: sa.outcome === "new" ? "green" : "cyan" }, truncate(line, inner, "…")),
+        h(Text, { color: "gray" }, "│"),
+      ));
+    }
+
+    // UI-128: Prüfauftrag an den externen Agenten sichtbar — nach der WRITE-
+    // Freigabe zeigt das Fenster, DASS ein Handoff existiert, WELCHER, und
+    // was er enthält (Ticket + Falsifikation + Probe-Ergebnisse).
+    if (p.handoff) {
+      const hf = p.handoff;
+      const probes = Number.isInteger(hf.probes) ? `${hf.probes} Proben` : "Proben: –";
+      const ticketKurz = hf.ticket ? truncate(hf.ticket, Math.max(10, inner - 52), "…") : "–";
+      const line = ` PRÜFAUFTRAG → EXTERNER AGENT (${hf.id ?? "–"}) · Ticket: ${ticketKurz} · ${probes} · Ergebnis → Re-Review`;
+      els.push(h(Box, { key: `hf${i}`, width: cols },
+        h(Text, { color: "gray" }, "│"),
+        h(Text, { color: "yellow", bold: true }, truncate(line, inner, "…")),
+        h(Text, { color: "gray" }, "│"),
+      ));
+    }
+
     // Loop-Zustand (UI-123): Spiegel des persistierten jobs.loop_state —
     // nur angezeigt, wenn die Pipeline ihn gemeldet hat (kein Fake-Zustand).
     if (p.loopLabel) {

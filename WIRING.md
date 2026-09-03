@@ -204,7 +204,7 @@ Kein Fake: fehlender `progress` ⇒ indeterminierter Sweep statt Prozent.
 |---|---|---|
 | `ui/worker.mjs` | `createTui({onAbort, options: {stdin: process.stdin}})` + `createParser`-Feed aus dem run.mjs-Kind (TTY). Headless (kein TTY): Text-Ausgabe unverändert, kein Marker | DONE (Worker-Loop bleibt; TUI übernimmt nur Anzeige; FALSIFY_UI=1 nur im TTY-Spawn) |
 | `cli/run.mjs` | `FM-EVT:`-Marker: job, state (LOADING/THINKING/TOOL_ACTIVITY/FINDINGS/ERROR/TIMEOUT), phase/phase_done (aus Scope-Phase; progress wird nie erfunden), activity (via onTool), finding (nur bei echtem Befund), files (echte Whitelist + Dateiliste), verdict, done | DONE — Marker gated auf `FALSIFY_UI=1`; Ausgabe sonst unverändert |
-| `core/agent.mjs` | additiver `onTool`-Callback je echtem Tool-Aufruf (Tool + Datei-Arg) | DONE — ohne Callback keinerlei Verhaltensänderung |
+| `core/agent.mjs` | additiver `onTool`-Callback je echtem Tool-Aufruf (Tool + Datei-Arg). HTTP 401/403: SOFORTiger Abbruch (keine Degradations-Retry, die bei Auth nie hilft) mit Diagnose — Modellname + Key-Herkunft (.env-Datei vs. geerbte Prozess-Umgebung) + Fix-Anleitung; doctor zeigt die Herkunft schon vor dem Lauf | DONE (UI-134, Live-403-Befund) |
 | `onAbort` | Job-Kind (run.mjs) echt killen (`createAbort`, PID-Verifikation via `isDead`); danach `state: ABORTED`; ohne laufenden Job schliesst Q das Fenster (`ui.finish`) | DONE |
 | `ui/start-dock.cmd` | sichtbarer Worker-Start: startet `dock-runner.ps1` (Fenster 1..3), Worker rendert die TUI | DONE — neue Datei (fehlte vorher im Repo trotz Verweisen) |
 
@@ -328,6 +328,10 @@ lokaler Konfiguration übernommen, niemals erfunden. Die bestehende
 ## 8. TEST-/VERIFIKATIONS-BEFEHLE (für Agents)
 
 ```bash
+# EIN Vertrags-Einstieg (Test-Konsolidierung 2026-09-03, siehe AGENTS.md):
+bash scripts/run-tests.sh fast   # Unit-Verträge, ~8 s — jeder Commit
+bash scripts/run-tests.sh core   # + Prozess-/DB-Suiten, ~2.5 min — vor Push
+npm test                         # full: alle 33 Dateien — Release
 npm run test:phase2      # FM-EVT-Verdrahtung (Marker-Gate, Parser→UI-State,
                          # Worker-Loop headless)
 

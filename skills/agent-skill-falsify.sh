@@ -191,7 +191,16 @@ falsify_mandatory_check() {
     esac
   done
   if [ "$claimed" = "1" ]; then
-    log_ok "Job $job_id ist im Dock sichtbar (Fenster-Claim: Status $st) – warte auf Verdict ..."
+    case "$st" in
+      ERROR*|DONE*)
+        # Schneller Fehler (z.B. HTTP 403): NICHT "✅ sichtbar + warte" sagen —
+        # der Job ist bereits FINAL. Ehrlich melden und direkt auswerten.
+        log_warn "Job $job_id endete SOFORT (Status: $st) – Worker hat geclaimt, aber der Lauf brach früh ab (typisch: Provider/Auth-Fehler)."
+        ;;
+      *)
+        log_ok "Job $job_id ist im Dock sichtbar (Fenster-Claim: Status $st) – warte auf Verdict ..."
+        ;;
+    esac
   else
     # Kein Worker hat geclaimt: Job bleibt QUEUED. ABBRUCH statt Endlos-
     # Warten - falsify wait pollt per Design OHNE Timeout („loopt“-Falle).
@@ -205,12 +214,20 @@ falsify_mandatory_check() {
   wait_output=$(bash "$V2_DIR/cli/falsify.sh" wait "$job_id" 2>&1)
   local wait_exit=$?
 
-  # Verdict aus der Warteschleife extrahieren (DONE <VERDICT>)
+  # Verdict aus der Warteschleife extrahieren (DONE <VERDICT>); ERROR-Zweig
+  # getrennt: ein ERROR ist KEIN UNBEKANNT-Verdict, sondern ein Lauf-Fehler
+  # mit Ursache — die Fehler-Ausgabe muss die Ursache nennen (UI-135).
   local verdict
   verdict=$(echo "$wait_output" | grep -oP 'DONE \K(PLAN|RESEARCH|WRITE|UNBEKANNT)' | head -1)
+  local err_line
+  err_line=$(echo "$wait_output" | grep -oP 'ERROR \K.{0,300}' | head -1)
   [ -z "$verdict" ] && verdict="UNBEKANNT"
   echo "$wait_output" | tail -1 >&2
-  log_ok "Verdict: $verdict (Job $job_id)"
+  if [ -n "$err_line" ]; then
+    log_error "Lauf-FEHLER (kein Verdict): $err_line"
+  else
+    log_ok "Verdict: $verdict (Job $job_id)"
+  fi
 
   # ── 2. Ergebnis auswerten (Loop-Routing) ─────────────────────────────────
   case "$verdict" in
@@ -231,7 +248,23 @@ falsify_mandatory_check() {
       return 1
       ;;
     UNBEKANNT)
-      log_error "VERDICT: UNBEKANNT – FalsifyMe hat NICHT zugestimmt (Exit 3). Agent darf NICHT weiterarbeiten."
+      if [ -n "$err_line" ]; then
+        log_error "VERDICT: UNBEKANNT – Lauf-FEHLER (Exit 3), NICHT eine inhaltliche Ablehnung: $err_line"
+        case "$err_line" in
+          *401*|*403*)
+            log_error "URSACHE: Provider hat den API-Key abgelehnt (Auth). Der Job ist KEINE Kritik an deinem Plan."
+            log_error "FIX (User/Agent): Key in %USERPROFILE%\\.Falsify_Private\\.env eintragen (falsify onboard im Terminal), Dock-Fenster schließen + NEU starten (sonst erbt es weiter den alten Key), dann GLEICHES Ticket erneut einreichen."
+            ;;
+          *429*|*5\ 0\ 0*|*timeout*|*Überlastung*)
+            log_warn "URSACHE: Provider-Überlastung/Rate-Limit (transient). Kurz warten, GLEICHES Ticket erneut einreichen."
+            ;;
+          *)
+            log_error "Details: falsify log $job_id"
+            ;;
+        esac
+      else
+        log_error "VERDICT: UNBEKANNT – FalsifyMe hat NICHT zugestimmt (Exit 3). Agent darf NICHT weiterarbeiten."
+      fi
       return 3
       ;;
     *)

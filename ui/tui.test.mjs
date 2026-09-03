@@ -263,3 +263,23 @@ test("Abort: echtes Kind wird gekillt + verifiziert (kein weiterlaufender Prozes
   ui.applyEvent({ t: "state", s: "ABORTED" });
   assert.equal(ui.state.slots[0].state, "ABORTED");
 });
+// ── UI-128: Auto-Scope + Prüfauftrag im Snapshot (Dock-Sichtbarkeit) ────────
+test("UI-128: scope_auto + handoff erscheinen im Slot-Panel-Snapshot", async () => {
+  const ui = await createTui();
+  ui.applyEvent({ t: "boot" });
+  ui.applyEvent({ t: "job", id: "job-ui128-1", scope: "scope-ui128", window: 1 });
+  ui.applyEvent({ t: "scope_auto", outcome: "new", scope_id: "scope-1788-abcd", ticket: "Refactor die Auth-Funktion async", window: 1 });
+  ui.applyEvent({ t: "state", s: "THINKING", window: 1 });
+  ui.applyEvent({ t: "handoff", id: "handoff-ui128-777", ticket: "Refactor die Auth-Funktion async", probes: 4, window: 1 });
+  const snap = ui.getSnap ? ui.getSnap() : null;
+  assert.ok(snap, "Snapshot lieferbar");
+  const panel = (snap.slotPanels ?? []).find((p) => p.scopeAuto || p.handoff);
+  assert.ok(panel, "Panel mit UI-128-Feldern im Snapshot");
+  assert.equal(panel.scopeAuto.outcome, "new");
+  assert.equal(panel.scopeAuto.scopeId, "ABCD", "shortId (Suffix) im Panel");
+  assert.equal(panel.handoff.id, "handoff-ui128-777");
+  assert.equal(panel.handoff.probes, 4);
+  // Slots-Sicht (Array) trägt die Felder ebenfalls:
+  const slot = (snap.slots ?? []).find((x) => x.handoff);
+  assert.ok(slot, "slots[] trägt handoff");
+});

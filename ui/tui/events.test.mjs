@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createUiState, SLOT_TERMINAL, LOOP_LABEL, LOOP_COLOR } from "./state.mjs";
-import { apply, focusSlot, tick, SOFT_CAP_MS } from "./events.mjs";
+import { createUiState, SLOT_TERMINAL, LOOP_LABEL, LOOP_COLOR, shortId } from "./state.mjs";
+import { apply, focusSlot, tick, SOFT_CAP_MS, EVENT_TYPES } from "./events.mjs";
 import { WORD } from "./boot.mjs";
 
 const t0 = 1_000_000;
@@ -305,4 +305,51 @@ test("loop: LOOP_LABEL/LOOP_COLOR decken alle Pipeline-Zustände ab", () => {
   }
   // Maschinennahe Tokens bleiben im Label sichtbar (Vertrag: exakte Namen).
   assert.match(LOOP_LABEL.LOOP_BLOCKED, /LOOP_BLOCKED/);
+});
+
+// ── UI-128: scope_auto + handoff (Auto-Scope & Prüfauftrag sichtbar) ────────
+test("scope_auto: new/continue wird gespiegelt, fremdes outcome ehrlich ignoriert", () => {
+  const s = createUiState();
+  apply(s, { t: "job", id: "job-sa-1", slot: 1 }, t0);
+  assert.equal(apply(s, { t: "scope_auto", outcome: "new", scope_id: "scope-abc-def", ticket: "Refactor die Auth-Funktion" }, t0 + 1), true);
+  assert.equal(s.slots[0].scopeAuto.outcome, "new");
+  assert.equal(s.slots[0].scopeAuto.scopeId, shortId("scope-abc-def"));
+  assert.equal(s.slots[0].scopeAuto.ticket, "Refactor die Auth-Funktion");
+  assert.equal(s.scopeAuto?.outcome, "new", "Fokus-Slot-Spiegel");
+  // continue = Fortsetzung eines offenen Tickets (zweite Iteration).
+  assert.equal(apply(s, { t: "scope_auto", outcome: "continue", scope_id: "scope-abc-def", ticket: "Refactor die Auth-Funktion" }, t0 + 2), true);
+  assert.equal(s.slots[0].scopeAuto.outcome, "continue");
+  // Unbekanntes outcome → kein Fake (Feld bleibt beim letzten echten Wert? NEIN:
+  // apply(true) aber keine Mutation — der Spiegel bleibt beim letzten echten).
+  const before = s.slots[0].scopeAuto.outcome;
+  apply(s, { t: "scope_auto", outcome: "ambiguous", scope_id: "x", ticket: "y" }, t0 + 3);
+  assert.equal(s.slots[0].scopeAuto.outcome, before, "unbekanntes outcome ändert nichts");
+  // Neuer Job auf einem FREIEN Slot: dessen Anzeigen sind leer (Reset gilt je Slot).
+  apply(s, { t: "job", id: "job-sa-2", slot: 2 }, t0 + 4);
+  assert.equal(s.slots[1].scopeAuto, null, "frischer Slot startet ohne Auto-Scope-Anzeige");
+});
+
+test("handoff: Prüfauftrag-Spiegel (id/ticket/probes), Reset bei neuem Job", () => {
+  const s = createUiState();
+  apply(s, { t: "job", id: "job-hf-1", slot: 1 }, t0);
+  assert.equal(apply(s, { t: "handoff", id: "handoff-1234-5678", ticket: "Ticket XYZ 1:1", probes: 3 }, t0 + 1), true);
+  assert.equal(s.slots[0].handoff.id, "handoff-1234-5678");
+  assert.equal(s.slots[0].handoff.ticket, "Ticket XYZ 1:1");
+  assert.equal(s.slots[0].handoff.probes, 3);
+  assert.equal(s.handoff?.probes, 3, "Fokus-Slot-Spiegel");
+  // probes fehlt/nicht-integer → null (kein Fake).
+  apply(s, { t: "handoff", id: "handoff-9999", ticket: "T", probes: "viele" }, t0 + 2);
+  assert.equal(s.slots[0].handoff.probes, null);
+  // Neuer Job auf demselben Slot (nach Terminal) — alter Prüfauftrag muss weg.
+  s.slots[0].state = "SUCCESS"; // terminal setzen (Slot wird frei)
+  apply(s, { t: "job", id: "job-hf-2", slot: 1 }, t0 + 3);
+  assert.equal(s.slots[0].handoff, null, "neuer Job = alter Prüfauftrag weg");
+  assert.equal(s.slots[0].scopeAuto, null, "neuer Job = alte Scope-Anzeige weg");
+});
+
+test("EVENT_TYPES enthält scope_auto und handoff (Vertrag)", () => {
+  const s = createUiState();
+  // apply wirft bei unbekanntem Typ nicht, aber der Vertrag muss sie listen:
+  assert.ok(EVENT_TYPES.includes("scope_auto"));
+  assert.ok(EVENT_TYPES.includes("handoff"));
 });

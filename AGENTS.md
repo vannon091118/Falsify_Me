@@ -553,19 +553,19 @@ nachgewiesen.`
 
 ## Test-/Verifikationspfade
 
-- Kernsuite: `node --test tests/onboard.test.mjs tests/bootstrap.test.mjs
-  tests/security.test.mjs tests/phase2.test.mjs tests/queue.test.mjs
-  tests/feasibility.test.mjs tests/datamodel.test.mjs tests/invariants.test.mjs
-  tests/selfreview.test.mjs tests/twin.test.mjs tests/prompt.test.mjs
-  tests/agent.test.mjs tests/stats.test.mjs tests/research-additions.test.mjs
-  tests/probes.test.mjs tests/probe-e2e.test.mjs tests/loop.test.mjs
-  tests/full-loop-e2e.test.mjs tests/full-loop-negative.test.mjs`
-  (Stand 2026-09-03, 221/221; deckt die Regeln ab: Queue eine Wahrheit,
-  list_dir-Namen-Vertrag, WRITE-Challenge-Evidenz, Self-Review-Scope,
-  strukturelle Kohärenz, Evil-Twin-Gegenprüfung, Prompt-Daten,
-  P0-Probe-Vertrag/Cutover-Matrix/E2E-Fixtures, Loop-Zustände/Idempotenz/
-  Full-Loop-E2E/Negative-Matrix).
-  `tests/settings.test.mjs` läuft separat.
+- **Test-Konsolidierung (2026-09-03):** EIN Einstieg — `bash scripts/run-tests.sh
+  <tier>` (bzw. `npm run test:fast` / `test:core`; `full` = `npm test`).
+  Tiers: **fast** = Unit-Verträge < 3 s/Datei (~8 s gesamt, jeder Commit) ·
+  **core** = fast + Prozess-/DB-Suiten (~2.5 min, vor jedem Push; enthält
+  uninstall/ticketflow/invariants/security/identity/full-loop) · **full** =
+  alle 33 Dateien (Release; node parallelisiert, ~2 min Wandzeit). Die alte
+  hardcoded 19-Dateien-„Kernsuite" war stale (14 Dateien fehlten ihr) —
+  Pfadlisten PFLEGEN WEGEN: nur noch scripts/run-tests.sh. Tests pro Datei
+  getaktet (Datenbasis im Commit 2026-09-03): loop 69 s + invariants 63 s
+  (langsamste, bewusst nur in full; ticketflow/queue/phase2/stats/
+  probe-e2e/scope-trace/datamodel 14–27 s je in core). Vollbaseline:
+  254/254 grün (2026-09-03). Einzel-Datei-`node --test` bleibt für Diagnose
+  ok — der dokumentierte VERTRAG ist der Tier-Runner.
 - Prompt-Texte sind DATEN, kein Code: Die System-Prompts leben in
   `core/prompt-text/*.md` (Loader in `core/prompt.mjs`, `promptText()`).
   Template-Literale zerbrechen bei Backticks/`${}` im Text (5 SyntaxError-
