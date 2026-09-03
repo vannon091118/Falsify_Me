@@ -32,17 +32,7 @@ The Thinker is not an analyst or decision-maker.
 
 ## 4. Deterministic narrative runtime
 
-All narrative context selection is local and deterministic. No LLM call is used to decide:
-
-- narrator
-- mood
-- persona state
-- relationship state
-- recall/history
-- statistics
-- regex and trigger matches
-- correlation
-- tracked technical facts
+All narrative context selection is local and deterministic. No LLM call is used to decide narrator, mood, persona state, relationship state, recall/history, statistics, regex and trigger matches, correlation, or tracked technical facts.
 
 Those values are computed before the model call and supplied to it as data.
 
