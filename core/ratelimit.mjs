@@ -26,6 +26,13 @@ function ensureTable(db) {
  */
 export function enforceRateLimit(maxRpm, noWait = false) {
   if (noWait) return;
+  // Fail-closed (Produktionsbeweis 2026-09-03): ein nicht-finitiver oder
+  // nicht-positiver maxRpm wuerde 60000/0=Infinity als next_free persistieren
+  // und jeden nachfolgenden Lauf dauerhaft blockieren — laut scheitern statt
+  // die Rate-Limit-Tabelle still zu vergiften.
+  if (!Number.isFinite(maxRpm) || maxRpm <= 0) {
+    throw new Error(`Ungültiger maxRpm (${maxRpm}) – Rate-Limit kann nicht berechnet werden.`);
+  }
   const minIntervalMs = Math.max(1, Math.round(60000 / maxRpm));
   const db = openDb();
   ensureTable(db);
@@ -36,7 +43,10 @@ export function enforceRateLimit(maxRpm, noWait = false) {
     try {
       const row = db.prepare("SELECT next_free FROM rate_limit WHERE slot = 'api'").get();
       const now = Date.now();
-      if (row && row.next_free > now) {
+      // Vergiftete Zeile (nicht-finitiver next_free, z.B. Infinity aus einem
+      // frueheren maxRpm=null-Defekt) blockiert nie: als frei behandeln und
+      // im selben Schritt ueberschreiben (Heilung statt Dauer-Hang).
+      if (row && Number.isFinite(row.next_free) && row.next_free > now) {
         // Slot belegt: NUR warten. Die Reservation wird dabei NICHT
         // weitergeschrieben — ein Schreiben im Warte-Fall liesse den
         // Wartenden bei der naechsten Runde seine EIGENE Zukunft lesen und

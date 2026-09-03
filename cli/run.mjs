@@ -557,6 +557,12 @@ activeJobId = jobId;
 // Ab hier ist der Job-Snapshot die einzige Runtime-Konfiguration. Der Alias
 // verhindert, dass spätere Refactorings versehentlich wieder CFG verwenden.
 const executionConfig = runtimeConfig;
+// Fix (Produktionsbeweis 2026-09-03): maxRpm wurde nur im --job-id-Zweig
+// gesetzt — Direkt-Runs liessen es auf null, wodurch der Twin-Rate-Limit-
+// Call (60000/null = Infinity) next_free=Infinity persistierte und jeder
+// nachfolgende Lauf ewig wartete. Ein gemeinsamer Zuweisungspunkt deckt
+// beide Pfade ab.
+maxRpm = executionConfig.maxRpm;
 
 // ── UI-Start-Events (Phase 2): Job bekannt -> Slot belegen (nur FALSIFY_UI=1) ──
 const phaseLabel = PHASE_LABEL[scope?.phase || job?.mode || "plan"] || "PLAN";
