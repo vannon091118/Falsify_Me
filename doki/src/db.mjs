@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-export const DOKI_SCHEMA_VERSION = 1;
+export const DOKI_SCHEMA_VERSION = 2;
 
 export function openReadOnlyFalsifyDb(path) {
   return new DatabaseSync(resolve(path), { readOnly: true, timeout: 250 });
@@ -117,8 +117,29 @@ function applySchemaV1(db) {
            ON character_memory(character_id, COALESCE(observation_id, ''), memory_kind);`);
 }
 
+function applySchemaV2(db) {
+  // Cursor-Trennung (DOKI Rev. 2, Blocker-Fix): observation_cursor gehört der
+  // REPLAY-Pipeline (loop_events-Fortschritt). Der LIVE-Stream (ingest) bekommt
+  // seinen eigenen Fortschritt in ingest_cursor — sonst übernimmt ein Rebuild
+  // den Live-Cursor oder ein Live-Run überschreibt den Replay-Stand.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ingest_cursor(
+      id INTEGER PRIMARY KEY CHECK(id = 1), cursor_id TEXT, cursor_seq INTEGER,
+      cursor_digest TEXT, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS bridge_state(
+      id INTEGER PRIMARY KEY CHECK(id = 1), state TEXT NOT NULL,
+      narrative_boundary TEXT, slot_owner TEXT, slot_since TEXT, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS thinker_claims(
+      id INTEGER PRIMARY KEY CHECK(id = 1), owner TEXT NOT NULL, claimed_at TEXT NOT NULL,
+      heartbeat_at TEXT NOT NULL, released_at TEXT
+    );
+  `);
+}
+
 function migrate(db) {
-  const version = Number(db.prepare('PRAGMA user_version').get().user_version ?? 0);
+  let version = Number(db.prepare('PRAGMA user_version').get().user_version ?? 0);
   if (version > DOKI_SCHEMA_VERSION) {
     throw new Error(`DOKI schema ${version} is newer than supported ${DOKI_SCHEMA_VERSION}`);
   }
@@ -126,6 +147,18 @@ function migrate(db) {
     db.exec('BEGIN');
     try {
       applySchemaV1(db);
+      db.exec('PRAGMA user_version = 1');
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    version = 1;
+  }
+  if (version < DOKI_SCHEMA_VERSION) {
+    db.exec('BEGIN');
+    try {
+      applySchemaV2(db);
       db.exec(`PRAGMA user_version = ${DOKI_SCHEMA_VERSION}`);
       db.exec('COMMIT');
     } catch (error) {

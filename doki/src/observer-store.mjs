@@ -6,6 +6,9 @@ const now = () => new Date().toISOString();
 const clone = (value) => structuredClone(value);
 const json = (value) => JSON.stringify(value);
 const digest = (value) => createHash('sha256').update(json(value)).digest('hex');
+// JS-seitiges Pendants zu SQLite julianday(): Differenz zweier ISO-Zeitstempel
+// in Millisekunden (nur für Staleness-Checks; UTC-ISO Strings sind comparabel).
+const msBetween = (a, b) => Date.parse(a) - Date.parse(b);
 
 export const OBSERVATION_COLUMNS = Object.freeze([
   'id', 'source_event_id', 'session_id', 'job_id', 'seq', 'source', 'event_type',
@@ -64,6 +67,23 @@ export function createMemoryStore() {
 export function createPersistentStore({ path, db } = {}) {
   if (!db && !path) throw new Error('DOKI persistent store requires db or path');
   const ownedDb = db ?? openDokiDb(resolve(path));
+  // Atomic thinker-slot claim (BEGIN IMMEDIATE serializes writers; a failed
+  // INSERT inside the transaction rolls back the whole claim — check + claim
+  // is ONE step, never check-then-write across an async gap).
+  const readSlotStmt = ownedDb.prepare('SELECT owner, claimed_at, heartbeat_at, released_at FROM thinker_claims WHERE id=1');
+  const deleteClaimStmt = ownedDb.prepare('DELETE FROM thinker_claims WHERE id=1');
+  const insertClaimStmt = ownedDb.prepare('INSERT INTO thinker_claims(id, owner, claimed_at, heartbeat_at) VALUES(1,?,?,?)');
+  const heartbeatStmt = ownedDb.prepare('UPDATE thinker_claims SET heartbeat_at=? WHERE id=1 AND released_at IS NULL');
+  const releaseStmt = ownedDb.prepare('UPDATE thinker_claims SET released_at=?, heartbeat_at=? WHERE id=1 AND released_at IS NULL');
+  const readBridgeStateStmt = ownedDb.prepare('SELECT state, narrative_boundary, slot_owner, slot_since FROM bridge_state WHERE id=1');
+  const writeBridgeStateStmt = ownedDb.prepare(`
+    INSERT INTO bridge_state(id,state,narrative_boundary,slot_owner,slot_since,updated_at)
+    VALUES(1,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,
+      narrative_boundary=excluded.narrative_boundary, slot_owner=excluded.slot_owner,
+      slot_since=excluded.slot_since, updated_at=excluded.updated_at
+  `);
+  const readNarrativeBoundaryStmt = ownedDb.prepare('SELECT narrative_boundary FROM bridge_state WHERE id=1');
+  const writeNarrativeBoundaryStmt = ownedDb.prepare('UPDATE bridge_state SET narrative_boundary=?, updated_at=? WHERE id=1');
   const observationExists = ownedDb.prepare('SELECT 1 FROM observer_observations WHERE observation_id = ?');
   const insertObservation = ownedDb.prepare(`
     INSERT INTO observer_observations(
@@ -71,15 +91,66 @@ export function createPersistentStore({ path, db } = {}) {
       event_json, observed_text, observed_at, observation_digest
     ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
   `);
-  const readCursorStmt = ownedDb.prepare('SELECT cursor_id, cursor_seq, cursor_digest FROM observation_cursor WHERE id=1');
+  // LIVE-Stream-Fortschritt (ingest_cursor) — bewusst NICHT observation_cursor:
+  // der gehört der Replay-Pipeline (loop_events) allein.
+  const readCursorStmt = ownedDb.prepare('SELECT cursor_id, cursor_seq, cursor_digest FROM ingest_cursor WHERE id=1');
   const writeCursorStmt = ownedDb.prepare(`
-    INSERT INTO observation_cursor(id,cursor_id,cursor_seq,cursor_digest,updated_at)
+    INSERT INTO ingest_cursor(id,cursor_id,cursor_seq,cursor_digest,updated_at)
     VALUES(1,?,?,?,?)
     ON CONFLICT(id) DO UPDATE SET cursor_id=excluded.cursor_id,
       cursor_seq=excluded.cursor_seq,cursor_digest=excluded.cursor_digest,updated_at=excluded.updated_at
   `);
 
   return {
+    // ── Atomic thinker-slot reservation (coordination mechanism) ─────────
+    // Returns { claimed, previousOwner? } — claimed=false is honest, not an error.
+    // staleMs: a claim whose heartbeat is older is treated as abandoned
+    // (crash recovery); the stale claim is released and re-claimed atomically.
+    tryClaimThinkerSlot(owner, { staleMs = 120_000 } = {}) {
+      const nowIso = now();
+      ownedDb.exec('BEGIN IMMEDIATE');
+      try {
+        const existing = readSlotStmt.get();
+        const stale = existing && !existing.released_at && msBetween(nowIso, existing.heartbeat_at) >= staleMs;
+        // Frei = keine Zeile | released | stale Heartbeat. In allen drei
+        // Faellen wird die Zeile GELOESCHT und neu eingesetzt (id=1 ist
+        // Singleton — ein INSERT ohne DELETE wuerde auf die released-
+        // Altzeile UNIQUE-kollidieren). Alles in EINER Transaktion.
+        const free = !existing || existing.released_at != null || stale;
+        if (free) {
+          deleteClaimStmt.run();
+          insertClaimStmt.run(owner, nowIso, nowIso);
+        }
+        ownedDb.exec('COMMIT');
+        return { claimed: free, previousOwner: existing?.owner ?? null };
+      } catch (error) {
+        try { ownedDb.exec('ROLLBACK'); } catch { /* egal */ }
+        throw error;
+      }
+    },
+    heartbeatThinkerSlot() {
+      return heartbeatStmt.run(now(), null).changes === 1;
+    },
+    releaseThinkerSlot() {
+      return releaseStmt.run(now(), now()).changes === 1;
+    },
+    thinkerSlotOwner() {
+      const row = readSlotStmt.get();
+      return (row && !row.released_at) ? row.owner : null;
+    },
+    // ── Bridge state (persistent state machine + narrative boundary) ─────
+    readBridgeState() {
+      return readBridgeStateStmt.get() ?? { state: 'COLLECTING', narrative_boundary: null, slot_owner: null, slot_since: null };
+    },
+    writeBridgeState(state) {
+      writeBridgeStateStmt.run(String(state.state), state.narrative_boundary ?? null, state.slot_owner ?? null, state.slot_since ?? null, now());
+    },
+    readNarrativeBoundary() {
+      return readNarrativeBoundaryStmt.get()?.narrative_boundary ?? null;
+    },
+    writeNarrativeBoundary(observationId) {
+      writeNarrativeBoundaryStmt.run(observationId, now());
+    },
     readCursor() { return readCursorStmt.get()?.cursor_id ?? null; },
     hasObservation(id) { return Boolean(observationExists.get(String(id))); },
     appendObservation(observation) {

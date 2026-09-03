@@ -50,6 +50,8 @@ const bell = () => process.stdout.write("\x07");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let heartbeatTimer = null; // kontinuierlicher Herzschlag (Status-API-Grundlage)
+let doki = null;           // DOKI-Bridge (nur TTY; fail-open)
+let dokiStoreRef = null;   // doki.db handle (fuer close; nur TTY gesetzt)
 
 const DEBUG_LOG = path.join(falsifyHome(), "logs", "worker.debug.log");
 // logs/ sicherstellen: In einem frischen FALSIFY_HOME fehlt der Ordner und
@@ -221,6 +223,7 @@ const db = openDb();
 
 function cleanup() {
   if (heartbeatTimer) clearInterval(heartbeatTimer);
+  try { doki?.stop(); } catch { /* egal: DOKI ist fail-open */ }
   unregisterWorker(db, WINDOW_IDX);
   dlog(`EXIT fenster=${WINDOW_IDX}`);
   try { closeDb(); } catch { /* egal */ }
@@ -284,6 +287,50 @@ async function main() {
   const say = (s) => {
     if (!TTY) console.log(s);
   };
+
+  // ── DOKI-Bridge (DOKI G, Step F/G: sichtbare Beobachtungs-/Output-Lane) ───
+  // Fail-open vertraglich: JEDE DOKI-Störung ist Darstellung — der Worker läuft
+  // unverändert weiter (kein Claim-, Verdict-, Abort- oder Queue-Einfluss).
+  // Provider-INJEKTION (kein DOKI_API_*): apiBase/Key/Modell kommen hier aus
+  // FALSIFYs EINZIGER Konfigurationswahrheit (loadConfig + loadApiKey) — DOKI
+  // importiert selbst kein core/*-Modul und liest keine Env.
+  // Slot-State: GLOBALE Queue-Wahrheit (JEDER laufender Job = Thinker
+  // belegt — die API ist provider-weit geteilt, nicht fenster-lokal).
+  // Der Poll prüft den REALEN DB-Zustand, kein fixed sleep als Proxy.
+  // currentModel: JEDE Pump-Runde liest loadConfig() NEU — der idle-time
+  // model switch haengt an FALSIFYMEs echtem Rotationsmechanismus:
+  // Thinker idelt → `falsify settings set model=…` trägt der nächste
+  // DOKI-Call automatisch (keine zweite GREEN/RED-Architektur).
+  // doki (module-scope): { ingest, pump, stop } — nur wenn alles hochkam
+  const isThinkerBusy = () => {
+    try {
+      return listJobs(db).some((x) => x.status === "RUNNING");
+    } catch { return false; }
+  };
+  const dokiCurrentModel = () => {
+    try { return loadConfig().model; } catch { return null; }
+  };
+  if (TTY) {
+    try {
+      const { createBridge } = await import("../doki/src/bridge.mjs");
+      const { createPersistentStore } = await import("../doki/src/observer-store.mjs");
+      const cfg = loadConfig();
+      const apiKey = loadApiKey();
+      const dokiStore = createPersistentStore({ path: path.join(falsifyHome(), "doki.db") });
+      dokiStoreRef = dokiStore;
+      doki = createBridge({
+        store: dokiStore,
+        provider: { apiBase: cfg.apiBase, apiKey, model: cfg.model, timeoutMs: 60_000 },
+        slotState: isThinkerBusy,
+        currentModel: dokiCurrentModel,
+        onEvent: (d) => uiEvt({ t: "doki", status: d.status, narrator: d.narrator, contextDigest: d.contextDigest }),
+      });
+      dlog(`DOKI-Bridge aktiv (owner=${doki.owner})`);
+    } catch (e) {
+      doki = null;
+      dlog(`DOKI-Bridge nicht aktiv (fail-open): ${e?.message || e}`);
+    }
+  }
 
   if (TTY) {
     ui = await createTui({
@@ -360,6 +407,10 @@ async function main() {
       // Idle: Statistik genau einmal pro Leerlauf-Phase aktualisieren
       // (nicht bei jedem 1-s-Poll - SQLite-Lese ist unnötig im Takt).
       if (!idleStatsSent) { emitStats(); idleStatsSent = true; }
+      // DOKI pump(): Slot-State-Poll gegen den REALEN Queue-Zustand (kein
+      // Fertigkeits-Proxy). Feuert genau dann einen Narrative-Call, wenn
+      // Observations seit der Grenze liegen UND der Slot wirklich frei ist.
+      if (doki) { doki.pump().catch(() => {}); }
       await sleep(1000);
       continue;
     }
@@ -424,7 +475,13 @@ async function main() {
     let abortedByCli = false;
     if (TTY) {
       const parser = createParser({
-        onEvent: (evt) => ui.applyEvent({ ...evt, slot: WINDOW_IDX }),
+        onEvent: (evt) => {
+          ui.applyEvent({ ...evt, slot: WINDOW_IDX });
+          // Live-Kopplung: jedes echte FM-EVT geht exactly-once in den DOKI-
+          // Observer (durable, deduped). Fail-open — ein DOKI-Fehler darf den
+          // UI-/Worker-Pfad niemals berühren.
+          try { doki?.ingest({ ...evt, job: job.id, session: job.scope_id ?? null }); } catch { /* egal */ }
+        },
         onLine: (line) => ui?.noteLine(line),
       });
       child.stdout.on("data", (chunk) => parser.feed(chunk.toString()));
