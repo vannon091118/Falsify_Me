@@ -38,6 +38,7 @@ tests/settings.test.mjs
 tests/bootstrap.test.mjs
 tests/agent.test.mjs
 tests/tui-regime.test.mjs
+tests/dead-views.test.mjs
 tests/agent-stream-output.test.mjs
 tests/sql-identifiers.test.mjs
 tests/worker-kill.test.mjs

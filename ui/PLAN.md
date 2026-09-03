@@ -2131,3 +2131,23 @@ q_table unberührt); bash scripts/run-tests.sh fast
 RESULT: PASS — Platzhalter-Kern mit echten Invarianten; Beweis statt
 Behauptung: jeder Recall freigegebene Block trägt anchor_ok aus echter
 Evidenz, kreativer LLM-Score ist strukturell machtlos gegen das Gate.
+
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-152
+TASK: Statischer Regressionstest fuer tote Views (2026-09-03, Befund
+"Check UI for Scaffoldings"): tests/dead-views.test.mjs scannt den GANZEN
+Repo-Baum statisch (Kommentar-bereinigt) nach Import-Specifiern (from/import/
+import()) und loest relative .mjs-Referenzen gegen das Quellverzeichnis auf.
+Jede Datei in ui/tui/views/ (ausser *.test.mjs) MUSS von mindestens einem
+Modul importiert werden — eine nie importierte View (wie die entfernte
+AAADashboardView.mjs, die nicht existierendes TuiBox.mjs importierte) faellt
+sofort auf. Testdateien zaehlen als Referenzgeber (View nur vom Test genutzt
+ist nicht tot). Selbstzertifizierung: bekannte View-Importe MUSS der Scan
+finden (nicht blind), eine absichtlich unimportierte Fixture-View MUSS gemeldet
+werden (nicht-vakuoer).
+STATUS: DONE
+DEPENDS_ON: -- (Bereinigung AAADashboardView/PhaseIndicator/visuals, Commit aa328ba)
+VERIFY: node --test tests/dead-views.test.mjs (3/3); bash scripts/run-tests.sh
+fast (186/186 inkl. dead-views)
+RESULT: PASS — tote Views sind ab jetzt ein Test-Fail statt stiller Rust;
+Negativ-Nachweis ueber Fixture-Ordner (Orphan.mjs wird gemeldet, Used.mjs nicht).
