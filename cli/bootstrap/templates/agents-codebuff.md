@@ -44,3 +44,8 @@ Bis dahin ist der Agent READ-ONLY.
   \xC4nderungen verantwortlich.
 - Bestehenden FalsiFlow (PLAN -> RESEARCH -> WRITE -> IMPLEMENTATION REVIEW)
   verwenden, nicht neu implementieren.
+- Schlaegt der FalsifyMe-Startup-Skill-Check fehl (jeder falsify-Befehl
+  ausser doctor bricht mit Exit 3 + FEHLER-Hinweis auf doctor), fuehrt der
+  Agent GENAU EINMAL `falsify doctor --repair-skills` aus und wartet auf
+  gruen, BEVOR er `falsify onboard` / den ersten Pflicht-Check startet.
+  Kein Onboarding auf kaputter oder veralteter Skill-Anlage.

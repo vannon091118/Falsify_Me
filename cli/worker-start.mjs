@@ -30,10 +30,24 @@ if (process.argv[1] && process.argv[1] === fileURLToPath(import.meta.url)) {
 }
 
 export function runWorkerStart(args) {
+  // `falsify worker start <1..3> [--name <name>]` – sprechender Agent-Name
+  //  (UI-142): parallele Agents/Docks identifizieren sich gegenseitig über den
+  // Namen (Status-API, Dock-Titel), statt fremde Fenster als Bug zu deuten.
+  const nameIdx = args.indexOf("--name");
+  let name = null;
+  if (nameIdx !== -1) {
+    name = String(args[nameIdx + 1] || "").trim().slice(0, 24) || null;
+    args = [...args.slice(0, nameIdx), ...args.slice(nameIdx + 2)];
+  } else {
+    const eq = args.find((a) => a.startsWith("--name="));
+    if (eq) name = String(eq.slice(7)).trim().slice(0, 24) || null;
+    args = args.filter((a) => !a.startsWith("--name="));
+  }
   const idx = Number(args[0] || process.env.FALSIFY_WINDOW || 1);
   if (!Number.isInteger(idx) || idx < 1 || idx > MAX_WINDOWS) {
-    fail(`Nutzung: falsify worker start <1..${MAX_WINDOWS}> (Fensternummer)`);
+    fail(`Nutzung: falsify worker start <1..${MAX_WINDOWS}> [--name <Agent-Name>]`);
   }
+  const agentName = name || `Agent ${idx}`;
 
   // Vorab-Check: läuft in diesem Slot schon ein frischer Worker? Dann sind wir
   // fertig (idempotent) – der Doppel-Start-Schutz des Workers macht dasselbe,
@@ -51,7 +65,7 @@ export function runWorkerStart(args) {
   const child = spawn(process.execPath, [workerPath], {
     detached: true,
     stdio: "ignore",
-    env: { ...process.env, FALSIFY_WINDOW: String(idx), FALSIFY_HEADLESS_WORKER: "1" },
+    env: { ...process.env, FALSIFY_WINDOW: String(idx), FALSIFY_AGENT_NAME: agentName, FALSIFY_HEADLESS_WORKER: "1" },
   });
   child.unref();
 
@@ -65,7 +79,7 @@ export function runWorkerStart(args) {
     const w = listWorkers(d2, MAX_WINDOWS).find((x) => x.idx === idx);
     closeDb();
     if (w && w.alive) {
-      console.log(`Worker gestartet und registriert: Fenster ${idx} · PID ${w.pid} · FALSIFY_HOME=${falsifyHome()}`);
+      console.log(`Worker gestartet und registriert: Fenster ${idx} · ${w.name} · PID ${w.pid} · FALSIFY_HOME=${falsifyHome()}`);
       console.log("Jobs in QUEUED werden jetzt übernommen. Sichtbar verfolgen: Desktop-Icon \"FalsifyMe\" (Windows) oder dieses Log: falsify log <job-id>.");
       return;
     }

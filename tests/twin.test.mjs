@@ -432,6 +432,35 @@ test("runProbeExecution: unbekanntes status-Wort + globale Zusatzaussagen ohne A
   assert.ok(out.results.every((r) => r.probe_id !== "P999"), "fremde probe_id ohne Autorität verworfen");
 });
 
+test("runProbeExecution: doppelte Probe-ID wird nicht durch letzte Antwort überschrieben", async () => {
+  const { runProbeExecution } = await probeMod();
+  const out = await runProbeExecution({
+    probes: PROBE_FIXTURES,
+    planText: "P", lang: "de", model: "m", apiKey: "k", apiBase: "https://x",
+    root: "/tmp", whitelist: [],
+    runner: async () => ({
+      content: EXECUTOR_BLOCK([
+        { probe_id: "P1", status: "BESTAETIGT", evidence: "erste Antwort" },
+        { probe_id: "P1", status: "BESTAETIGT", evidence: "zweite Antwort" },
+        { probe_id: "P2", status: "WIDERSPRUCH", evidence: "Gegenbeweis" },
+      ]),
+      toolRounds: 1, toolEvidence: [], usage: null,
+    }),
+  });
+  const p1 = out.results.find((r) => r.probe_id === "P1");
+  assert.equal(p1.status, "UNKLAR", "Duplikate werden fail-closed als unklar markiert");
+  assert.match(p1.evidence, /doppeltes Ergebnis/);
+});
+
+test("computeVerdict: Ergebnisse ohne validiertes Probe-Set → PLAN", async () => {
+  const { computeVerdict } = await mod("core/probes.mjs");
+  const out = computeVerdict({
+    results: [{ probe_id: "P1", status: "BESTAETIGT", evidenceOk: true }],
+  });
+  assert.equal(out.verdict, "PLAN");
+  assert.match(out.reasons.join("\\n"), /Probe-Set nicht validiert/);
+});
+
 test("parseProbeResults: fail-closed ohne Block / mit kaputtem JSON", async () => {
   const { parseProbeResults } = await probeMod();
   assert.equal(parseProbeResults("kein Block").ok, false);

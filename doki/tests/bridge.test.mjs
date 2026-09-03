@@ -204,7 +204,7 @@ test('live claim blocks while heartbeat is fresh', () => {
   });
 });
 
-test('fail-open: model error does not consume observations; next pump with working model succeeds', async () => {
+test('fail-open: model error does not consume observations; retry after cooldown with working model succeeds', async () => {
   await withStore(async (store) => {
     let fail = true;
     let calls = 0;
@@ -212,6 +212,7 @@ test('fail-open: model error does not consume observations; next pump with worki
       store,
       provider: { apiBase: 'http://localhost:9', apiKey: 'k', model: 'm' },
       slotState: () => 'FREE',
+      errorCooldownMs: 120,
       callModel: async () => {
         calls++;
         if (fail) throw new Error('HTTP 500');
@@ -221,12 +222,42 @@ test('fail-open: model error does not consume observations; next pump with worki
     doki.ingest(FM_EVT('state'));
     const r1 = await doki.pump();
     assert.equal(r1.reason, 'ERROR');
-    const r2 = await doki.pump();
-    assert.equal(r2.reason, 'ERROR');
+    assert.equal(calls, 1);
+    const r2 = await doki.pump(); // sofortiger Retry-Versuch → Cooldown greift
+    assert.equal(r2.reason, 'ERROR_COOLDOWN');
+    assert.equal(calls, 1, 'no retry call while cooldown is active');
+    await new Promise((resolve) => setTimeout(resolve, 150)); // Cooldown abgelaufen
     fail = false;
     const r3 = await doki.pump();
     assert.equal(r3.pumped, true);
     assert.equal(r3.observations, 1, 'observations never consumed by failed rounds');
+    doki.stop();
+  });
+});
+
+test('provider outage: error cooldown bounds retry frequency across many idle ticks', async () => {
+  await withStore(async (store) => {
+    let calls = 0;
+    const doki = createBridge({
+      store,
+      provider: { apiBase: 'http://localhost:9', apiKey: 'k', model: 'm' },
+      slotState: () => 'FREE',
+      errorCooldownMs: 250,
+      callModel: async () => { calls++; throw new Error('HTTP 503'); },
+    });
+    doki.ingest(FM_EVT('job'));
+    const r1 = await doki.pump();
+    assert.equal(r1.reason, 'ERROR');
+    const reasons = new Set([r1.reason]);
+    // ~10 schnelle Idle-Ticks (~250 ms nominal, Timer-Jitter inklusive):
+    // OHNE Cooldown waeren das 10 Calls auf den kranken Provider.
+    for (let i = 0; i < 10; i++) {
+      const r = await doki.pump();
+      reasons.add(r.reason);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.ok(calls <= 3, `cooldown must bound retry frequency, got ${calls} calls in 10 idle ticks`);
+    assert.ok(reasons.has('ERROR_COOLDOWN'), 'idle ticks during outage return ERROR_COOLDOWN');
     doki.stop();
   });
 });

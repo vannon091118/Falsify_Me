@@ -45,5 +45,10 @@ falsifyme_check() {
 # Rest-Risiko, Release-Entscheidung).
 # NEIN/UNBEKANNT/fehlender Beleg = BLOCKED – mindestens eine Invariante ist nicht nachgewiesen.
 
+# Startup-Skill-Check-Fehler (jeder falsify-Befehl ausser doctor: Exit 3 +
+# FEHLER-Hinweis auf doctor): GENAU EINMAL `falsify doctor --repair-skills`
+# ausfuehren und auf gruen warten, BEVOR `falsify onboard` / der erste
+# Pflicht-Check startet. Kein Onboarding auf kaputter Skill-Anlage.
+
 echo "FalsifyMe-Integration fuer Bash-Agent geladen"
 echo "  Skills: ${FALSIFYME_SKILLS_DIR}"

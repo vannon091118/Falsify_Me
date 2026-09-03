@@ -25,6 +25,7 @@ import fs from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { compareVersions } from "../../core/skill-version.mjs";
 
 const templatesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "templates");
 
@@ -129,14 +130,36 @@ function mergeInstruction(existing, content) {
 }
 
 // Schreibt die Instruction-Datei. Liefert Zielpfad + Skill-Pfade + Merge-Info.
-export async function writeInstruction(agent, { root, homeDir, coreDir, mode = "optional", reichweite = "projekt" }) {
+// Skills-Vertrag (UI-144): fehlen die installierten Agent-Skills, ist das
+// KEINE dangling warning — der Bootstrap REPARIERT die Anlage selbst
+// (idempotent, aus dem Paket-Root via ensureAgentSkillsInstalled) und meldet
+// ehrlich, was geschehen ist. Ohne Reparatur-Quelle (npm-global-Context)
+// bekommt der Agent/User die konkreten Kommandos, nicht nur einen Verweis.
+export async function writeInstruction(agent, { root, homeDir, coreDir, mode = "optional", reichweite = "projekt", repairSkills = true, packageRoot } = {}) {
   const { skillsDir, falsiflowSkillDir } = skillPaths(homeDir);
-  const skillsInstalled =
+  let skillsInstalled =
     existsSync(path.join(skillsDir, "agent-skill-falsify.sh")) ||
     existsSync(path.join(skillsDir, "agent-skill-falsify.mjs")) ||
     existsSync(path.join(skillsDir, "agent-skill-falsify.ps1"));
+  let skillsRepaired = false;
+  let skillsRepairError = null;
+  if (!skillsInstalled && repairSkills) {
+    const repair = await ensureAgentSkillsInstalled({ homeDir, packageRoot });
+    skillsRepaired = repair.repaired;
+    skillsRepairError = repair.error ?? null;
+    skillsInstalled = repair.ok;
+  }
   if (!skillsInstalled) {
-    console.warn("WARNUNG: Agent-Skills nicht unter ~/.agents/skills/falsifyme gefunden - Instruction verweist auf Pfade, die nach der Installation existieren sollten.");
+    // Kein stiller Verweis mehr: die Meldung nennt die URSCHE (Pfad, den die
+    // Instruction referenziert) UND die konkrete Reparatur (Kommandos), damit
+    // der nächste Schritt ausführbar ist statt dangling.
+    console.warn(`WARNUNG: Agent-Skills fehlen unter ${skillsDir} - die Instruction verweist auf diese Pfade.`);
+    if (skillsRepairError) console.warn(`  Grund: ${skillsRepairError}`);
+    console.warn(`  Reparatur (einsatzbereit in ~1 s, idempotent): im FalsifyMe-Paket-Root "node install.mjs" ausführen`);
+    console.warn(`  oder: falsify bootstrap   (installiert Skills + Instructions in einem Lauf)`);
+    console.warn(`  Danach diese Instruction NEU schreiben (erneut falsify bootstrap), damit die Pfade existieren.`);
+  } else if (skillsRepaired) {
+    console.log(`Agent-Skills nachinstalliert: ${skillsDir} (Instruction-Pfade jetzt gültig).`);
   }
 
   const target = instructionTarget(agent.type, { root, homeDir });
@@ -167,7 +190,102 @@ export async function writeInstruction(agent, { root, homeDir, coreDir, mode = "
     loaderRegistered = await registerPowerShellLoader(target, loader.file);
   }
 
-  return { target, skillsDir, falsiflowSkillDir, skillsInstalled, merged, loader, loaderRegistered };
+  return { target, skillsDir, falsiflowSkillDir, skillsInstalled, skillsRepaired, skillsRepairError, merged, loader, loaderRegistered };
+}
+
+/**
+ * Repariert die Skill-Anlage idempotent aus dem Paket-Root (UI-144).
+ * Kopiert NUR die drei dokumentierten Skill-Ziele (kein erneutes npm, keine
+ * Icons, kein Core-Copy — das erledigt install.mjs komplett; hier geht es
+ * NUR um die fehlenden ~/.agents/skills-Anlagen, die die Instruction
+ * referenziert). Quelle: der FalsifyMe-Checkout (packageRoot bzw. das
+ * Verzeichnis, aus dem dieser Code läuft). Ohne Quelle: ehrliches { ok:false
+ * , error } statt stiller Nichts-Tun. repaired=true NUR, wenn tatsächlich
+ * kopiert wurde — ein schon vorhandener Marker ist { ok:true, repaired:
+ * false } (idempotent, ehrlich).
+ */
+// Konfigurations-Version einer Skill-Anlage lesen (Version-Marker der
+// ausgelieferten Skills; siehe agent-skill-falsify.config.json, das install.mjs
+// und dieser Repair-Pfad kopieren). Nicht lesbar -> null (kein Versions-Urteil).
+function readSkillConfigVersion(configFile) {
+  try {
+    const cfg = JSON.parse(readFileSync(configFile, "utf8"));
+    return typeof cfg?.version === "string" ? cfg.version : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function ensureAgentSkillsInstalled({ homeDir, packageRoot: rootArg } = {}) {
+  const srcRoot = rootArg
+    ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const srcSkillDir = path.join(srcRoot, "skills");
+  const srcFalsify = path.join(srcSkillDir, "agent-skill-falsify.sh");
+  if (!existsSync(srcFalsify)) {
+    return { ok: false, repaired: false, error: `Skill-Quelle nicht gefunden: ${srcSkillDir} (npm-global-Install ohne Repo-Checkout? Reparatur über den Repo-Checkout ausführen: node install.mjs)` };
+  }
+  const { skillsDir, falsiflowSkillDir } = skillPaths(homeDir);
+  // Schon installiert? Ehrlich melden statt erneut zu kopieren (repaired=false).
+  // AUSNAHME (UI-148): eine VERALTETE Anlage (installierte Konfig-Version
+  // aelter als die Quelle ODER Konfig/Version unlesbar) wird aktualisiert -
+  // ein Marker allein bedeutet nur "da", nicht "aktuell". Nie zurueckstufen:
+  // ist die installierte Version NEUER als die Quelle, bleibt die Anlage
+  // unangetastet (der laufende Core ist dann der alte, kein Skill-Refresh).
+  const marker = path.join(skillsDir, "agent-skill-falsify.sh");
+  const markerAlt = path.join(skillsDir, "agent-skill-falsify.mjs");
+  const markerAlt2 = path.join(skillsDir, "agent-skill-falsify.ps1");
+  if (existsSync(marker) || existsSync(markerAlt) || existsSync(markerAlt2)) {
+    const srcVersion = readSkillConfigVersion(path.join(srcSkillDir, "agent-skill-falsify.config.json"));
+    const installedVersion = readSkillConfigVersion(path.join(skillsDir, "agent-skill-falsify.config.json"));
+    const stale = srcVersion !== null && (installedVersion === null
+      || compareVersions(installedVersion, srcVersion) < 0);
+    if (!stale) {
+      return { ok: true, repaired: false };
+    }
+    // Veraltet -> ueberschreibend neu kopieren (repaired=true, refreshed=true).
+    const refreshed = await copySkillArtifacts({ srcSkillDir, srcFalsify, skillsDir, falsiflowSkillDir });
+    if (!refreshed.ok) return refreshed;
+    return {
+      ok: true, repaired: true, refreshed: true,
+      fromVersion: installedVersion, toVersion: srcVersion,
+    };
+  }
+  const installed = await copySkillArtifacts({ srcSkillDir, srcFalsify, skillsDir, falsiflowSkillDir });
+  if (!installed.ok) return installed;
+  return { ok: true, repaired: true };
+}
+
+// Gemeinsamer Kopier-Pfad fuer Erstinstallation UND Refresh (UI-148): eine
+// Quelle, eine Datei-Liste - kein zweiter Verteilweg.
+async function copySkillArtifacts({ srcSkillDir, srcFalsify, skillsDir, falsiflowSkillDir }) {
+  try {
+    await fs.mkdir(skillsDir, { recursive: true });
+    // Parität mit install.mjs: die drei agent-skill-falsify.* Varianten
+    // kopieren, die existieren; SKILL.md + falsiflow/selfinstall ergänzen.
+    for (const f of ["agent-skill-falsify.sh", "agent-skill-falsify.mjs", "agent-skill-falsify.ps1", "falsifyme.md", "agent-skill-falsify.config.json", "ocr.py", "run-tests.sh"]) {
+      const from = path.join(srcSkillDir, f);
+      if (existsSync(from)) await fs.copyFile(from, path.join(skillsDir, f));
+    }
+    await fs.copyFile(srcFalsify, path.join(skillsDir, "agent-skill-falsify.sh"));
+    const falsiflowSrc = path.join(srcSkillDir, "falsifyme-falsiflow.md");
+    if (existsSync(falsiflowSrc)) {
+      await fs.mkdir(falsiflowSkillDir, { recursive: true });
+      await fs.copyFile(falsiflowSrc, path.join(falsiflowSkillDir, "SKILL.md"));
+    }
+    const selfinstallSrc = path.join(srcSkillDir, "falsifyme-selfinstall.md");
+    if (existsSync(selfinstallSrc)) {
+      const selfinstallDir = path.join(path.dirname(skillsDir), "falsifyme-selfinstall");
+      await fs.mkdir(selfinstallDir, { recursive: true });
+      await fs.copyFile(selfinstallSrc, path.join(selfinstallDir, "SKILL.md"));
+    }
+    const ok = existsSync(path.join(skillsDir, "agent-skill-falsify.sh")) ||
+      existsSync(path.join(skillsDir, "agent-skill-falsify.mjs")) ||
+      existsSync(path.join(skillsDir, "agent-skill-falsify.ps1"));
+    if (!ok) return { ok: false, repaired: false, error: "Skill-Kopie unvollständig (agent-skill-falsify.* fehlt nach Kopie)" };
+    return { ok: true, repaired: true };
+  } catch (e) {
+    return { ok: false, repaired: false, error: e?.message || String(e) };
+  }
 }
 
 async function registerBashLoader(instructionFile, bashrc) {

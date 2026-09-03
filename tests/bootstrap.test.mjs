@@ -203,3 +203,284 @@ test("dock: Plattform-Ehrlichkeit + Retry-Poll (kein Fake-Erfolg)", async () => 
   assert.equal(ok.ok, false, "ohne echten RUNNING-Worker kein Fake-Erfolg");
   assert.ok(polls >= 5, "Retry-Poll wurde durchlaufen");
 });
+
+test("bootstrap: dry-run OHNE --skip-dock startet KEIN Dock (UI-139, side-effect-frei)", async () => {
+  const { runBootstrap } = await import(B("main.mjs"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "bs-dry-nodock-home-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bs-dry-nodock-root-"));
+  fs.writeFileSync(path.join(root, "install.mjs"), "", "utf8");
+  const origLog = console.log;
+  console.log = () => {}; // Dock-Log raushalten (nur Struktur testen)
+  try {
+    // Vor UI-139 startete dry-run ohne --skip-dock den echten Dock-Pfad
+    // (startDock kannte kein dryRun) - auf installierten Maschinen mit
+    // gestopptem Worker ein echtes Start-Process-Fenster.
+    const result = await runBootstrap({ root, homeDir: home, dryRun: true });
+    assert.equal(result.ok, true);
+    assert.equal(result.dock.skipped, true, "dry-run darf das Dock nie starten - nur skipped=true");
+    assert.equal(fs.readdirSync(home).length, 0, "Dry-run darf das Home nicht veraendern");
+  } finally {
+    console.log = origLog;
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("dockSummaryLine: skip/dry-run behauptet nie 'gestartet und bestaetigt' (UI-139)", async () => {
+  const mod = await import(pathToFileURL(path.join(ROOT, "cli", "bootstrap.mjs")).href);
+  const { dockSummaryLine } = mod;
+  assert.equal(dockSummaryLine({ ok: true, startedAfterSeconds: 3 }), "  Dock         : gestartet und bestaetigt");
+  assert.equal(dockSummaryLine({ ok: true, alreadyRunning: true }), "  Dock         : laeuft bereits (RUNNING)");
+  assert.equal(dockSummaryLine({ ok: true, skipped: true }), "  Dock         : uebersprungen (--skip-dock)");
+  assert.equal(dockSummaryLine({ ok: true, skipped: true, skippedBecause: "dry-run" }), "  Dock         : uebersprungen (dry-run)");
+  assert.equal(dockSummaryLine(null), null, "kein Dock-Resultat: keine Zeile erfinden");
+  assert.equal(dockSummaryLine({ ok: false, unsupportedPlatform: true }), "  Dock         : Windows-only \u2013 headless Worker: node ui/worker.mjs");
+  assert.equal(dockSummaryLine({ ok: false, error: "Timeout" }), "  Dock         : nicht bestaetigt (Timeout) \u2013 manuell: ui/start-dock.cmd");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI-144: fehlende ~/.agents/skills/falsifyme ist KEINE dangling warning.
+// Der Bootstrap repariert die Anlage selbst (idempotent, aus dem Repo-Root)
+// und meldet ehrlich; ohne Quelle gibt es die konkreten Kommandos statt
+// eines stillen Verweises. install.mjs verifiziert den Skill-Marker.
+// ─────────────────────────────────────────────────────────────────────────────
+test("skills-repair: fehlende Skills werden aus dem Repo-Root nachinstalliert (idempotent)", async () => {
+  const { writeInstruction, ensureAgentSkillsInstalled } = await import(B("instructions.mjs"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "bs-skill-repair-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bs-skill-proj-"));
+  const coreDir = path.join(home, ".Falsify_Core");
+  try {
+    // Keine ~/.agents/skills vorhanden.
+    const res = await writeInstruction({ type: "codebuff", label: "X" }, { root, homeDir: home, coreDir });
+    assert.equal(res.skillsInstalled, true, "Repair hat die Skills installiert");
+    assert.equal(res.skillsRepaired, true, "Repair-Weg wurde gegangen (nicht schon vorhanden)");
+    assert.ok(fs.existsSync(res.skillsDir + "/agent-skill-falsify.sh"), "Skill-Marker existiert nach Repair");
+    assert.ok(fs.existsSync(res.falsiflowSkillDir + "/SKILL.md"), "FalsiFlow-SKILL.md nach Repair");
+    // Idempotenz: zweiter Lauf geht den Repair-Weg NICHT mehr (schon da).
+    const res2 = await writeInstruction({ type: "codebuff", label: "X" }, { root, homeDir: home, coreDir });
+    assert.equal(res2.skillsInstalled, true);
+    assert.equal(res2.skillsRepaired, false, "zweiter Lauf: nichts zu reparieren (idempotent)");
+    // Direkter Aufruf ohne writeInstruction liefert denselben Vertrag.
+    const direct = await ensureAgentSkillsInstalled({ homeDir: home });
+    assert.equal(direct.ok, true);
+    assert.equal(direct.repaired, false, "direkter Aufruf nach bestehender Anlage: repaired=false");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  }
+});
+
+test("skills-repair: fehlende Quelle -> { ok:false, error } statt stiller Nichts-Tun", async () => {
+  const { ensureAgentSkillsInstalled } = await import(B("instructions.mjs"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "bs-skill-nosrc-"));
+  const fakeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bs-skill-fakeroot-"));
+  try {
+    const r = await ensureAgentSkillsInstalled({ homeDir: home, packageRoot: fakeRoot });
+    assert.equal(r.ok, false);
+    assert.equal(r.repaired, false);
+    assert.match(r.error, /Skill-Quelle nicht gefunden/);
+    assert.ok(!fs.existsSync(path.join(home, ".agents", "skills")), "ohne Quelle wird NICHTS angelegt");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    fs.rmSync(fakeRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  }
+});
+
+test("skills-repair: install.mjs-Vertrag – Marker-Prüfung im Quelltext fixiert (kein Behaupten ohne Verifikation)", async () => {
+  const src = fs.readFileSync(path.join(ROOT, "install.mjs"), "utf8");
+  assert.match(src, /Agent-Skill-Marker fehlt nach Kopie/, "install.mjs verifiziert die Skill-Kopie (fail-fast statt Behauptung)");
+  assert.match(src, /skillMarker/, "Marker-Pfad ist benannt und geprüft");
+});
+
+test("skillsSummaryLine: OK/NACHINSTALLIERT/FEHLT als eigene Zeile (UI-146)", async () => {
+  // bootstrap.mjs liegt in cli/ (nicht cli/bootstrap/) — dockSummaryLine-Export.
+  const mod = await import(pathToFileURL(path.join(ROOT, "cli", "bootstrap.mjs")).href);
+  const { skillsSummaryLine } = mod;
+  // Reihenfolge wie bei Dock (UI-139-Merkregel): dry-run zuerst pruefen —
+  // das dry-run-Objekt traegt skillsInstalled:false, ok-First waere FEHLT.
+  assert.equal(skillsSummaryLine({ target: "(dry-run)", skillsInstalled: false }),
+    "  Skills       : uebersprungen (dry-run)");
+  // Bestand vorhanden -> OK.
+  assert.equal(skillsSummaryLine({ target: "/x/AGENTS.md", skillsInstalled: true, skillsRepaired: false }),
+    "  Skills       : OK (vorhanden)");
+  // Im selben Lauf repariert -> NACHINSTALLIERT.
+  assert.equal(skillsSummaryLine({ target: "/x/AGENTS.md", skillsInstalled: true, skillsRepaired: true }),
+    "  Skills       : NACHINSTALLIERT (aus Paket-Root repariert)");
+  // Fehlt + Reparatur-Error -> FEHLT mit Grund + Reparatur-Kommando.
+  const err = skillsSummaryLine({ target: "/x/AGENTS.md", skillsInstalled: false, skillsRepairError: "Skill-Quelle nicht gefunden: /x/skills" });
+  assert.match(err, /^  Skills       : FEHLT \(Skill-Quelle nicht gefunden/);
+  assert.match(err, /falsify doctor --repair-skills/);
+  // Fehlt ohne Fehler -> FEHLT mit Reparatur-Kommando.
+  const plain = skillsSummaryLine({ target: "/x/AGENTS.md", skillsInstalled: false });
+  assert.match(plain, /FEHLT/);
+  assert.match(plain, /falsify doctor --repair-skills/);
+  // Kein Instruction-Resultat -> null (keine erfundene Zeile).
+  assert.equal(skillsSummaryLine(null), null);
+  assert.equal(skillsSummaryLine(undefined), null);
+});
+
+test("skillsSummaryLine: main() druckt die Skills-Zeile VOR der Dock-Zeile (Verdrahtung)", async () => {
+  const src = fs.readFileSync(path.join(ROOT, "cli", "bootstrap.mjs"), "utf8");
+  const skillsIdx = src.indexOf("skillsSummaryLine(instruction)");
+  const dockIdx = src.indexOf("const dockLine = dockSummaryLine(dock)");
+  assert.ok(skillsIdx !== -1, "Skills-Zeile wird im Summary gedruckt");
+  assert.ok(dockIdx !== -1);
+  assert.ok(skillsIdx < dockIdx, "Skills-Zeile kommt vor der Dock-Zeile");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI-147: Preflight repariert Skills/Anker/Key VOR jeder Instruction-Write.
+// Die dangling-warnings-Klasse (Instruction verweist auf Pfade, die erst
+// NACH dem Schreiben repariert wuerden) ist strukturell weg: runPreflight
+// laeuft VOR writeInstruction, und der Key wird GENAU EINMAL geprueft.
+// ─────────────────────────────────────────────────────────────────────────────
+test("preflight: repariert fehlende Skills + Anker + Key-Guide VOR Instruction (idempotent)", async () => {
+  const savedHome = process.env.FALSIFY_HOME;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "bs-pf-home-"));
+  const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bs-pf-proj-"));
+  const dbHome = fs.mkdtempSync(path.join(os.tmpdir(), "bs-pf-db-"));
+  process.env.FALSIFY_HOME = dbHome;
+  const origLog = console.log;
+  console.log = () => {}; // Key-Guide/Agent-Zeilen raushalten
+  try {
+    const { runPreflight } = await import(B("main.mjs"));
+    // 1) Preflight ohne vorhandene Skills -> repariert aus dem Repo-Root.
+    const r = await runPreflight({ root: ROOT, homeDir: home, targetRoot, dryRun: false, interactive: false, skipDock: true });
+    assert.equal(r.ok, true, "Preflight ok");
+    assert.equal(r.skills.ok, true);
+    assert.equal(r.skills.repaired, true, "fehlende Skills wurden NACHinstalliert");
+    assert.ok(fs.existsSync(path.join(home, ".agents", "skills", "falsifyme", "agent-skill-falsify.sh")), "Skill-Marker nach Preflight");
+    assert.equal(r.anchor.ok, true, "Anker initiiert");
+    assert.ok(fs.existsSync(path.join(targetRoot, "FalsifyME.md")), "Anker-Datei existiert VOR Instruction-Write");
+    assert.equal(r.key.configured, false, "leere Key-Home ehrlich: kein Key (Guide statt Fake)");
+    assert.equal(r.key.mode, "headless");
+    // 2) Idempotenz: zweiter Lauf repariert nicht erneut.
+    const r2 = await runPreflight({ root: ROOT, homeDir: home, targetRoot, dryRun: false, interactive: false, skipDock: true });
+    assert.equal(r2.skills.repaired, false, "zweiter Preflight: nichts zu reparieren");
+  } finally {
+    console.log = origLog;
+    if (savedHome === undefined) delete process.env.FALSIFY_HOME;
+    else process.env.FALSIFY_HOME = savedHome;
+    for (const d of [home, targetRoot, dbHome]) fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  }
+});
+
+test("preflight: fail-closed ohne Skill-Quelle -> KEINE Instruction-Write danach", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "bs-pf-nosrc-home-"));
+  const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bs-pf-nosrc-proj-"));
+  const fakeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bs-pf-nosrc-root-"));
+  try {
+    const { runPreflight } = await import(B("main.mjs"));
+    const r = await runPreflight({ root: fakeRoot, homeDir: home, targetRoot, dryRun: false });
+    assert.equal(r.ok, false);
+    assert.equal(r.failed, "skills");
+    assert.match(r.error, /Skill-Quelle nicht gefunden/);
+    assert.ok(!fs.existsSync(path.join(targetRoot, "FalsifyME.md")), "ohne Skills ok=false bleibt der Anker unberuehrt (Abbruch VOR Schritt 2)");
+  } finally {
+    for (const d of [home, targetRoot, fakeRoot]) fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  }
+});
+
+test("preflight-Verdrahtung: runBootstrap ruft Preflight VOR writeInstruction, Key genau einmal (kein Doppel-Dialog)", async () => {
+  const src = fs.readFileSync(path.join(ROOT, "cli", "bootstrap", "main.mjs"), "utf8");
+  const pfIdx = src.indexOf("runPreflight(");
+  const wIdx = src.indexOf("writeInstruction(");
+  assert.ok(pfIdx !== -1 && wIdx !== -1, "runPreflight und writeInstruction vorhanden");
+  assert.ok(pfIdx < wIdx, "PREFLIGHT laeuft VOR jeder Instruction-Write (dangling-warnings-Klasse weg)");
+  // Der Key wird NUR im Preflight geprueft — ein zweiter ensureApiKeyAtBootstrap
+  // nach dem Dock wuerde auf interaktiven Systemen doppelt fragen. Kommentar-
+  // Erwaehnungen zaehlen nicht: geprueft wird der CALL ("…AtBootstrap(").
+  const callHits = src.split("ensureApiKeyAtBootstrap(").length - 1;
+  const rbIdx = src.indexOf("export async function runBootstrap");
+  const lastCallIdx = src.lastIndexOf("ensureApiKeyAtBootstrap(");
+  assert.equal(callHits, 1, "genau EIN ensureApiKeyAtBootstrap-Call (im Preflight)");
+  assert.ok(rbIdx !== -1 && lastCallIdx !== -1 && lastCallIdx < rbIdx, "kein Key-Call in runBootstrap (kein Doppel-Dialog nach dem Dock)");
+  // Die Skills-Reparatur-Aussage des Preflight wird ins Instruction-Objekt
+  // uebernommen (sonst zeigt die Summary nach Repair nie NACHINSTALLIERT).
+  assert.match(src, /skillsInstalled: preflight\.skills\?\.ok === true/);
+  assert.match(src, /skillsRepaired: Boolean\(preflight\.skills\?\.repaired\)/);
+  assert.match(src, /key: preflight\.key/);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI-148: Veraltete ~/.agents-Skills werden AKTUALISIERT (nicht nur gemeldet).
+// ensureAgentSkillsInstalled ueberschreibt eine Anlage, deren Konfig-Version
+// aelter als die Quelle ist (oder deren Konfig/Version fehlt) — repaired=true
+// nur bei tatsaechlicher Kopie; nie zurueckstufen (installed > source bleibt).
+// ─────────────────────────────────────────────────────────────────────────────
+test("skills-refresh: veraltete Skill-Anlage wird auf die Quell-Version gebracht (nie Downgrade)", async () => {
+  const { ensureAgentSkillsInstalled } = await import(B("instructions.mjs"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "bs-skill-refresh-"));
+  const srcVersion = JSON.parse(fs.readFileSync(path.join(ROOT, "skills", "agent-skill-falsify.config.json"), "utf8")).version;
+  const cfgPath = () => path.join(home, ".agents", "skills", "falsifyme", "agent-skill-falsify.config.json");
+  try {
+    // 1) Erstinstallation aus dem Repo-Root.
+    const first = await ensureAgentSkillsInstalled({ homeDir: home, packageRoot: ROOT });
+    assert.equal(first.ok, true);
+    assert.equal(first.repaired, true);
+    assert.ok(fs.existsSync(cfgPath()), "Konfig (Version-Marker) wird mitkopiert");
+    // 2) Anlage kuenstlich veralten lassen (0.0.1) -> Refresh ersetzt sie.
+    const old = JSON.parse(fs.readFileSync(cfgPath(), "utf8"));
+    old.version = "0.0.1";
+    fs.writeFileSync(cfgPath(), JSON.stringify(old), "utf8");
+    const refreshed = await ensureAgentSkillsInstalled({ homeDir: home, packageRoot: ROOT });
+    assert.equal(refreshed.ok, true);
+    assert.equal(refreshed.repaired, true, "veraltete Anlage wird repariert");
+    assert.equal(refreshed.refreshed, true, "Refresh-Weg ist markiert");
+    assert.equal(refreshed.fromVersion, "0.0.1");
+    assert.equal(refreshed.toVersion, srcVersion);
+    const now = JSON.parse(fs.readFileSync(cfgPath(), "utf8"));
+    assert.equal(now.version, srcVersion, "installierte Version entspricht wieder der Quelle");
+    // 3) Idempotent: gleiche Version -> kein weiterer Refresh.
+    const again = await ensureAgentSkillsInstalled({ homeDir: home, packageRoot: ROOT });
+    assert.equal(again.repaired, false, "aktueller Stand: nichts zu tun");
+    // 4) Nie zurueckstufen: installierte Version NEUER als Quelle -> unangetastet.
+    const fut = JSON.parse(fs.readFileSync(cfgPath(), "utf8"));
+    fut.version = "99.0.0";
+    fs.writeFileSync(cfgPath(), JSON.stringify(fut), "utf8");
+    const noDowngrade = await ensureAgentSkillsInstalled({ homeDir: home, packageRoot: ROOT });
+    assert.equal(noDowngrade.repaired, false, "neuere installierte Anlage wird nicht ueberschrieben");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  }
+});
+
+test("skills-refresh: Konfig/Version fehlt in der installierten Anlage -> Refresh stellt sie her", async () => {
+  const { ensureAgentSkillsInstalled } = await import(B("instructions.mjs"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "bs-skill-nocfg-"));
+  try {
+    // Marker vorhanden (sh), aber KEINE Versions-Konfig -> Anlage ist
+    // unvollstaendig/veraltet: Refresh kopiert die Konfig nach.
+    const dir = path.join(home, ".agents", "skills", "falsifyme");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "agent-skill-falsify.sh"), "# alter Stand ohne Konfig\n", "utf8");
+    const r = await ensureAgentSkillsInstalled({ homeDir: home, packageRoot: ROOT });
+    assert.equal(r.ok, true);
+    assert.equal(r.refreshed, true, "fehlende Konfig loest Refresh aus");
+    assert.ok(fs.existsSync(path.join(dir, "agent-skill-falsify.config.json")), "Konfig nach Refresh vorhanden");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI-149: AGENTS.md-Ebene — jeder ausgelieferte Instruction-Kanal traegt die
+// Reparatur-Regel: Startup-Skill-Check-Fehler -> GENAU EINMAL `falsify
+// doctor --repair-skills`, BEVOR onboard/der erste Pflicht-Check startet.
+// ─────────────────────────────────────────────────────────────────────────────
+test("instructions: Repair-Regel (doctor --repair-skills VOR Onboarding) ist in ALLEN Template-Kanaelen", async () => {
+  const templates = ["agents-codebuff.md", "generic.md", "bash.sh", "powershell.ps1"];
+  for (const t of templates) {
+    const text = fs.readFileSync(path.join(ROOT, "cli", "bootstrap", "templates", t), "utf8");
+    assert.match(text, /falsify doctor --repair-skills/, `${t}: Reparatur-Kommando genannt`);
+    assert.match(text, /GENAU EINMAL/, `${t}: genau-einmal-Semantik`);
+    assert.match(text, /BEVOR/, `${t}: Vor-Reihenfolge (vor onboard/erstem Check)`);
+    assert.match(text, /Kein Onboarding auf kaputter/, `${t}: kein Onboarding auf kaputter Anlage`);
+  }
+  // Die eigene AGENTS.md (dieses Repos) traegt dieselbe Regel — der Agent
+  // im FalsifyMe-Checkout handelt genauso wie der User-Agent im Zielprojekt.
+  const agentsMd = fs.readFileSync(path.join(ROOT, "AGENTS.md"), "utf8");
+  assert.match(agentsMd, /falsify doctor --repair-skills/, "Repo-AGENTS.md nennt das Reparatur-Kommando");
+  assert.match(agentsMd, /GENAU EINMAL/, "Repo-AGENTS.md: genau-einmal-Semantik");
+  assert.match(agentsMd, /BEVOR er `falsify onboard`/, "Repo-AGENTS.md: Reparatur VOR onboard");
+});

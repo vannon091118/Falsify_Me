@@ -5,7 +5,7 @@
 //    benannten Schreibfunktionen des Zustandsmodells (jobs.mjs + scopes.mjs:
 //    createJob/jobToRunning/jobDone/setJobAbort/clearJobAbort/claimNextJob/
 //    reapStaleJobs/registerWorker/unregisterWorker/heartbeatWorker/
-//    setWorkerScope/createScope/updateScopeAfterReview/markScopeDone/
+//    retryJob/setWorkerScope/createScope/updateScopeAfterReview/markScopeDone/
 //    addFinding) dürfen in Produktionscode NUR aus ihren Heimatmodulen und
 //    den bekannten Orchestrierern aufgerufen werden (cli/run.mjs,
 //    ui/worker.mjs, cli/jobs.mjs [abort], cli/scope.mjs [new]). Ein neuer
@@ -34,7 +34,7 @@ const savedHome = process.env.FALSIFY_HOME;
 const WRITERS = [
   "createJob\\(", "jobToRunning\\(", "jobDone\\(", "setJobAbort\\(", "clearJobAbort\\(",
   "claimNextJob\\(", "reapStaleJobs\\(", "registerWorker\\(", "unregisterWorker\\(",
-  "heartbeatWorker\\(", "setWorkerScope\\(",
+  "heartbeatWorker\\(", "retryJob\\(", "setWorkerScope\\(",
   "createScope\\(", "updateScopeAfterReview\\(", "markScopeDone\\(", "addFinding\\(",
 ];
 /**
@@ -57,6 +57,11 @@ const ALLOWED_CALLERS = new Set([
   // artifacts/loops.mjs ist die REINE Zustandsmaschine und ruft keine
   // benannten Writer auf (kein Eintrag nötig).
   "artifacts/handoff.mjs",
+  // cli/worker-kill.mjs: `falsify worker kill` (UI-141) — gezieltes Orphan-
+  // Killen. Schreibt NUR via jobs.mjs: unregisterWorker (Registry des
+  // gekillten Fensters) + reapStaleJobs (bestehende fail-closed Recovery für
+  // Waisen-Jobs). Kein eigener INSERT/UPDATE, kein Verdict-Pfad.
+  "cli/worker-kill.mjs",
 ]);
 
 /** Alle *.mjs des Repos ausser tests/ + node_modules + .git (ganzer Baum). */
@@ -355,6 +360,93 @@ test("DYNAMISCH: enforceQueueConsistency wirft bei Verletzung, schweigt bei Kons
     process.env.FALSIFY_HOME = savedHome;
     fs.rmSync(home, { recursive: true, force: true });
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sync-fs-Census (UI-149, nodejs-best-practices-Audit 2026-09-03): ui/ +
+// artifacts/ sind der LAUFTZEIT-Pfad (Worker-Loop + Queue) — dort sind rohe
+// Sync-Write-APIs (appendFileSync/writeFileSync/…) nur an dokumentierten,
+// nicht-heißen Stellen zulässig. Der Census macht die Audit-Antwort mechanisch
+// statt konventionell (dieselbe Logik wie der Writer-Scan oben):
+//   1) ui/** + artifacts/**: Sync-Write-APIs NUR in allowlisteten Dateien,
+//      jede mit WHY (Pflicht) — überall sonst Fail.
+//   2) ui/worker.mjs: HEISSEregionen (setInterval-Körper, for(;;)-Loop-Tick
+//      bis Dateiende) dürfen KEINE rohe Sync-Write-API enthalten — dlog als
+//      Wrapper ist die erlaubte Form (0–6 Zeilen je Job, Lifecycle-Kanten).
+//   3) Selbstzertifizierung: die bekannten Stellen MÜSSEN gefunden werden
+//      (worker appendFileSync == 4: dlog + logSelf + 2 Crash-Handler;
+//      db writeFileSync == 1: .env-Vorlage) — eine entfernte/umbenannte
+//      Stelle macht die Allowlist stale statt still blind.
+// Crash-Handler bleiben bewusst SYNC-MUST: process.on("exit")/process.exit(1)
+// überlebt kein async flush — worker.crash.log wäre im Crash leer (unbeweisbar).
+// mkdirSync bleibt außen vor: nur Bootstrap-Schritte (logs/, FALSIFY_HOME),
+// keine Job-/Loop-Wiederkehr. Read-APIs (exists/stat/read) sind keine
+// Write-Blocker und laufen im Census mit, aber ohne Verbotsliste.
+// ─────────────────────────────────────────────────────────────────────────────
+const SYNC_WRITE_APIS = /\b(appendFileSync|writeFileSync|openSync|writeSync|copyFileSync|renameSync|unlinkSync|rmSync|truncateSync|chmodSync)\(/;
+const SYNC_FS_ALLOWED = new Map([
+  ["ui/worker.mjs", "dlog (Lifecycle-Kanten, 0-6 Zeilen/Job) + logSelf (einmaliger Boot-Selbsttest) + 2 Sync-MUST-Crash-Handler (process.exit ueberlebt kein async flush)"],
+  ["artifacts/db.mjs", "ensureFalsifyHome: einmalige .env-Vorlage beim ersten Start (Bootstrap, kein Laufzeitpfad)"],
+]);
+
+/** Von startIdx aus den ersten balancierten {…}-Block liefern (null am EOF). */
+function firstBraceBlock(src, startIdx) {
+  const open = src.indexOf("{", startIdx);
+  if (open < 0) return null;
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") { depth--; if (depth === 0) return src.slice(open, i + 1); }
+  }
+  return null;
+}
+
+test("STATISCH: Sync-fs-Census — ui/+artifacts/ ohne undokumentierte Sync-Writes, heiße Callbacks sauber (UI-149)", () => {
+  const violations = [];
+  const counts = new Map();
+  for (const file of prodSources()) {
+    // Testdateien besitzen ihre eigenen Fixtures (rmSync im finally) —
+    // bewusst außerhalb des Produktions-Census.
+    if (file.endsWith(".test.mjs")) continue;
+    if (!(file.startsWith("ui/") || file.startsWith("artifacts/"))) continue;
+    const src = stripCommentsAndStrings(fs.readFileSync(path.join(ROOT, file), "utf8"));
+    const hits = src.match(new RegExp(SYNC_WRITE_APIS.source, "g")) ?? [];
+    if (hits.length) counts.set(file, hits.length);
+    if (hits.length && !SYNC_FS_ALLOWED.has(file)) {
+      violations.push(`${file} nutzt Sync-Write-API (${[...new Set(hits)].join(", ")}) ohne Allowlist-Eintrag`);
+    }
+  }
+  // Selbstzertifizierung: bekannte Stellen müssen so gefunden werden —
+  // Abweichung = Allowlist stale (nicht still blind weiterlaufen). Alles
+  // läuft in EINEN Violations-Report (kein Short-Circuit, ein Lauf zeigt
+  // jeden Verstoß gleichzeitig — auch beim Negativ-Nachweis).
+  for (const [file, expect] of [["ui/worker.mjs", 4], ["artifacts/db.mjs", 1]]) {
+    if (counts.get(file) !== expect) {
+      violations.push(`${file}: Sync-Write-Anzahl ${counts.get(file) ?? 0} ≠ ${expect} (Allowlist stale?)`);
+    }
+  }
+
+  // Heiße Regionen im Worker: setInterval-Körper + for(;;)-Loop-Tick (bis
+  // Dateiende) — rohe Sync-Write-APIs sind dort verboten; dlog-Wrapper ok.
+  const wsrc = stripCommentsAndStrings(fs.readFileSync(path.join(ROOT, "ui", "worker.mjs"), "utf8"));
+  const hotRegions = [];
+  for (const m of wsrc.matchAll(/setInterval\(/g)) {
+    const body = firstBraceBlock(wsrc, m.index);
+    if (body) hotRegions.push(body);
+  }
+  const loopIdx = wsrc.indexOf("for (;;)");
+  if (loopIdx >= 0) hotRegions.push(wsrc.slice(loopIdx));
+  if (!hotRegions.length) violations.push("ui/worker.mjs: heiße Regionen nicht gefunden (Census blind?)");
+  // Overlap-frei: der for(;;)-Tail enthält die setInterval-Körper — ein Treffer
+  // wird nur EINMAL gemeldet.
+  const hotHits = new Set();
+  for (const region of hotRegions) {
+    const hit = region.match(SYNC_WRITE_APIS);
+    if (hit) hotHits.add(`ui/worker.mjs: rohe Sync-Write-API (${hit[1]}) in heißer Region (setInterval/for(;;))`);
+  }
+  violations.push(...hotHits);
+
+  assert.deepEqual(violations, []);
 });
 
 async function mod(p) {

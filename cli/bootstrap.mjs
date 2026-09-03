@@ -106,6 +106,48 @@ export async function resolveModeDecision({ mode, reichweite, isTTY = Boolean(pr
   return { mode: "optional", reichweite: reichweite || "projekt", interactive: false, explicit: false };
 }
 
+/**
+ * Eine Zeile Dock-Status (pure, testbar). WICHTIG (UI-139): `skipped` MUSS
+ * VOR `ok` geprueft werden - skip liefert { ok:true, skipped:true }, ein
+ * ok-First-Vergleich behauptete faelschlich "gestartet und bestaetigt".
+ * Kein dock-Resultat -> null (Aufrufer erfindet keine Zeile).
+ */
+export function dockSummaryLine(dock) {
+  if (!dock) return null;
+  if (dock.skipped) {
+    return `  Dock         : uebersprungen${dock.skippedBecause ? ` (${dock.skippedBecause})` : " (--skip-dock)"}`;
+  }
+  if (dock.ok) {
+    return dock.alreadyRunning ? "  Dock         : laeuft bereits (RUNNING)" : "  Dock         : gestartet und bestaetigt";
+  }
+  if (dock.unsupportedPlatform) {
+    return "  Dock         : Windows-only – headless Worker: node ui/worker.mjs";
+  }
+  return `  Dock         : nicht bestaetigt (${dock.error || "unbekannt"}) – manuell: ui/start-dock.cmd`;
+}
+
+/**
+ * Eine Zeile Skill-Status (pure, testbar, Paritaet mit dockSummaryLine).
+ * Der Instruction-Rueckgabe-Vertrag (UI-144) traegt skillsInstalled/
+ * skillsRepaired/skillsRepairError; dry-run erfindet KEINE Zeile (kein
+ * "OK" behaupten, wenn nichts installiert wurde). Reihenfolge wichtig:
+ * dry-run zuerst pruefen — das dry-run-Objekt hat skillsInstalled:false,
+ * ein ok-First-Vergleich wuerde faelschlich "FEHLT" melden.
+ * Kein instruction-Resultat -> null (Aufrufer erfindet keine Zeile).
+ */
+export function skillsSummaryLine(instruction) {
+  if (!instruction) return null;
+  if (instruction.target === "(dry-run)") return "  Skills       : uebersprungen (dry-run)";
+  if (instruction.skillsInstalled && instruction.skillsRepaired) {
+    return "  Skills       : NACHINSTALLIERT (aus Paket-Root repariert)";
+  }
+  if (instruction.skillsInstalled) return "  Skills       : OK (vorhanden)";
+  if (instruction.skillsRepairError) {
+    return `  Skills       : FEHLT (${instruction.skillsRepairError}) – Reparatur: falsify doctor --repair-skills`;
+  }
+  return "  Skills       : FEHLT – Reparatur: falsify doctor --repair-skills";
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   let flags;
@@ -140,15 +182,15 @@ async function main() {
     if (instruction && instruction.target && !flags.dryRun) {
       console.log(`  Instruction  : ${instruction.target}`);
     }
-    if (dock && dock.ok) {
-      console.log(dock.alreadyRunning ? "  Dock         : laeuft bereits (RUNNING)" : "  Dock         : gestartet und bestaetigt");
-    } else if (dock && dock.unsupportedPlatform) {
-      console.log("  Dock         : Windows-only – headless Worker: node ui/worker.mjs");
-    } else if (dock && dock.skipped) {
-      console.log("  Dock         : uebersprungen (--skip-dock)");
-    } else if (dock) {
-      console.log(`  Dock         : nicht bestaetigt (${dock.error || "unbekannt"}) – manuell: ui/start-dock.cmd`);
-    }
+    // Skills-Zeile (UI-146): eigene Statuszeile wie die Dock-Zeile — der
+    // Nutzer sieht SOFORT, ob die Agent-Skills vorlagen (OK), im selben Lauf
+    // repariert wurden (NACHINSTALLIERT) oder fehlen (+ Reparatur-Kommando).
+    const skillsLine = skillsSummaryLine(instruction);
+    if (skillsLine) console.log(skillsLine);
+    // UI-139: eine pure Zeilenfunktion statt der ok-First-Kette - skipped
+    // wird zuerst geprueft, skip/dry-run behauptet nie "gestartet".
+    const dockLine = dockSummaryLine(dock);
+    if (dockLine) console.log(dockLine);
     console.log("");
     console.log("  Naechste Schritte: falsify onboard (Key-Dialog) · falsify scope new \"<auftrag>\" · falsify submit …");
     console.log("");

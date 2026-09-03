@@ -267,10 +267,15 @@ export function reapStaleJobs(db, maxWindows = 3) {
 }
 
 // ── Worker-Registrierung (Fenster 1..MAX_WINDOWS) ────────────────────────────
-export function registerWorker(db, windowIdx, pid) {
+export function registerWorker(db, windowIdx, pid, name = null) {
   setMeta(db, `worker.${windowIdx}.pid`, String(pid));
   setMeta(db, `worker.${windowIdx}.scope`, "");
   setMeta(db, `worker.${windowIdx}.ts`, nowIso());
+  // Agent-Name  (UI-142): sprechende Kennung je Fenster (Default „Agent <N>“),
+  // damit parallele Agents/Docks sich gegenseitig ADRESSIEREN können, statt
+  // ein fremdes Fenster als Bug/Fremdprozess zu missdeuten. Reine Anzeige-
+  // und Adressierungsmetadaten: keine Liveness-Semantik, kein Job-Zustand.
+  setMeta(db, `worker.${windowIdx}.name`, String(name || `Agent ${windowIdx}`).slice(0, 24));
 }
 
 export function heartbeatWorker(db, windowIdx) {
@@ -287,13 +292,18 @@ export function setWorkerScope(db, windowIdx, scopeId) {
 
 export function unregisterWorker(db, windowIdx) {
   try {
-    db.prepare("DELETE FROM meta WHERE key IN (?, ?, ?)")
-      .run(`worker.${windowIdx}.pid`, `worker.${windowIdx}.scope`, `worker.${windowIdx}.ts`);
+    db.prepare("DELETE FROM meta WHERE key IN (?, ?, ?, ?)")
+      .run(`worker.${windowIdx}.pid`, `worker.${windowIdx}.scope`, `worker.${windowIdx}.ts`, `worker.${windowIdx}.name`);
   } catch { /* egal */ }
 }
 
 export function workerPid(db, windowIdx) {
   return Number(getMeta(db, `worker.${windowIdx}.pid`) || 0);
+}
+
+/** Registrierter Agent-Name des Fensters (Default „Agent <N>“). */
+export function agentName(db, windowIdx) {
+  return getMeta(db, `worker.${windowIdx}.name`) || `Agent ${windowIdx}`;
 }
 
 /**
@@ -359,7 +369,7 @@ export function listWorkers(db, maxWindows = 3) {
     const running = db.prepare(
       "SELECT id, scope_id FROM jobs WHERE status = 'RUNNING' AND window_idx = ? ORDER BY started_at DESC LIMIT 1"
     ).get(i);
-    out.push({ idx: i, pid, alive, runningJob: running ? running.id : null, runningScope: running ? running.scope_id : null });
+    out.push({ idx: i, pid, name: agentName(db, i), alive, runningJob: running ? running.id : null, runningScope: running ? running.scope_id : null });
   }
   return out;
 }

@@ -86,6 +86,12 @@ export function createBridge({
   owner = `doki-bridge:${process.pid}`,
   onEvent = () => {},       // ({ status, narrator, contextDigest, buffered }) — Worker → TUI
   claimStaleMs = 120_000,
+  // Provider-Ausfall-Cooldown (Audit-Fix 2026-09-03): Abstand zwischen
+  // pump()-Versuchen nach einem Fehler. Der Worker pollt pump() im 1-s-
+  // Idle-Takt; ohne Cooldown wuerde ein kranker Provider (Observations
+  // bleiben bei Fehlern liegen, Grenze unverrueckt) sekundlich neu geclaimt
+  // + angerufen — Retry-Sturm auf einen downed Endpoint.
+  errorCooldownMs = 30_000,
   // Rotation-Vertrag (DOKI-Blocker 6): currentModel wird JEDE PUMP-Runde neu
   // aufgeloest — das ist der idle-time model switch: solange der Thinker
   // idelt, liest der Worker FALSIFYMEs EINZIGE Modellwahrheit (config.json /
@@ -113,15 +119,31 @@ export function createBridge({
 
   let pumping = false;
   let claimHeartbeat = null;
+  let lastErrorAt = 0;        // Cooldown-Anker: Zeitstempel des letzten Fehlversuchs
+  let cursorWhenIdle = null;  // Idle-Short-Circuit: Cursor beim letzten Leer-Scan
 
   const emit = () => {
-    try { onEvent({ status: observer.state, narrator: 'NARRATOR_15', contextDigest: store.readCursor(), buffered: observer.buffer.length }); } catch { /* Anzeige, nie kritisch */ }
+    try { onEvent({ status: observer.state, narrator: 'NARRATOR_15', contextDigest: store.readCursor(), buffered: observer.buffered }); } catch { /* Anzeige, nie kritisch */ }
   };
 
   /** EVENT INPUT: exactly-once durable Ingestion eines echten FM-EVT. */
   function ingest(event) {
     try {
-      const withIdentity = { ...event, source_event_id: event?.source_event_id ?? fmEvtSourceId(event), source: event?.source ?? 'falsify-fmevt' };
+      // Vokabular-Bruecke (UI-137-Abgleich 2026-09-03): FalsifyMe spricht im
+      // FM-EVT-Stream den Schluessel `t` (t:'job', t:'finding', t:'loop',
+      // t:'handoff', t:'scope_auto' …), DOKI beobachtet `event_type`. OHNE
+      // die Bruecke landen Live-Events mit event_type=NULL in den durable
+      // Observations — die C.A.R.E.-Logik (CLAIM/ATTACK auf 'job'/'finding')
+      // und jede Typ-Sichtbarkeit der Loop-/Handoff-Events waere blind.
+      // Reihenfolge: Identitaet ZUERST aus dem ROH-Event stampen (stabil
+      // ueber Sidecars/Restarts), DANN t->event_type mappen — die Mapping-
+      // Erweiterung darf die Content-Identitaet nicht veraendern.
+      const withIdentity = {
+        ...event,
+        source_event_id: event?.source_event_id ?? fmEvtSourceId(event),
+        source: event?.source ?? 'falsify-fmevt',
+        event_type: event?.event_type ?? event?.type ?? event?.t ?? null,
+      };
       const result = observer.ingest(withIdentity);
       if (result.accepted && observer.state === 'COLLECTING' && slotState() === 'BUSY') {
         observer.waitForThinkerSlot();
@@ -144,13 +166,33 @@ export function createBridge({
       if (observer.state !== 'COLLECTING' && observer.state !== 'WAITING_FOR_THINKER_SLOT') {
         return { pumped: false, reason: `STATE_${observer.state}` };
       }
+      // Provider-Ausfall-Cooldown (Audit-Fix 2026-09-03): nach einem Fehler
+      // ist der naechste Versuch erst nach errorCooldownMs erlaubt — sonst
+      // feuert der 1-s-Idle-Poll einen sekundlichen Retry-Sturm auf einen
+      // kranken Endpoint (Observations bleiben bei Fehlern durabel liegen).
+      // Neue Events warten hoechstens die Cooldown-Dauer; kein Call im Cooldown.
+      if (lastErrorAt && Date.now() - lastErrorAt < errorCooldownMs) {
+        return { pumped: false, reason: 'ERROR_COOLDOWN' };
+      }
+      // Idle-Short-Circuit (Audit-Fix 2026-09-03): Cursor unveraendert seit
+      // dem letzten Leer-Scan → nichts Neues, kein Voll-Scan. Der alte Pfad
+      // lud bei JEDEM Idle-Tick die komplette Observationstabelle und
+      // JSON.parse'd jede event_json-Zeile, nur um pending=[] festzustellen
+      // (liest store.readNarrativeBoundary/store.list() erst NACH diesem
+      // Guard). cursorWhenIdle wird NUR bei leerem pending gesetzt — nach
+      // einem Fehler oder bei Slot-Belegung bleibt er stale und der naechste
+      // Tick prüft/schreibt erneut (kein Ueberspringen offener Arbeit).
+      const cursorNow = store.readCursor();
+      if (cursorNow === cursorWhenIdle) {
+        return { pumped: false, reason: 'NO_NEW_OBSERVATIONS' };
+      }
       // Keine neuen Observations seit der narrativen Grenze → kein Call.
       const boundary = store.readNarrativeBoundary();
       const all = sortObservations(store.list());
       const startIdx = boundary ? all.findIndex((o) => o.id === boundary) + 1 : 0;
       if (startIdx < 0) return { pumped: false, reason: 'BOUNDARY_UNKNOWN' };
       const pending = all.slice(startIdx);
-      if (!pending.length) return { pumped: false, reason: 'NO_NEW_OBSERVATIONS' };
+      if (!pending.length) { cursorWhenIdle = cursorNow; return { pumped: false, reason: 'NO_NEW_OBSERVATIONS' }; }
       // Thinker belegt → ehrlich warten (Warten ist ein ZUSTAND, kein Timer).
       if (slotState() === 'BUSY') {
         if (observer.state !== 'WAITING_FOR_THINKER_SLOT') {
@@ -224,7 +266,8 @@ export function createBridge({
       // Fail-open: DOKI-Fehler sind präsentationsseitig. Slot wird im finally
       // freigegeben; die Observations bleiben durable, die Grenze ungerückt —
       // derselbe Kontext wird beim nächsten pump() erneut aufgebaut.
-      try { onEvent({ status: 'FALLBACK', narrator: null, contextDigest: null, buffered: observer.buffer.length, error: String(error?.message || error) }); } catch { /* egal */ }
+      lastErrorAt = Date.now(); // Cooldown starten: kein Sekunden-Retry-Sturm
+      try { onEvent({ status: 'FALLBACK', narrator: null, contextDigest: null, buffered: observer.buffered, error: String(error?.message || error) }); } catch { /* egal */ }
       return { pumped: false, reason: 'ERROR', error: String(error?.message || error) };
     } finally {
       pumping = false;

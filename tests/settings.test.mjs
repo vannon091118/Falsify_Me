@@ -90,6 +90,49 @@ test("Models-Endpunkt liefert freie IDs und nur vorhandenes Pricing", async () =
   }
 });
 
+test("Modell-Probe sendet exakt die Nutzerwahl und behandelt Konto-404 fail-closed", async () => {
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    if (req.url !== "/v1/chat/completions" || req.method !== "POST") {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    let text = "";
+    req.on("data", (chunk) => { text += chunk; });
+    req.on("end", () => {
+      requests.push({
+        body: JSON.parse(text),
+        authorization: req.headers.authorization,
+      });
+      const selected = requests.at(-1).body.model;
+      if (selected === "account/not-entitled") {
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end(JSON.stringify({ detail: "Function not found for account" }));
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ model: selected, choices: [{ message: { content: "OK" } }] }));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const apiBase = `http://127.0.0.1:${server.address().port}/v1`;
+    const result = await settings.probeModelAccess({ apiBase, apiKey: "test-key", model: "account/chosen" });
+    assert.deepEqual(result, { ok: true, model: "account/chosen", providerModel: "account/chosen" });
+    await assert.rejects(
+      () => settings.probeModelAccess({ apiBase, apiKey: "test-key", model: "account/not-entitled" }),
+      /Modell-Probe HTTP 404/,
+    );
+    assert.deepEqual(requests.map((request) => request.body.model), ["account/chosen", "account/not-entitled"]);
+    assert.deepEqual(requests.map((request) => request.authorization), ["Bearer test-key", "Bearer test-key"]);
+    assert.equal(requests[0].body.max_tokens, 1);
+    assert.equal(requests[0].body.temperature, 0);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("ungültige API-Basis wird vor Netzwerkzugriff abgewiesen", async () => {
   await assert.rejects(() => settings.fetchAvailableModels({ apiBase: "not-a-url" }), /apiBase/);
 });
@@ -169,6 +212,25 @@ test("parallele settings-Writes verlieren keine Aenderung (Lock, Last-Write-Wins
     const env = fs.readFileSync(path.join(tmp, ".env"), "utf8");
     assert.ok(env.includes('PARALLEL_KEY_A="va-aaaa"'), "Key A unversehrt gespeichert");
     assert.ok(env.includes('PARALLEL_KEY_B="vb-bbbb"'), "Key B unversehrt gespeichert");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("--model kann den Runtime-Job nicht am Onboarding vorbei umschalten", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-model-override-"));
+  try {
+    const child = spawn(process.execPath, [path.join(ROOT, "cli", "run.mjs"), "--model", "agent/selected"], {
+      cwd: ROOT,
+      env: { ...process.env, FALSIFY_HOME: tmp },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    child.stdout.on("data", (chunk) => { output += chunk; });
+    child.stderr.on("data", (chunk) => { output += chunk; });
+    const code = await new Promise((resolve) => child.on("close", resolve));
+    assert.equal(code, 2);
+    assert.match(output, /--model ist kein Agent-Override/);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

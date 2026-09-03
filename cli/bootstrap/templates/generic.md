@@ -30,6 +30,14 @@ Dock = sichtbare Visualisierung der laufenden FalsifyMe-Arbeit
 
 Bis VERDICT: WRITE bleibt der Agent READ-ONLY.
 
+## Reparatur vor Onboarding
+
+- Schlaegt der FalsifyMe-Startup-Skill-Check fehl (jeder falsify-Befehl
+  ausser doctor bricht mit Exit 3 + FEHLER-Hinweis auf doctor), fuehrt der
+  Agent GENAU EINMAL `falsify doctor --repair-skills` aus und wartet auf
+  gruen, BEVOR er `falsify onboard` / den ersten Pflicht-Check startet.
+  Kein Onboarding auf kaputter oder veralteter Skill-Anlage.
+
 ## Pflichtprotokoll nach jeder Arbeit
 
 Nach jedem Plan, jeder Änderung, jedem Bugfix, jedem Refactoring, jedem Feature,

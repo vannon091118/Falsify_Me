@@ -460,6 +460,124 @@ test("Worker-Start: Register-vor-Reap wuerde den Orphan nicht raeumen (Luecke au
   }
 });
 
+// ── Transient-Retry (Live-E2E 2026-09-03) ───────────────────────────────────
+// retryJob war toter Code: cli/run.mjs finalisierte API-Überlastung immer
+// direkt per jobDone (ERROR, attempt 1/2, retry_at=NULL) — der zweite
+// Versuch wurde nie geplant. Diese Tests nageln den Vertrag fest: transient
+// mit Versuchsrest → QUEUED + retry_at (Worker claimt erneut), permanent /
+// Limit → final, finale Zustaende unangetastet.
+test("retryJob: transient mit Versuchsrest -> QUEUED + retry_at (Worker holt spaeter)", async () => {
+  const { retryJob, getJob, jobToRunning } = await mod("artifacts/jobs.mjs");
+  const home = withTempHome();
+  try {
+    const { openDb, closeDb } = requireDb();
+    const db = openDb();
+    const id = createJob(db, { status: "QUEUED" });
+    assert.equal(jobToRunning(db, id, 1), true, "Claim: attempt 1, RUNNING");
+    const before = Date.now();
+    const out = retryJob(db, id, "API-Überlastung (Stufen 5s/30s/60s erschöpft)", { failureKind: "transient", backoffMs: 60_000 });
+    assert.equal(out.retried, true, "transient + attempt < max_attempts -> requeue");
+    assert.equal(out.attempt, 1);
+    assert.equal(out.maxAttempts, 2);
+    const row = getJob(db, id);
+    assert.equal(row.status, "QUEUED", "Job wartet erneut in der Queue");
+    assert.equal(row.window_idx, null, "Fenster-Zuordnung zurueckgesetzt");
+    assert.equal(row.started_at, null, "Start-Zeit zurueckgesetzt");
+    assert.equal(row.failure_kind, "transient");
+    assert.match(row.error, /API-Überlastung/);
+    assert.ok(Date.parse(row.retry_at) >= before + 55_000, `retry_at in der Zukunft: ${row.retry_at}`);
+    closeDb();
+  } finally {
+    home.cleanup();
+  }
+});
+
+test("retryJob: Worker claimt den requeued Job erst nach retry_at (attempt 2)", async () => {
+  const { retryJob, getJob, jobToRunning, claimNextJob, registerWorker, unregisterWorker } = await mod("artifacts/jobs.mjs");
+  const home = withTempHome();
+  try {
+    const { openDb, closeDb } = requireDb();
+    const db = openDb();
+    registerWorker(db, 1, process.pid);
+    const id = createJob(db, { status: "QUEUED" });
+    jobToRunning(db, id, 1);
+    retryJob(db, id, "Überlastung", { failureKind: "transient", backoffMs: 60_000 });
+    // retry_at liegt in der Zukunft -> kein Claim moeglich.
+    assert.equal(claimNextJob(db, 1), null, "vor retry_at wird nicht geclaimt");
+    // retry_at in die Vergangenheit legen -> Worker holt den Job als Versuch 2.
+    db.prepare("UPDATE jobs SET retry_at = '2000-01-01T00:00:00.000Z' WHERE id = ?").run(id);
+    const claimed = claimNextJob(db, 1);
+    assert.ok(claimed, "nach retry_at wird geclaimt");
+    assert.equal(claimed.id, id);
+    assert.equal(claimed.attempt, 2, "zweiter Versuch: attempt 2");
+    assert.equal(claimed.status, "RUNNING");
+    assert.equal(claimed.retry_at, null, "retry_at beim Claim geleert");
+    unregisterWorker(db, 1);
+    closeDb();
+  } finally {
+    home.cleanup();
+  }
+});
+
+test("retryJob: Versuchs-Limit -> final ERROR (kein Requeue, kein Fake-Verdict)", async () => {
+  const { retryJob, getJob, jobToRunning } = await mod("artifacts/jobs.mjs");
+  const home = withTempHome();
+  try {
+    const { openDb, closeDb } = requireDb();
+    const db = openDb();
+    const id = createJob(db, { status: "QUEUED" });
+    jobToRunning(db, id, 1);
+    retryJob(db, id, "Überlastung 1", { failureKind: "transient", backoffMs: 0 });
+    assert.equal(getJob(db, id).attempt, 1, "requeue laesst attempt unveraendert");
+    // Zweiter Lauf scheitert ebenfalls -> jetzt ist das Versuchskonto leer.
+    jobToRunning(db, id, 1);
+    const out = retryJob(db, id, "Überlastung 2", { failureKind: "transient" });
+    assert.equal(out.retried, false);
+    assert.equal(out.reason, "attempt-limit");
+    const row = getJob(db, id);
+    assert.match(row.status, /^ERROR/);
+    assert.equal(row.verdict, null, "kein Fake-Verdict");
+    assert.equal(row.failure_kind, "transient");
+    assert.match(row.error, /Überlastung 2/);
+    closeDb();
+  } finally {
+    home.cleanup();
+  }
+});
+
+test("retryJob: permanent/aborted -> sofort final, finale Jobs bleiben unangetastet", async () => {
+  const { retryJob, getJob, jobToRunning, jobDone } = await mod("artifacts/jobs.mjs");
+  const home = withTempHome();
+  try {
+    const { openDb, closeDb } = requireDb();
+    const db = openDb();
+    const id = createJob(db, { status: "QUEUED" });
+    jobToRunning(db, id, 1);
+    const perm = retryJob(db, id, "HTTP 404", { failureKind: "permanent" });
+    assert.equal(perm.retried, false);
+    assert.match(getJob(db, id).status, /^ERROR/);
+    assert.equal(getJob(db, id).failure_kind, "permanent");
+
+    const aborted = createJob(db, { status: "QUEUED" });
+    jobToRunning(db, aborted, 1);
+    const ab = retryJob(db, aborted, "Abgebrochen", { failureKind: "aborted" });
+    assert.equal(ab.retried, false, "Abort ist NICHT retrybar");
+    assert.match(getJob(db, aborted).status, /^ERROR/);
+
+    // Finaler Job (DONE WRITE) darf durch retryJob nie umgeschrieben werden.
+    const final = createJob(db, { status: "QUEUED" });
+    assert.equal(jobDone(db, final, "WRITE", null), true);
+    const out = retryJob(db, final, "Überlastung", { failureKind: "transient" });
+    assert.equal(out.retried, false);
+    assert.equal(out.reason, "final");
+    assert.equal(getJob(db, final).status, "DONE WRITE", "finaler Zustand bleibt immutabel");
+    assert.equal(getJob(db, final).verdict, "WRITE");
+    closeDb();
+  } finally {
+    home.cleanup();
+  }
+});
+
 function requireDb() {
   return { openDb: dbModuleOpen.openDb, closeDb: dbModuleOpen.closeDb, setMeta: dbModuleOpen.setMeta };
 }

@@ -256,3 +256,76 @@ test("falsify scope trace: GAP-Loop je Runde aus der Queue abgeleitet (UI-116, r
     h.cleanup();
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Identifier-Allowlist (nodejs-best-practices-Audit 2026-09-03): die Interpo-
+// lation von Tabellen-/Spaltennamen in countBy/rowsPerTable ist nur dann keine
+// SQL-Injektionsfläche, wenn sie MECHANISCH erzwungen wird — Verstoß fail-fast
+// (eine Stelle, fail-closed), gültige Aufrufe bleiben unverändert.
+// ─────────────────────────────────────────────────────────────────────────────
+test("stats: Identifier-Allowlist – gültige Aufrufe unverändert, Verstoß fail-fast", async () => {
+  const h = withTempHome();
+  try {
+    const { openDb, closeDb } = await mod("artifacts/db.mjs");
+    const { createScope } = await mod("artifacts/scopes.mjs");
+    const { createJob } = await mod("artifacts/jobs.mjs");
+    const stats = await mod("artifacts/stats.mjs");
+    const db = openDb();
+    const s = createScope(db, "Allowlist-Task");
+    createJob(db, { scopeId: s.id, payload: "p", mode: "plan" });
+
+    // (a) collectStats (alle countBy/rowsPerTable-Aufrufe allowlisted) bleibt
+    //     vollständig funktionsfähig — die Allowlist ändert KEINE Zahlen.
+    const st = stats.collectStats(db);
+    assert.equal(st.jobsTotal, 1);
+    assert.equal(st.scopesTotal, 1);
+    assert.ok(st.sqlite.rowsPerTable.jobs >= 1, "rowsPerTable über Allowlist");
+    assert.equal(st.jobsByStatus["QUEUED"], 1, "countBy über Allowlist");
+
+    // (b) Verstoß fail-fast: unbekannte Tabelle / unbekannte Spalte wirft VOR
+    //     jedem prepare (kein SQL mit fremdem Identifier wird ausgeführt).
+    //     Zugriff über denselben Prüfpunkt (collectStats' countBy-Pfad) ist
+    //     nicht injizierbar — daher direkt über die Modul-Interna: wir
+    //     reproduzieren den Vertrag, indem ein manipuliertes db-Objekt die
+    //     prepare-Aufrufe mitschneidet.
+    //     Erlaubte Identifier: keine Exception, prepare bekommt saubere Namen.
+    const seen = [];
+    const spyDb = new Proxy(db, {
+      get(target, prop) {
+        if (prop === "prepare") {
+          return (sql) => { seen.push(String(sql)); return target.prepare(sql); };
+        }
+        return target[prop];
+      },
+    });
+    stats.collectStats(spyDb);
+    // Nur die INTERPOLIERTEN Abfragen (countBy/rowsPerTable) unterliegen dem
+    // Identifier-Vertrag; die festen one(...)-Queries enthalten WHERE-Literale
+    // und werden nicht interpoliert — sie fliegen raus (kein Template-SQL).
+    const interpolated = seen.filter((q) => / FROM |GROUP BY /.test(q) && !q.includes("WHERE"));
+    assert.ok(interpolated.length >= 5, "Interpolierte Abfragen wurden ausgeführt");
+    for (const q of interpolated) {
+      // Kein Identifier außerhalb der Allowlist kommt in irgendein SQL.
+      assert.doesNotMatch(q, /--|\bOR\b\s+\b1\s*=\s*1|;|UNION/i, "keine Injektionsmuster");
+      assert.match(q, /^(SELECT COUNT\(\*\) AS n FROM (meta|scopes|findings|jobs|rate_limit)|SELECT (status|verdict|wave|phase) AS k, COUNT\(\*\) AS n FROM (jobs|findings|scopes) GROUP BY (status|verdict|wave|phase))$/,
+        `nur allowlistete Identifier im SQL: ${q}`);
+    }
+
+    // (c) Fail-fast-Nachweis auf Funktionsgrenze: stats.mjs exportiert die
+    //     Prüfung nicht bewusst (eine Verantwortung) — der Vertrag wird über
+    //     den Quelltext fixiert: jede Identifier-Interpolation MUSS hinter
+    //     assertIdentifier laufen (statische Vertragszeile).
+    const src = fs.readFileSync(path.join(ROOT, "artifacts", "stats.mjs"), "utf8");
+    assert.match(src, /const ALLOWED_TABLES = new Set\(/, "Allowlist-Tabellen existiert");
+    assert.match(src, /const ALLOWED_COLUMNS = new Set\(/, "Allowlist-Spalten existiert");
+    const fnBody = src.slice(src.indexOf("function countBy"), src.indexOf("export function collectStats"));
+    const prepareUses = fnBody.match(/db\.prepare\(/g)?.length ?? 0;
+    const guardUses = fnBody.match(/assertIdentifier\(/g)?.length ?? 0;
+    assert.ok(guardUses >= 2 && prepareUses === 1,
+      "jede prepare-Interpolation in countBy liegt hinter assertIdentifier");
+  } finally {
+    const { closeDb } = await mod("artifacts/db.mjs");
+    try { closeDb(); } catch { /* egal */ }
+    h.cleanup();
+  }
+});

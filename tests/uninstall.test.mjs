@@ -267,3 +267,153 @@ test("doctor: abgelaufener Heartbeat eines registrierten Workers wird ehrlich ge
     fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 60 });
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// doctor: Agent-Skills-Check + --repair-skills (UI-144-Abgleich, 2026-09-03).
+// Die Checks laufen gegen ein INJIZIERTES homeDir (nie echtes ~/.agents) —
+// dieselben Funktionen, die doctor mit os.homedir() aufruft.
+// ─────────────────────────────────────────────────────────────────────────────
+test("doctor: Agent-Skill-Marker-Check meldet fehlende Anlage ehrlich", async () => {
+  const doctor = await import(pathToFileURL(path.join(ROOT, "cli", "doctor.mjs")).href);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-doctor-skills-missing-"));
+  try {
+    const before = doctor.checkAgentSkillMarkers(home);
+    assert.equal(before.ok, false, "ohne Anlage: ok=false");
+    assert.equal(before.present.length, 0, "kein Marker vorhanden");
+    assert.equal(before.dir, path.join(home, ".agents", "skills", "falsifyme"));
+    // Eine der drei Varianten genügt der Verweis-Semantik (sh/mjs/ps1).
+    fs.mkdirSync(path.join(home, ".agents", "skills", "falsifyme"), { recursive: true });
+    fs.writeFileSync(path.join(home, ".agents", "skills", "falsifyme", "agent-skill-falsify.sh"), "# skill\n");
+    const after = doctor.checkAgentSkillMarkers(home);
+    assert.equal(after.ok, true, "sh-Marker vorhanden -> ok");
+    assert.ok(after.present.includes("agent-skill-falsify.sh"));
+    assert.equal(after.missing.length, 2, "die anderen beiden Varianten fehlen, aber eine genügt (Verweis-Semantik)");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+});
+
+test("doctor: repairAgentSkillMarkers installiert idempotent aus dem Paket-Root (eine Quelle)", async () => {
+  const doctor = await import(pathToFileURL(path.join(ROOT, "cli", "doctor.mjs")).href);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-doctor-skills-repair-"));
+  try {
+    const r = await doctor.repairAgentSkillMarkers({ homeDir: home, packageRoot: ROOT });
+    assert.equal(r.ok, true, r.error || "Repair ok");
+    const check = doctor.checkAgentSkillMarkers(home);
+    assert.equal(check.ok, true, "nach Repair: Marker vorhanden");
+    assert.ok(check.present.includes("agent-skill-falsify.sh"), "sh-Marker kopiert");
+    // Idempotent: zweiter Repair ohne Nebeneffekt.
+    const r2 = await doctor.repairAgentSkillMarkers({ homeDir: home, packageRoot: ROOT });
+    assert.equal(r2.ok, true);
+    assert.equal(r2.repaired, false, "zweiter Lauf: bereits installiert (repaired=false)");
+    // Fehlende Quelle -> ehrlicher Fehler statt stiller Nichts-Tun.
+    const emptyRoot = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-doctor-skills-nosrc-"));
+    try {
+      const bad = await doctor.repairAgentSkillMarkers({ homeDir: home, packageRoot: emptyRoot });
+      assert.equal(bad.ok, false);
+      assert.match(bad.error, /Skill-Quelle nicht gefunden/);
+    } finally {
+      fs.rmSync(emptyRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+});
+
+test("doctor: --repair-skills Pfad ist verdrahtet (main.mjs reicht Args durch)", async () => {
+  // Der CLI-Pfad `falsify doctor --repair-skills` trifft den echten os.homedir()
+  // — hier nur der Verdrahtungs-Nachweis: runDoctor akzeptiert das Flag und
+  // main.mjs reicht Argumente weiter (kein echte Reparatur im Test).
+  const main = fs.readFileSync(path.join(ROOT, "cli", "main.mjs"), "utf8");
+  assert.match(main, /runDoctor\(args\.slice\(1\)\)/, "main.mjs reicht doctor-Args durch");
+  const falsifySh = fs.readFileSync(path.join(ROOT, "cli", "falsify.sh"), "utf8");
+  assert.match(falsifySh, /doctor "\$\@"/, "falsify.sh reicht doctor-Args durch");
+  const doctorSrc = fs.readFileSync(path.join(ROOT, "cli", "doctor.mjs"), "utf8");
+  assert.match(doctorSrc, /--repair-skills/, "runDoctor kennt das Reparatur-Flag");
+  assert.match(doctorSrc, /checkAgentSkillMarkers\(os\.homedir\(\)\)/, "doctor prüft die Marker gegen den Nutzer-Home");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// doctor: Agent-Skill-VERSION gegen die Runtime (UI-148, 2026-09-03).
+// vorhanden != aktuell: doctor liest den Version-Marker der installierten
+// ~/.agents-Skills (agent-skill-falsify.config.json) und vergleicht ihn mit
+// package.json des laufenden Core. Kein Versions-Urteil ohne lesbare Konfig.
+// ─────────────────────────────────────────────────────────────────────────────
+test("doctor: agentSkillVersion liest den Versions-Marker; fehlende Konfig = ehrlich ok:false", async () => {
+  const doctor = await import(pathToFileURL(path.join(ROOT, "cli", "doctor.mjs")).href);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-doctor-skillver-"));
+  const dir = path.join(home, ".agents", "skills", "falsifyme");
+  try {
+    // Keine Anlage -> kein Versions-Urteil (fail-closed).
+    const none = doctor.agentSkillVersion(home);
+    assert.equal(none.ok, false);
+    assert.match(none.error, /Konfig-Datei fehlt/);
+    assert.equal(none.file, path.join(dir, "agent-skill-falsify.config.json"));
+    // Marker da, Konfig da -> Version lesbar.
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "agent-skill-falsify.sh"), "# skill\n");
+    fs.writeFileSync(path.join(dir, "agent-skill-falsify.config.json"), JSON.stringify({ name: "FalsifyMe Agent Skill", version: "0.9.0" }), "utf8");
+    const ok = doctor.agentSkillVersion(home);
+    assert.equal(ok.ok, true);
+    assert.equal(ok.version, "0.9.0");
+    // Kaputtes Versionsfeld -> ok:false statt stilles Raten.
+    fs.writeFileSync(path.join(dir, "agent-skill-falsify.config.json"), JSON.stringify({ version: "kaputt" }), "utf8");
+    const bad = doctor.agentSkillVersion(home);
+    assert.equal(bad.ok, false);
+    assert.match(bad.error, /ungueltig/);
+    // Kein Versions-Urteil bei kaputtem JSON.
+    fs.writeFileSync(path.join(dir, "agent-skill-falsify.config.json"), "{ kein json", "utf8");
+    const corrupt = doctor.agentSkillVersion(home);
+    assert.equal(corrupt.ok, false);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+});
+
+test("doctor: Sektion 7 vergleicht die Skill-Version gegen die Runtime (Drift = Problem)", async () => {
+  const doctorSrc = fs.readFileSync(path.join(ROOT, "cli", "doctor.mjs"), "utf8");
+  // Der Versions-Vergleich ist verdrahtet: compareVersions gegen pkg.version,
+  // aelter -> bad() mit der EINEN Aktualisierungs-Kommandozeile.
+  assert.match(doctorSrc, /compareVersions\(skillVersion\.version, runtimeVersion\)/, "Semantischer Versions-Vergleich");
+  assert.match(doctorSrc, /sind ÄLTER als der installierte Core/, "aelter -> Warnung");
+  assert.match(doctorSrc, /falsify doctor --repair-skills/, "Reparatur-Kommando im Text");
+  assert.match(doctorSrc, /agentSkillVersion\(os\.homedir\(\)\)/, "Version gegen den Nutzer-Home gelesen");
+  assert.match(doctorSrc, /sind NEUER als der laufende Core/, "neuer -> ehrliche Warnung (Core aktualisieren)");
+  // Die Reparatur-Kommandozeile kann Veraltetes wirklich aktualisieren:
+  // ensureAgentSkillsInstalled kennt den Refresh-Weg (UI-148).
+  const instSrc = fs.readFileSync(path.join(ROOT, "cli", "bootstrap", "instructions.mjs"), "utf8");
+  assert.match(instSrc, /refreshed: true/, "Refresh-Marker im Rueckgabe-Vertrag");
+  assert.match(instSrc, /fromVersion: installedVersion/, "Versions-Uebergang wird ehrlich berichtet");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// doctor: --repair-all (UI-150, 2026-09-03) — jede auto-fixbare Reparatur in
+// Abhaengigkeitsreihenfolge (1. Skills -> 2. Worker-/Queue-Orphans) und danach
+// der VOLLSTAENDIGE Standard-Pruefkoerper als Re-Check (kein frueher Return).
+// ─────────────────────────────────────────────────────────────────────────────
+test("doctor: --repair-all Reihenfolge Skills -> Worker-Orphans -> Re-Check (Verdrahtung)", async () => {
+  const src = fs.readFileSync(path.join(ROOT, "cli", "doctor.mjs"), "utf8");
+  assert.match(src, /--repair-all/, "runDoctor kennt das repair-all-Flag");
+  assert.match(src, /--repair-skills.*!repairAll/, "repair-all ueberstimmt den Skills-Only-Zweig (kein Doppel-Lauf)");
+  // Abhaengigkeitsreihenfolge im Quelltext: Skill-Reparatur VOR Worker-Reparatur,
+  // danach faellt der Code in den Standard-Pruefkoerper (Re-Check) — kein return.
+  // Call-Sites im repair-all-Zweig (Definitionen stehen frueher im File —
+  // gezielt auf die AUFRUFE pruefen).
+  const s1 = src.indexOf("await runSkillRepair(os.homedir())");
+  const s2 = src.indexOf("await runWorkerRepair();");
+  const recheck = src.indexOf("Re-Check: der vollstaendige doctor-Pruefkoerper");
+  const fallthrough = src.indexOf("const problems = []");
+  assert.ok(s1 !== -1 && s2 !== -1 && s1 < s2, "Skills-Schritt laeuft VOR Worker-Schritt");
+  assert.ok(recheck !== -1 && fallthrough !== -1 && recheck < fallthrough, "nach den Reparaturen laeuft der Pruefkoerper als Re-Check (kein frueher Return)");
+  // Der Worker-/Orphan-Schritt delegiert an den EINEN Kill-Pfad (worker-kill),
+  // doctor schreibt nie selbst an die Queue.
+  assert.match(src, /repairStaleWorkers/, "doctor ruft die programmatische Orphan-Reparatur aus cli/worker-kill.mjs");
+  assert.match(src, /Keine registrierten Worker/, "ehrliche Leer-Meldung im Worker-Schritt");
+  const killSrc = fs.readFileSync(path.join(ROOT, "cli", "worker-kill.mjs"), "utf8");
+  assert.match(killSrc, /export function repairStaleWorkers/, "worker-kill exportiert die programmatische Reparatur");
+  assert.match(killSrc, /reapStaleJobs\(db, MAX_WINDOWS\)/, "Queue-Orphan-Reap laeuft immer (idempotent)");
+  assert.match(killSrc, /w\.mine \|\| !w\.orphan/, "nie eigene PID, nie frische Worker");
+  // main.mjs/falsify.sh reichen doctor-Args durch (kein neuer Verdrahtungspunkt noetig).
+  const main = fs.readFileSync(path.join(ROOT, "cli", "main.mjs"), "utf8");
+  assert.match(main, /runDoctor\(args\.slice\(1\)\)/, "main.mjs reicht --repair-all durch");
+});

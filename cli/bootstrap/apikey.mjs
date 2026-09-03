@@ -42,8 +42,9 @@ export async function ensureApiKeyAtBootstrap({ interactive = false, skipDock = 
     console.log("nicht möglich. Frage den Nutzer und biete ihm diese Optionen an:");
     console.log('  • Nutzer startet im Terminal:  falsify onboard   (Dialog erklärt 1–2 APIs');
     console.log('                               + Provider-Links)');
-    console.log('  • Key direkt setzen (Agent):   falsify settings set apiBase="…" model="…"');
+    console.log('  • Key direkt setzen (Agent):   falsify settings set apiBase="…"');
     console.log('                                 apiKeyName="…" apiKey="…"');
+    console.log('  • Modellwahl durch Nutzer:      falsify onboard');
     console.log("");
     console.log("Ohne Key startet weiterhin kein Job — FalsifyMe erfindet kein Verdict.");
     console.log("=".repeat(64));

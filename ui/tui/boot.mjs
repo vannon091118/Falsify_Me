@@ -7,6 +7,8 @@
 // ui/README-tui.md „Spec: Boot & Selftest“ (vorher „Spec §5“): visueller
 // Startup als F A L S I F Y _ M E (mit Unterstrich, gespaced).
 export const WORD = "FALSIFY_ME";
+// Catchphrase (ein Wort, Imperativ aus Sicht des geprüften Agenten):
+export const CATCHPHRASE = "FALSIFY.";
 export const BUILD_MS = 900;
 export const CONDENSE_MS = 600;
 export const BLOCK_ROWS = ["░", "░ █ ░", "░ ███ █ ░", "░ ███████ █ ░"];

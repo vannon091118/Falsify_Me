@@ -87,7 +87,7 @@ async function main() {
       if (r && !r.ok) process.exit(2);
       break;
     }
-    case "doctor": await runDoctor(); break;
+    case "doctor": await runDoctor(args.slice(1)); break;
     case "settings": await runSettings(args.slice(1)); break;
     case "models": await runModels(args.slice(1)); break;
     case "help": case "-h": case "--help": console.log(HELP_TEXT); break;

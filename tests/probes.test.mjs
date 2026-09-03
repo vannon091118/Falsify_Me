@@ -323,6 +323,43 @@ test("computeVerdict: UNKLAR/WIDERSPRUCH/Evidence-fail je Probe → PLAN (P7: al
   }
 });
 
+test("computeVerdict: malformed result sets → PLAN (unknown, duplicate, missing evidence flag)", async () => {
+  const { computeVerdict } = await mod("core/probes.mjs");
+  const cases = [
+    {
+      name: "unknown probe id",
+      results: [{ ...BEST_RESULT, probe_id: "P9" }],
+      reason: /unbekannte probe_id/,
+    },
+    {
+      name: "duplicate probe id",
+      results: [BEST_RESULT, { ...BEST_RESULT, evidence: "zweites Ergebnis" }],
+      reason: /doppeltes ProbeResult/,
+    },
+    {
+      name: "missing evidence confirmation",
+      results: [{ probe_id: "P1", status: "BESTAETIGT", evidence: "e" }],
+      reason: /explizit bestätigte Evidence/,
+    },
+    {
+      name: "invalid status",
+      results: [{ ...BEST_RESULT, status: "BESTAETIGT?" }],
+      reason: /BESTAETIGT\?/,
+    },
+  ];
+  for (const testCase of cases) {
+    const out = computeVerdict({ validation: VALID_VALIDATION, results: testCase.results });
+    assert.equal(out.verdict, "PLAN", testCase.name);
+    assert.match(out.reasons.join("\\n"), testCase.reason, testCase.name);
+  }
+  const missingId = computeVerdict({
+    validation: VALID_VALIDATION,
+    results: [{ status: "BESTAETIGT", evidenceOk: true }],
+  });
+  assert.equal(missingId.verdict, "PLAN");
+  assert.match(missingId.reasons.join("\\n"), /ohne probe_id/);
+});
+
 test("computeVerdict: harte Gates – structural, Divergenz, Dateiänderung → PLAN", async () => {
   const { computeVerdict } = await mod("core/probes.mjs");
   assert.equal(computeVerdict({ validation: VALID_VALIDATION, results: [BEST_RESULT], structuralBlocks: ["Diff berührt core/nope.mjs (außerhalb der Whitelist)"] }).verdict, "PLAN");

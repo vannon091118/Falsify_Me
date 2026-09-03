@@ -2,15 +2,23 @@
 # FalsifyMe · scripts/run-tests.sh – Tiered test runner (Test-Konsolidierung)
 # -----------------------------------------------------------------------------
 # Ein Einstieg für alle Test-Stränge. Tiers (datenbasiert, Sept 2026):
-#   fast  = Unit-Verträge < 3 s pro Datei (~7 s gesamt) — jeder Commit.
-#   core  = fast + Prozess-/DB-Suiten (~2.5 min) — vor jedem Push.
-#   full  = `npm test` (alle 33 Dateien, ~2 min node-parallel) — Release.
+#   fast  = Unit-Verträge < 3 s pro Datei — jeder Commit.
+#   core  = fast + Prozess-/DB-Suiten (inkl. DOKI-Live-Bridge-Kontrakt) —
+#           vor jedem Push.
+#   full  = `npm test` (alle Dateien, node-parallel) — Release.
 # Der alte AGENTS.md-Pfadsatz (19 Dateien) war bereits stale (14 fehlten) —
 # Tiers ersetzen die hardcoded Liste; `bash scripts/run-tests.sh` ohne Arg = core.
+# DOKI (2026-09-03): die schnellen Unit-Suiten laufen in fast, die DB-/Bridge-
+# Suiten in core (gemessen 2026-09-03: persistent-store ~4 s, bridge ~22 s,
+# doki-rotation ~4 s, falsify-contract ~10 s), runtime.test (~47 s) nur in full.
+# Pfadlisten PFLEGEN WEGEN: bei neuen Dateien hier eintragen.
 # ─────────────────────────────────────────────────────────────────────────────
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+
+# Static SQL safety guard runs for every tier, including fast.
+node scripts/check-sql-identifiers.mjs
 
 TIER="${1:-core}"
 
@@ -31,6 +39,12 @@ tests/bootstrap.test.mjs
 tests/agent.test.mjs
 tests/tui-regime.test.mjs
 tests/agent-stream-output.test.mjs
+tests/sql-identifiers.test.mjs
+tests/worker-kill.test.mjs
+doki/tests/reconstruction.test.mjs
+doki/tests/replay.test.mjs
+doki/tests/full-feature-skeleton.test.mjs
+doki/tests/narrator-catalog.test.mjs
 "
 
 case "$TIER" in
@@ -54,7 +68,13 @@ case "$TIER" in
       tests/full-loop-e2e.test.mjs \
       tests/full-loop-negative.test.mjs \
       tests/twin.test.mjs \
-      tests/scope-trace.test.mjs
+      tests/scope-trace.test.mjs \
+      tests/stats.test.mjs \
+      tests/handoff-report.test.mjs \
+      doki/tests/persistent-store.test.mjs \
+      doki/tests/bridge.test.mjs \
+      doki/tests/falsify-contract.test.mjs \
+      tests/doki-rotation.test.mjs
     ;;
   full)
     echo "── Tier: full (alle Tests via npm) ──"

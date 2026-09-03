@@ -41,17 +41,19 @@ Verwendung:
                                         Auswertungsrunde (STATUS + Exit 4 = läuft
                                         noch); --abort = Job abbrechen (keine Freigabe)
   falsify abort <job-id>                  laufenden Job abbrechen (kein Fake-Verdict)
-  falsify worker start [1..3]           registrierten Hintergrund-Worker starten
+  falsify worker start [1..3]           registrierten Hintergrund-Worker starten (--name "Agent X")
+  falsify worker kill [--dry-run]       Orphan-Worker gezielt stoppen (stale Heartbeat / tote PID);
+                                        [--force <fenster>] töten auch frischer Slots, [fenster] = gezielt
                                         (detached; verifiziert die Registrierung;
                                         sichtbarer Betrieb: Desktop-Icon/start-dock)
   falsify ensure-home                     FALSIFY_HOME anlegen/prüfen (Keys + DB, ausserhalb des Repos)
   falsify doctor                          Runtime-Vertragsprüfung (Node, Config, Key, DB-Schema)
   falsify settings show                   effektive Runtime-Settings (Secrets maskiert)
-  falsify settings set key=value …       Provider/Model/API-Base/API-Key runtime setzen
+  falsify settings set key=value …       Provider/API-Base/API-Key setzen (Modellwahl im Onboarding)
   falsify models [--api-base URL]         verfügbare Modelle + Provider-Pricing abrufen
   falsify bootstrap                       Bootstrap: Installiere + Dock-Start + Agent-Integration
-  falsify onboard [--skip-dock]           interaktive Ersteinrichtung (API-Endpunkt/Modell/Key,
-                                          schreibt Runtime-Settings; FALSIFYME redet mit dir)
+  falsify onboard [--skip-dock]           interaktive Ersteinrichtung (Endpunkt/Key → Nutzerwahl
+                                          Modell → Konto-Probe; FALSIFYME redet mit dir)
   falsify uninstall [--dry-run]           vollständige, saubere Deinstallation (npm-script:
                                           npm run uninstall:user)
   falsify help                            diese Hilfe`;

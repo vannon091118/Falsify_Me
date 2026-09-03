@@ -7,12 +7,165 @@
 // Exit: 0 = alles ok · 2 = Problem gefunden
 // ─────────────────────────────────────────────────────────────────────────────
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-export async function runDoctor() {
+// Marker-Dateien, die eine gültige Agent-Skill-Installation auszeichnen
+// (Parität mit instructions.mjs/install.mjs: dieselben drei Varianten).
+// Der Instruction-Verweis (~/.agents/skills/falsifyme) ist nur gültig, wenn
+// mindestens eine dieser Dateien existiert — sonst ist die Verweis-Kette
+// dangling (UI-144: Reparatur statt Warnung).
+export const AGENT_SKILL_MARKERS = [
+  "agent-skill-falsify.sh",
+  "agent-skill-falsify.mjs",
+  "agent-skill-falsify.ps1",
+];
+
+export function agentSkillsPath(homeDir = os.homedir()) {
+  return path.join(homeDir, ".agents", "skills", "falsifyme");
+}
+
+/**
+ * Read-only: sind die Agent-Skill-Marker installiert? (UI-144-Abgleich)
+ * homeDir injizierbar (Tests isolieren; Default echter Nutzer-Home).
+ * Liefert { ok, dir, present, missing } — keine Nebeneffekte.
+ */
+export function checkAgentSkillMarkers(homeDir = os.homedir()) {
+  const dir = agentSkillsPath(homeDir);
+  const present = AGENT_SKILL_MARKERS.filter((m) => {
+    try { return fs.statSync(path.join(dir, m)).isFile(); } catch { return false; }
+  });
+  // Verweis-Semantik (Parität instructions.mjs/UI-144): EINE der drei
+  // Varianten genügt — der Skill ist als sh ODER mjs ODER ps1 nutzbar.
+  const missing = AGENT_SKILL_MARKERS.filter((m) => !present.includes(m));
+  return { ok: present.length > 0, dir, present, missing };
+}
+
+/**
+ * Repair: dieselbe EINE Quelle wie der Bootstrap (UI-144) — kopiert die
+ * Agent-Skills idempotent aus dem Paket-/Core-Root nach ~/.agents/skills.
+ * NUR dieser eine Pfad; doctor repariert nicht parallel daneben.
+ */
+export async function repairAgentSkillMarkers({ homeDir = os.homedir(), packageRoot = ROOT } = {}) {
+  const { ensureAgentSkillsInstalled } = await import("./bootstrap/instructions.mjs");
+  return ensureAgentSkillsInstalled({ homeDir, packageRoot });
+}
+
+// Konfig-Datei, die den Version-Marker der ausgelieferten Skills traegt
+// (Paritaet mit install.mjs/ensureAgentSkillsInstalled: wird mitkopiert).
+const SKILL_CONFIG_FILE = "agent-skill-falsify.config.json";
+
+/**
+ * Read-only: Version der installierten ~/.agents-Skills (UI-148) aus der
+ * mitkopierten agent-skill-falsify.config.json. homeDir injizierbar.
+ * Liefert { ok, version, file } bzw. { ok:false, error } - kein Urteil ohne
+ * lesbare Versions-Konfig (fail-closed fuer den doctor-Vergleich).
+ */
+export function agentSkillVersion(homeDir = os.homedir()) {
+  const file = path.join(agentSkillsPath(homeDir), SKILL_CONFIG_FILE);
+  try {
+    const cfg = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (typeof cfg?.version !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(cfg.version)) {
+      return { ok: false, version: null, file, error: "Versionsfeld fehlt oder ist ungueltig" };
+    }
+    return { ok: true, version: cfg.version, file };
+  } catch (error) {
+    const reason = error?.code === "ENOENT" ? "Konfig-Datei fehlt" : error?.message || String(error);
+    return { ok: false, version: null, file, error: reason };
+  }
+}
+
+/**
+ * Skill-Reparatur (eine Quelle, UI-144/145/148): legt fehlende
+ * ~/.agents-Skills an ODER aktualisiert eine veraltete Anlage und weist den
+ * Marker-/Versions-Nachweis ehrlich aus. Gemeinsam genutzt von
+ * `--repair-skills` (nur Skills) und `--repair-all` (Schritt 1).
+ * Liefert { ok, repaired, refreshed } — kein Prozess-Exit hier.
+ */
+async function runSkillRepair(homeDir) {
+  const versionBefore = agentSkillVersion(homeDir);
+  const result = await repairAgentSkillMarkers({ homeDir, packageRoot: ROOT });
+  const after = checkAgentSkillMarkers(homeDir);
+  if (!result.ok) {
+    console.error(`FEHLER: Skill-Reparatur fehlgeschlagen: ${result.error}`);
+    return { ok: false, error: result.error, result };
+  }
+  const fmtV = (v) => (v?.ok ? `v${v.version}` : "(Version unbekannt)");
+  if (result.repaired && result.refreshed) {
+    // UI-148: Marker waren da, aber VERALTET - die Reparatur hat die
+    // Anlage ueberschreibend auf die Quell-Version gebracht.
+    const versionAfter = agentSkillVersion(homeDir);
+    console.log(`Agent-Skills aktualisiert: ${fmtV(versionBefore)} -> ${fmtV(versionAfter)} (veraltete Anlage ersetzt: ${after.dir})`);
+  } else if (result.repaired) {
+    console.log(`Agent-Skills nachinstalliert: ${after.dir}`);
+  } else {
+    console.log("Agent-Skills waren bereits installiert und aktuell – nichts zu reparieren.");
+  }
+  console.log(`Agent-Skill-Marker: ${after.present.join(", ") || "(keine)"}`);
+  const verified = result.repaired
+    ? "Verifiziert: doctor-Check gegen ~/.agents/skills/falsifyme ist jetzt grün (inkl. Versions-Abgleich)."
+    : `Verifiziert: doctor-Check gegen ~/.agents/skills/falsifyme ist grün (Agent-Skill-Version v${versionBefore?.version || "?"} = Runtime).`;
+  console.log(verified);
+  return { ok: true, repaired: Boolean(result.repaired), refreshed: Boolean(result.refreshed), result };
+}
+
+/**
+ * Worker-/Queue-Orphan-Reparatur (UI-150, Schritt 2/3 der repair-all-Kette):
+ * killt registrierte Orphan-Worker (tote PID ODER abgelaufener Heartbeat)
+ * ueber cli/worker-kill.mjs (EIN Kill-Pfad, keine eigene Queue-Schreiblogik)
+ * und schliesst danach RUNNING-Waisen fail-closed (reapStaleJobs laeuft
+ * immer — idempotent, schliesst auch Waisen abgemeldeter Worker).
+ */
+async function runWorkerRepair() {
+  const { repairStaleWorkers } = await import("./worker-kill.mjs");
+  const report = repairStaleWorkers();
+  if (!report.registeredTotal) {
+    console.log("Keine registrierten Worker – nichts zu stoppen (Queue-Orphan-Reap trotzdem gelaufen).");
+  } else if (!report.stopped.length) {
+    console.log(`Worker: ${report.registeredTotal} registriert, alle frisch – nichts zu stoppen.`);
+  }
+  for (const s of report.stopped) {
+    console.log(`  ✓ Fenster ${s.idx} · ${s.name} · PID ${s.pid} gestoppt (${s.reason}), Registrierung geräumt.`);
+  }
+  if (report.killed || report.cleaned) {
+    console.log(`Worker-Orphans: ${report.killed} Prozess(e) gestoppt, ${report.cleaned} Registrierung(en) geräumt.`);
+  }
+  if (report.reaped.length) {
+    console.log(`♻ ${report.reaped.length} Waisen-Job(s) fail-closed geschlossen (ERROR Worker-Abbruch (Recovery)): ${report.reaped.join(", ")}`);
+  }
+  return report;
+}
+
+export async function runDoctor(cliArgs = []) {
+  const repairAll = cliArgs.includes("--repair-all");
+  // `falsify doctor --repair-skills`: ausschliesslich die Skill-Reparatur
+  // (eine Verantwortung) — kein kompletter Bootstrap, keine Icons, kein
+  // Core-Copy. Danach ehrlicher Nachweis gegen die Marker.
+  if (cliArgs.includes("--repair-skills") && !repairAll) {
+    const skill = await runSkillRepair(os.homedir());
+    if (!skill.ok) process.exitCode = 3;
+    return;
+  }
+  // `falsify doctor --repair-all` (UI-150): JEDE auto-fixbare Reparatur in
+  // Abhaengigkeitsreihenfolge — 1. Skills (Datei-Anlage/Versions-Refresh),
+  // 2. Worker-Orphans (stale Worker killen), 3. Queue-Orphans (Reap). Danach
+  // laeuft der VOLLSTAENDIGE Standard-Pruefkoerper unten als Re-Check: was
+  // verbleibt, wird als Problem gezaehlt (Exit 2), sonst Exit 0.
+  if (repairAll) {
+    console.log("FalsifyMe doctor --repair-all (alle auto-fixbaren Reparaturen in Abhaengigkeitsreihenfolge)\n");
+    console.log("Schritt 1/2 – Agent-Skills (fehlt/veraltet -> nachinstallieren/aktualisieren):");
+    await runSkillRepair(os.homedir());
+    console.log("");
+    console.log("Schritt 2/2 – Worker- und Queue-Orphans (stale Worker killen, Waisen fail-closed schliessen):");
+    await runWorkerRepair();
+    console.log("");
+    console.log("──── Re-Check: der vollstaendige doctor-Pruefkoerper laeuft jetzt erneut ────");
+    console.log("");
+  }
+
   const problems = [];
   const ok = (m) => console.log(`  ✅ ${m}`);
   const bad = (m) => { problems.push(m); console.log(`  ❌ ${m}`); };
@@ -110,9 +263,9 @@ export async function runDoctor() {
     const snap = workerSnapshot(db);
     const queued = listJobs(db, { status: "QUEUED" });
     if (snap.fresh.length) {
-      ok(`Worker: ${snap.fresh.length} aktiv (${snap.fresh.map((w) => `Fenster ${w.idx}, pid ${w.pid}`).join(" · ")}) – Hintergrund- oder Dock-Fenster zählen gleichermaßen (eine Registrierung, ein Heartbeat).`);
+      ok(`Worker: ${snap.fresh.length} aktiv (${snap.fresh.map((w) => `${w.name || `Agent ${w.idx}`} · Fenster ${w.idx} · pid ${w.pid}`).join(" · ")}) – Hintergrund- oder Dock-Fenster zählen gleichermaßen (eine Registrierung, ein Heartbeat).`);
     } else if (snap.stale.length) {
-      bad(`Worker registriert, aber Herzschlag abgelaufen (Fenster ${snap.stale.map((w) => w.idx).join(", ")}) – Prozess tot oder gekillt. Sofort starten (Hintergrund): falsify worker start 1 · Windows sichtbar: Desktop-Icon "FalsifyMe" oder ui\\start-dock.cmd 1`);
+      bad(`Worker registriert, aber Herzschlag abgelaufen (${snap.stale.map((w) => `${w.name || `Agent ${w.idx}`}, Fenster ${w.idx}`).join(", ")}) – Prozess tot oder gekillt. Orphan räumen: falsify worker kill --dry-run · Neu starten: falsify worker start 1 · Windows sichtbar: Desktop-Icon "FalsifyMe" oder ui\\start-dock.cmd 1`);
     } else if (queued.length) {      bad(`Kein Worker aktiv, aber ${queued.length} Job(s) QUEUED – sie bleiben hängen, bis ein Worker startet. Sofort starten (Hintergrund): falsify worker start 1 · Windows sichtbar: Desktop-Icon "FalsifyMe" oder ui\\start-dock.cmd 1`);
     } else {
       console.log("  ℹ️  Kein Worker aktiv (Queue leer – ein Worker wird erst beim ersten Job gebraucht. Start: falsify worker start 1 · Windows sichtbar: ui\\start-dock.cmd 1)");
@@ -120,6 +273,51 @@ export async function runDoctor() {
     closeDb();
   } catch (e) {
     bad(`DB: ${e.message}`);
+  }
+
+  // 7) Agent-Skills (~/.agents/skills/falsifyme – UI-144): die Instruction-
+  // Pfade, auf die Bootstrap/Onboarding verweisen, sind nur gültig, wenn die
+  // Marker-Dateien wirklich installiert sind. Fehlt die Anlage, nennt doctor
+  // die EINE Reparatur-Kommandozeile (kein dangling Verweis, kein stilles
+  // Ok). UI-148: vorhanden ist nicht aktuell — die installierte Skill-Version
+  // wird gegen die Runtime (package.json des laufenden doctor = installierter
+  // Core) verglichen; ältere ~/.agents-Skills hinter einem neueren Core sind
+  // ein Drift und werden als Problem mit Reparatur-Kommando gemeldet.
+  // Zusätzlich: der Startup-Skill-Check (den main.mjs für doctor überspringt)
+  // wird hier sichtbar gemacht — doctor bleibt der Diagnose- und
+  // Reparaturpfad, andere Befehle fail-closed.
+  {
+    const markers = checkAgentSkillMarkers(os.homedir());
+    if (markers.ok) {
+      ok(`Agent-Skills installiert (${markers.dir})`);
+    } else {
+      bad(`Agent-Skills fehlen unter ${markers.dir} – die Instruction verweist auf Pfade, die nicht existieren. Reparatur (eine Quelle, idempotent): falsify doctor --repair-skills`);
+    }
+    if (markers.ok) {
+      const { compareVersions } = await import("../core/skill-version.mjs");
+      const runtimeVersion = pkg.version;
+      const skillVersion = agentSkillVersion(os.homedir());
+      if (!skillVersion.ok) {
+        bad(`Agent-Skill-Version nicht lesbar (${skillVersion.file}): ${skillVersion.error} – Reparatur (kopiert die Versions-Konfig mit): falsify doctor --repair-skills`);
+      } else {
+        const cmp = compareVersions(skillVersion.version, runtimeVersion);
+        if (cmp === 0) {
+          ok(`Agent-Skill-Version v${skillVersion.version} = Runtime v${runtimeVersion}`);
+        } else if (cmp < 0) {
+          bad(`Agent-Skills v${skillVersion.version} sind ÄLTER als der installierte Core v${runtimeVersion} – die referenzierten Skills koennen hinter der Runtime-Logik zurueckliegen. Aktualisierung (eine Quelle, ueberschreibt veraltete Anlage): falsify doctor --repair-skills`);
+        } else {
+          bad(`Agent-Skills v${skillVersion.version} sind NEUER als der laufende Core v${runtimeVersion} – den Core aktualisieren (Re-Install / node install.mjs), bevor diese Skills genutzt werden.`);
+        }
+      }
+    }
+    try {
+      const { verifySkillsAtStartup, formatSkillCheck } = await import("../core/skill-version.mjs");
+      const runtime = verifySkillsAtStartup({ runtimeRoot: ROOT });
+      if (runtime.ok) ok(`Skill-Integrität (Runtime): ${formatSkillCheck(runtime)}`);
+      else bad(`Skill-Integrität (Runtime): ${formatSkillCheck(runtime)}`);
+    } catch (e) {
+      bad(`Skill-Integrität (Runtime): ${e.message}`);
+    }
   }
 
   console.log("");

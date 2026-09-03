@@ -91,9 +91,15 @@ cli/onboard.mjs            ← Onboarding-Dialog (falsify onboard, siehe §13)
 cli/jobs.mjs               ← status/jobs/ping/abort (Wait-Auswertung + CLI-Abbruch)
 cli/workerliveness.mjs     ← Worker-Liveness (EINE Wahrheit: Frische = Heartbeat, egal ob
                              Dock-Fenster oder Hintergrund) + plattformkorrekte Hinweise
-cli/worker-start.mjs       ← falsify worker start [1..3]: detached Hintergrund-Worker,
-                             verifiziert die Registrierung ehrlich (kein Fake-Erfolg)
+cli/worker-start.mjs       ← falsify worker start [1..3] [--name]: detached Hintergrund-Worker,
+                             verifiziert die Registrierung ehrlich (kein Fake-Erfolg);
+                             Agent-Name (UI-142) wird als Registrierungs-Metadatum gesetzt
+cli/worker-kill.mjs        ← falsify worker kill (UI-141): gezieltes Orphan-Killen (stale Heartbeat /
+                             tote PID, nur PIDs DIESES Falsify_Home, kein Prozess-Scan); --dry-run /
+                             --force <n>; Waisen-Jobs schließt die BESTEHENDE Recovery fail-closed
 artifacts/stats.mjs        ← Progression-Statistik (read-only User-Anker aus der Queue)
+scripts/check-sql-identifiers.mjs ← CI-Guard: repo-weiter Scan interpolierter SQL-Identifier;
+                                  nur assertIdentifier/assertSqlIdentifier mit ALLOWED_* Set
 cli/stats.mjs              ← falsify stats [--json] (Anzeige der Statistik)
 cli/onboard/prompts.mjs    ← echter readline-Dialog: ask/askSecret(maskiert)/confirm
 cli/onboard/steps.mjs      ← Onboarding-Ablauf (Settings abfragen, Dock-Start)
@@ -309,7 +315,8 @@ der jeweilige Agent muss diesen Skillpfad tatsächlich unterstützen.
 
 ```bash
 falsify settings show
-falsify settings set provider="Provider-Name" apiBase="https://host/v1" model="model-id"
+falsify settings set provider="Provider-Name" apiBase="https://host/v1"
+# Modell-ID waehlt der Nutzer interaktiv: falsify onboard
 falsify settings set apiKeyName="PROVIDER_KEY" apiKey="secret"
 falsify models
 falsify models --api-base "https://host/v1" --api-key "$PROVIDER_KEY"
@@ -322,13 +329,18 @@ Dateirechten (POSIX 0600; Windows ACLs bleiben dem Benutzerkonto überlassen).
 die Env-Variable `FALSIFY_HOME` bleibt als Override nutzbar.
 `settings show` gibt keinen Key aus. `/models` ist provider-neutral und nutzt
 den konfigurierten Endpunkt; Pricing wird nur aus Provider-Antwort oder
-lokaler Konfiguration übernommen, niemals erfunden. Die bestehende
+lokaler Konfiguration übernommen, niemals erfunden. Das Onboarding zeigt den
+Katalog dem Nutzer zur Auswahl; ein Katalogeintrag wird erst nach einer
+Minimal-Completion gegen den Konto-Zugriff bestätigt. Ein Modell-404 mit
+„Function not found for account“ erlaubt eine neue Nutzerwahl, 401/403,
+429, Timeout und 5xx lösen dagegen keinen Modellwechsel aus. Die bestehende
 `core/config.mjs` liest die Werte bei jedem Runtime-Aufruf neu.
 
 ## 8. TEST-/VERIFIKATIONS-BEFEHLE (für Agents)
 
 ```bash
 # EIN Vertrags-Einstieg (Test-Konsolidierung 2026-09-03, siehe AGENTS.md):
+npm run check:sql              # CI-Guard: interpolierte SQL-Identifier fail-closed
 bash scripts/run-tests.sh fast   # Unit-Verträge, ~8 s — jeder Commit
 bash scripts/run-tests.sh core   # + Prozess-/DB-Suiten, ~2.5 min — vor Push
 npm test                         # full: alle 33 Dateien — Release
@@ -550,9 +562,12 @@ node uninstall.mjs --dry-run           # Deinstallations-Trockenlauf
 
 `falsify onboard` ist der interaktive Ersteinrichtungs-Dialog: FALSIFYME
 redet DIREKT mit dem Nutzer (kein stiller Setup-Lauf). Er fragt API-Endpunkt,
-Modell, Key-Name und API-Key (maskiert) ab, schreibt die Runtime-Settings
-(Keys nur in `FALSIFY_HOME/.env`, 0600), bietet live `/models` an und
-startet danach das sichtbare Dock (Windows, TUI).
+Key-Name und API-Key (maskiert) ab, lädt danach den Modellkatalog und lässt den
+Nutzer eine konkrete Modell-ID per Nummer oder exakter ID auswählen. Diese
+Auswahl wird mit einer Minimal-Completion gegen den Konto-Zugriff geprüft;
+Katalogdaten allein gelten nicht als Entitlement. Erst danach schreibt der
+Dialog die Runtime-Settings (Keys nur in `FALSIFY_HOME/.env`, 0600) und
+startet das sichtbare Dock (Windows, TUI).
 
 ### Module (1 Datei = 1 Verantwortung)
 
@@ -560,13 +575,16 @@ startet danach das sichtbare Dock (Windows, TUI).
 |---|---|
 | `cli/onboard.mjs` | duenner Einstiegspunkt: Flags `--skip-dock`/`--help`, TTY-Guard (ohne Terminal: klare Fehlermeldung + Agent-Hinweis auf `falsify settings set …`, Exit 2) |
 | `cli/onboard/prompts.mjs` | Dialog-Bausteine: `ask` (Default aus Antwort), `askSecret` (jeder Tastendruck = \*), `confirm`, `fakePrompter` für Tests (injizierbar, Default-Verhalten identisch) |
-| `cli/onboard/steps.mjs` | `runOnboard` (Kompositionswurzel): `showStatus` → (fehlt ein Key: 2-APIs-Erklaerung via explain.mjs) → `collectSettings` → `updateRuntimeSettings` → optional `/models` → Dock-Start → `showSummary`; Prompter/Plattform injizierbar |
+| `cli/onboard/steps.mjs` | `runOnboard` (Kompositionswurzel): `showStatus` → (fehlt ein Key: 2-APIs-Erklaerung via explain.mjs) → `collectSettings` (Endpunkt/Key → Katalog → Nutzerwahl → Konto-Probe) → `updateRuntimeSettings` → Dock-Start → `showSummary`; Prompter/Plattform injizierbar |
 | `cli/onboard/explain.mjs` | API-Key-Erklaerung (pure Text, keine Logik/Secrets): wozu (bis zu) zwei APIs — Hauptmodell/Thinker (Pflicht) + optionale Evil-Twin-API — + Online-Key-Seiten (NVIDIA/OpenAI), .env-Ort; genutzt von Onboarding UND Bootstrap |
 
 ### Regeln / Verträge
 
 - **Ehrlichkeit:** leerer Key / leere Antwort = „keine Änderung", kein Ratten; der
   Key erscheint NIE im Klartext (weder in Fragen noch in Ausgabe/JSON).
+- **Modellhoheit:** Der Nutzer wählt die Hauptmodell-ID im Onboarding. `/models`
+  ist nur ein Katalog; eine Minimal-Completion prüft den Konto-Zugriff, und
+  Transient-/Auth-Fehler führen fail-closed zum Abbruch statt zu Modell-Roulette.
 
 ## 14. UMSETZBARKEITS-PUFFER (Intent → Execution, UI-078 revidiert)
 
@@ -704,8 +722,13 @@ Intake-Persistenz, atomare Claim-Affinität, reapStaleJobs, Härtungs-
 Zustandsmaschine, ASK/exitCodeOf, buildUserContent-Intake) +
 `node --test tests/selfreview.test.mjs` (4 Tests: Marker-Erkennung, Union/
 Existenzfilter, Fremdprojekt, Live-Submit-Smoke) +
-`node --test tests/invariants.test.mjs` (4 Tests: statischer Writer-Beweis,
-konsistenter Zustand, verletzte Ableitungen, Phase-Stabilität UNBEKANNT).
+`node --test tests/invariants.test.mjs` (11 Tests: statischer Writer-Beweis,
+Sync-fs-Census ui/+artifacts/ — UI-149, 2026-09-03: rohe Sync-Write-APIs nur
+in allowlisteten Dateien mit WHY; ui/worker.mjs heißt Regionen
+setInterval/for(;;) sync-frei, dlog-Wrapper ok; Crash-Handler bewusst
+Sync-MUST, da process.exit(1) kein async flush überlebt; Selbstzertifizierung
+worker=4/db=1), konsistenter Zustand, verletzte Ableitungen, Phase-Stabilität
+UNBEKANNT, weitere dynamische Checker.
 
 ---
 
@@ -818,3 +841,31 @@ unautorisierte/fremde/ungültige Reports → Exit 3 ohne Child; Header-Drift →
 Job-Abweisung ohne Modell-Call. Idempotenz: 100 identische Reports → 1 Child
 (`tests/loop.test.mjs`). TUI spiegelt Zustände nur (`loop`-Event, UI-123,
 CON-004: kein UI-eigener Zustand).
+
+## §18b — DOKI-Live-Bridge (Side-Channel, kein Autoritäts-Pfad)
+
+`doki/` ist ein reiner Beobachter (fail-open, keine Verdict-/Loop-/Write-
+Hoheit; siehe `doki/README.md`). Verdrahtung: `ui/worker.mjs` (nur TTY)
+importiert die Bridge lazily, injiziert Provider/Slot-State/`currentModel` aus
+FalsifyMes EINZIGER Config-Wahrheit und füttert JEDES geparste FM-EVT
+(`{...evt, job, session}`, Zeile ~483) exactly-once in `bridge.ingest`
+(doki.db).
+
+FM-EVT-Vokabular-Vertrag (Abgleich UI-137/UI-138, 2026-09-03; belegt in
+`doki/tests/falsify-contract.test.mjs`):
+
+- `bridge.ingest` mappt `event_type = event_type ?? type ?? t` — FalsifyMe
+  spricht `t`, DOKI beobachtet `event_type` (vorher NULL: C.A.R.E.
+  CLAIM/ATTACK und Loop-/Handoff-Events waren im Live-Pfad unsichtbar).
+- `observer.ingest` stampft die berechnete Identität als eigenes
+  `observation_id` (nie über ein Payload-`id` eines FM-EVT — sonst klaut
+  job.id/handoff_id die Zeilen-Identität; Duplikat-Guard + Cursor brechen).
+  `doki/src/observer-store.mjs` bevorzugt `observation_id` vor `id`
+  (persistenter + Memory-Store); Payload bleibt im event_json intakt.
+- UI-137-Workflow im Bridge-Strom: `handoff`-/`loop`-Events (WRITE_AUTHORIZED
+  → stille agentenseitige Lücke → Re-Review-Child RE_REVIEW_RUNNING …) sind
+  nach Typ sichtbar; `falsify handoff report`/`complete` sind BEWUSST
+  off-stream (kein FM-EVT) — die Lücke erzeugt keine Observation und keinen
+  DOKI-Call.
+- Test-Heimat: DOKI-Suiten in `scripts/run-tests.sh` (fast/core; runtime.test
+  nur full); `npm test` deckt `doki/tests/*.test.mjs` ab.

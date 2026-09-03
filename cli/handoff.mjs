@@ -212,6 +212,17 @@ export async function runHandoff(args) {
   let report;
   try { report = JSON.parse(fs.readFileSync(file, "utf8")); }
   catch (e) { console.error(`FEHLER: Report nicht lesbar (${file}): ${e.message}`); process.exit(2); }
+  // NODE-REVIEW-2026-09-03: Der Agent-Report ist UNTRUSTED — getJob(db,
+  // report.job_id) läuft VOR validateChangeReport. Ohne Guard trifft ein
+  // fehlender/kein-String job_id (oder ein ganz kaputtes Report-Objekt) die
+  // node:sqlite-Bind-Falle ("Provided value cannot be bound...", irreführend,
+  // Exit 3) bzw. einen TypeError — Pflichtfeld-Verletzungen gehören aber zur
+  // ehrlichen Exit-2-Vertragsklasse (wie --job-id auf CLI-Ebene). Guard VOR
+  // jedem DB-Zugriff, fail-closed; valid geformte Reports passieren unangetastet.
+  if (typeof report?.job_id !== "string" || !report.job_id.trim()) {
+    console.error("FEHLER: Report-Pflichtfeld job_id fehlt oder ist kein nicht-leerer String (Abbruch VOR jedem DB-Zugriff).");
+    process.exit(2);
+  }
 
   const db = openDb();
   try {

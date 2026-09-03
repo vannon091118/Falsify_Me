@@ -62,7 +62,12 @@ test("Migration: Bestands-DB bekommt die Etage-2-Spalten ohne Datenverlust", asy
 
     const { openDb, closeDb } = await mod("artifacts/db.mjs");
     const migrated = openDb();
-    const cols = (s) => migrated.prepare(`PRAGMA table_info(${s})`).all().map((c) => c.name);
+    const ALLOWED_SCHEMA_TABLES = new Set(["jobs", "scopes", "findings"]);
+    const assertSqlIdentifier = (value) => {
+      if (!ALLOWED_SCHEMA_TABLES.has(value)) throw new Error(`Unbekannte Schema-Tabelle: ${value}`);
+      return value;
+    };
+    const cols = (s) => migrated.prepare(`PRAGMA table_info(${assertSqlIdentifier(s)})`).all().map((c) => c.name);
     for (const c of ["agent_intent", "affected", "wave"]) assert.ok(cols("jobs").includes(c), `jobs.${c}`);
     for (const c of ["open_conflicts", "hardened_at"]) assert.ok(cols("scopes").includes(c), `scopes.${c}`);
     assert.ok(cols("findings").includes("wave"), "findings.wave");

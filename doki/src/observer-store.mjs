@@ -16,11 +16,17 @@ export const OBSERVATION_COLUMNS = Object.freeze([
 ]);
 
 function normalizeObservation(observation) {
-  if (!observation?.id) throw new Error('DOKI observation requires id');
+  // Identitaet: `observation_id` (vom Observer gestempelt, kollidiert nie mit
+  // einem Payload-`id` des Raw-Events) hat Vorrang vor einem top-level `id`.
+  // Ohne Vorrang klaute ein FM-EVT mit eigenem `id` (job.id/handoff_id) die
+  // Zeilen-Identitaet — Duplikat-Guard und Cursor verfehlten die Zeile
+  // (belegt in doki/tests/falsify-contract.test.mjs).
+  const rowId = observation?.observation_id ?? observation?.id;
+  if (!rowId) throw new Error('DOKI observation requires id');
   const event = clone(observation);
   return {
-    id: String(event.id),
-    sourceEventId: String(event.source_event_id ?? event.event_id ?? event.id),
+    id: String(rowId),
+    sourceEventId: String(event.source_event_id ?? event.event_id ?? rowId),
     sessionId: event.session_id ?? event.session ?? null,
     jobId: event.job_id ?? event.job ?? null,
     seq: Number.isInteger(event.seq) ? event.seq : null,
@@ -50,13 +56,15 @@ function toObservation(row) {
 export function createMemoryStore() {
   const observations = new Map();
   let cursor = null;
+  const rowId = (observation) => observation?.observation_id ?? observation?.id ?? null;
   return {
     readCursor: () => cursor,
     hasObservation: (id) => observations.has(id),
     appendObservation: (observation) => {
-      if (observations.has(observation.id)) return false;
-      observations.set(observation.id, clone(observation));
-      cursor = observation.id;
+      const id = rowId(observation);
+      if (!id || observations.has(id)) return false;
+      observations.set(id, clone(observation));
+      cursor = id;
       return true;
     },
     list: () => [...observations.values()].map(clone),

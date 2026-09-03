@@ -86,13 +86,34 @@ Produktionspfad: DOKI entscheidet nichts, es folgt der FalsifyMe-Wahrheit.
 
 ### Evidence ledger (ehrlich, Stand dieser Implementierung)
 
-- PROVEN (doki/tests/bridge.test.mjs, 12/12): Exactly-once Ingestion + Dedup
+- PROVEN (doki/tests/bridge.test.mjs, 15/15): Exactly-once Ingestion + Dedup
   über Restart/Sidecar-Grenzen; Cursor-Trennung ingest vs. replay;
   Zustandskette COLLECTING→WAITING→PROMPT_READY→THINKER_RUNNING→
   OUTPUT_READY→COLLECTING aus echten ingest/pump-Zyklen; Variable-Waiting
   (poll nach Slot-Freiwerden OHNE neues Event); atomarer Claim (Verlierer
   ruft nicht); Stale-Takeover; Crash-Recovery ohne Observationsverbrauch;
   keine `DOKI_*`/`process.env`-Lesungen im Produktionspfad.
+- PROVEN (doki/tests/bridge.test.mjs, Audit-Härtung 2026-09-03):
+  Provider-Ausfall-Cooldown (`errorCooldownMs`, default 30 s) begrenzt den
+  Retry-Sturm des 1-s-Idle-Polls — sofortige Folge-pump() liefert
+  ERROR_COOLDOWN OHNE neuen Call, nach Ablauf wird ehrlich erneut versucht
+  (Observations bleiben durabel, Grenze unverrückt); Idle-Short-Circuit:
+  unveränderter ingest-Cursor seit dem letzten Leer-Scan → NO_NEW ohne
+  Voll-Tabellen-Scan + JSON.parse jeder Zeile pro Idle-Tick;
+  observer.buffered ist ein Zähler statt der unbegrenzt wachsenden
+  Buffer-Liste (nur .length wurde je gelesen; Semantik identisch,
+  Speicher konstant).
+- PROVEN (doki/tests/falsify-contract.test.mjs, 2/2, Abgleich 2026-09-03):
+  FM-EVT-Vokabular-Brücke `t → event_type` (Live-Observations tragen ihren
+  Typ — C.A.R.E. CLAIM='job'/ATTACK='finding' und die UI-137-Loop-Events
+  handoff/loop/scope_auto sind sichtbar) und der externe-Writer-Loop: der
+  WRITE-Job-Strom (inkl. 'handoff' + 'loop' WRITE_AUTHORIZED) wird
+  exactly-once beobachtet, die agentenseitige Lücke (`falsify handoff
+  report`/`complete` sind bewusst OHNE FM-EVT) erzeugt keine Observation und
+  keinen Thinker-Call, der Re-Review-Child-Strom (RE_REVIEW_RUNNING …) die
+  zweite Runde. Dazu der Identitäts-Fix in observer.mjs: die berechnete
+  observation_id kollidiert nie mit einem Payload-`id` (job.id/handoff_id),
+  Duplikat-Guard + Cursor bleiben konsistent, Payload bleibt intakt.
 - NOT PROVEN / UNKNOWN: **FalsifyMe-seitige Reservation**. Der gemeinsame
   Thinker-Slot ist aus DOKI-Sicht atomar (doki.db), aber FalsifyMe selbst
   reserviert den Provider NICHT atomar gegen DOKI — ein im claim-Fenster

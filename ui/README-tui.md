@@ -1,6 +1,6 @@
 # FalsifyMe 2.0 — Terminal-UI (ui/) — PHASE 1 + 2 (live verdrahtet)
 
-**Version 0.9.1** (`0.9.1` im `package.json`; Produkt-Runtime bleibt
+**Version 0.9.2** (`0.9.2` im `package.json`; Produkt-Runtime bleibt
 Read-only-Gateway, Business-Logik unverändert).
 
 **Dokumentationsstand:** Phase 1 (visuelle Implementierung) abgeschlossen,
@@ -237,6 +237,9 @@ Startup-Selftest:
 
 - **Boot-Wort (Spec §5):** Das Intro baut visuell `F A L S I F Y _ M E`
   (mit Unterstrich, gespaced) auf — `boot.mjs` `WORD = "FALSIFY_ME"`.
+- **Catchphrase:** Darunter steht einzeilig `boot.mjs` `CATCHPHRASE =
+  "FALSIFY."` (BootView, cyan) — der Name als Imperativ aus Sicht des
+  geprüften Agenten.
 - **Selftest (Spec §6):** Der Worker emit-t beim Startup echte Pruefungen als
   `{t:"selftest", step:{name,ok,detail}}` in dieser Reihenfolge: RUNTIME →
   DATABASE → CONFIG → API KEY → QUEUE → WORKER → READ-ONLY. Jeder Schritt ist

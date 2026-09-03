@@ -294,5 +294,47 @@ export async function fetchAvailableModels({ apiBase, apiKey, timeoutMs = 15000 
   }
 }
 
+/**
+ * Prueft genau ein vom Nutzer ausgewaehltes Modell gegen den konfigurierten
+ * Endpunkt. Ein erfolgreicher /models-Katalog ist nur ein Katalog-Nachweis;
+ * diese minimale Completion prueft den Konto-/Entitlement-Zugriff.
+ */
+export async function probeModelAccess({ apiBase, apiKey, model, timeoutMs = 15000 } = {}) {
+  const settings = getRuntimeSettings();
+  const base = String(apiBase || settings.apiBase).replace(/\/+$/, "");
+  const selected = String(model || "").trim();
+  if (!/^https?:\/\//i.test(base)) throw new Error("apiBase muss mit http:// oder https:// beginnen");
+  if (!selected) throw new Error("model muss ein nichtleerer Text sein");
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders(apiKey) },
+      body: JSON.stringify({
+        model: selected,
+        messages: [{ role: "user", content: "Reply with OK." }],
+        max_tokens: 1,
+        temperature: 0,
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`Modell-Probe HTTP ${res.status}: ${text.slice(0, 300)}`);
+    let body;
+    try { body = JSON.parse(text); } catch {
+      throw new Error("Modell-Probe lieferte keine gueltige JSON-Antwort");
+    }
+    if (!body || typeof body !== "object" || !Array.isArray(body.choices) || body.choices.length === 0) {
+      throw new Error("Modell-Probe lieferte keine Completion");
+    }
+    return { ok: true, model: selected, providerModel: body.model || null };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export const settingsPaths = () => ({ configFile: configPath(), envFile: envPath() });
 export const redactSettings = redact;

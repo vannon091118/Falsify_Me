@@ -96,6 +96,14 @@ await fs.writeFile(path.join(coreDir, "install-location.json"), JSON.stringify({
 }, null, 2));
 await fs.mkdir(skillsDir, { recursive: true });
 await copyTree(path.join(root, "skills"), path.join(skillsDir, "falsifyme"));
+// VERIFIZIERUNG (UI-144): „Agent-Skills: …" am Ende ist eine Behauptung —
+// hier wird sie ECHT geprüft (Marker-Datei im Ziel). Fehlt sie, war die
+// Quelle unvollständig/der Copy-Pfad falsch -> Installation bricht KLAR
+// ab statt die dangling warning des Bootstraps zu erzeugen.
+const skillMarker = path.join(skillsDir, "falsifyme", "agent-skill-falsify.sh");
+if (!existsSync(skillMarker)) {
+  throw new Error(`Installation unvollständig: Agent-Skill-Marker fehlt nach Kopie: ${skillMarker} (Quelle: ${path.join(root, "skills")})`);
+}
 // FalsiFlow-Session-Skill: eigener Skill-Ordner mit SKILL.md, damit
 // /falsifyme-falsiflow direkt nach der Installation funktioniert. Der
 // Session-Workflow nutzt NUR aufgeloeste Pfade (~/.Falsify_Core, siehe

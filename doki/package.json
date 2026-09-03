@@ -1,8 +1,7 @@
 {
   "name": "doki-runtime",
-  "version": "0.1.0",
   "private": true,
-  "description": "DOKI side-channel runtime for FalsifyMe: read-only observation, deterministic history/Q-learning, model selection and SQLite persistence.",
+  "description": "DOKI side-channel runtime for FalsifyMe: read-only observation, deterministic history/Q-learning, model selection and SQLite persistence. DOKI carries NO own release version — the single version source of this repo is the root package.json (FalsifyMe release); semantic contract versions live in doki/src/contracts.mjs (RUNTIME_VERSION) and the *-RULE_VERSION constants.",
   "type": "module",
   "engines": { "node": ">=22.5.0" },
   "scripts": { "test": "node --test tests/*.test.mjs", "start": "node src/cli.mjs" },

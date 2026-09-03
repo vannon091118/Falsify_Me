@@ -52,7 +52,13 @@ export async function startDock(installLocation, {
     }
   }
   console.warn(`Dock wurde gestartet, aber Worker nicht innerhalb von ${pollSeconds}s als RUNNING erkannt.`);
-  console.warn(`Manuell pruefen: ${startDockCmd}`);
+  // UI-141: statt generischem "Manuell pruefen" die konkreten Agent-Schritte —
+  // häufigste Ursache ist ein ORPHER Worker (alter Install-Pfad, z. B.
+  // C:\tmp\bs-dock-…), der den Slot hält, sodass sich das neue Fenster still
+  // selbst schließt (isWorkerAlive-Guard). Erst räumen, dann neu starten.
+  console.warn(`  1) Orphan pruefen/räumen: falsify worker kill --dry-run   (dann ohne --dry-run ausführen)`);
+  console.warn(`  2) Neu starten: falsify worker start 1  ·  oder sichtbar: ui\\start-dock.cmd 1`);
+  console.warn(`  Alternativ manuell pruefen: ${startDockCmd}`);
   return { ok: false, error: "Worker nicht als RUNNING erkannt (Timeout)" };
 }
 

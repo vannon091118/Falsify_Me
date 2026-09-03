@@ -1,6 +1,10 @@
 ![FalsifyMe Banner](falsifyme-banner.svg)
 
-# FALSIFYME — v0.9.1
+# FALSIFYME — v0.9.2
+
+> **FALSIFY.** — die Catchphrase des Projekts: ein Wort, ein Imperativ, aus
+> Sicht des geprüften Agenten. Sie steht auf dem Boot-Screen (ui/tui/boot.mjs
+> `CATCHPHRASE`) und im Banner.
 
 Zwischen einer Behauptung und einer Freigabe sitze ich. Ich bin Falsify_ME —
 das **read-only Falsifikations-Gateway für Coding-Agenten**, und der Name ist
@@ -263,16 +267,16 @@ Ollama, …). Der bequemste Weg ist der Dialog — FalsifyMe fragt Schritt für
 Schritt:
 
 ```bash
-falsify onboard            # interaktiv: API-Endpunkt → Modell → Key-Name →
-                           # API-Key (maskiert) → /models abrufen? → Dock-Start
+falsify onboard            # interaktiv: API-Endpunkt → Key-Name → API-Key
+                           # (maskiert) → Modellkatalog → Nutzerwahl → Konto-Probe → Dock
 ```
 
 Oder per CLI-Konfiguration:
 
 ```bash
-falsify settings set apiBase="https://…" model="…" apiKeyName="MEIN_API_KEY"
+falsify settings set apiBase="https://…" apiKeyName="MEIN_API_KEY"
 falsify settings set apiKeyName="NVIDIA_API_KEY" apiKey="<dein-key>"
-falsify models             # listet verfügbare Modelle des Endpunkts
+falsify models             # zeigt den Katalog; Auswahl erfolgt im Onboarding
 ```
 
 Keys liegen ausschließlich in `FALSIFY_HOME/.env` (private Rechte), nie im
@@ -359,14 +363,18 @@ FALSIFY_HOME/
 
 Priorität: Prozessumgebung → `config.json` → Defaults. Provider, API-Base und
 Modell werden nicht aus einer festen Modellliste gewählt; sie kommen aus den
-Runtime-Settings. Die Modellliste wird optional live vom konfigurierten
-Provider über `/models` abgerufen. **Pricing wird nur angezeigt, wenn es der
-Provider liefert oder du es in `config.json` hinterlegst — FalsifyMe erfindet
-keine Preise.**
+Runtime-Settings. Das Onboarding ruft den Modellkatalog live über `/models` ab,
+zeigt ihn dem Nutzer und speichert nur dessen Auswahl. **Der Katalog beweist
+keinen Konto-Zugriff:** Vor dem Speichern prüft eine Minimal-Completion die
+gewählte ID. Bei 404 „Function not found for account“ wählt der Nutzer erneut;
+bei 401/403, 429, Timeout oder 5xx bricht der Dialog fail-closed ab. Pricing wird
+nur angezeigt, wenn es der Provider liefert oder du es in `config.json`
+hinterlegst — FalsifyMe erfindet keine Preise.**
 
 ```bash
 falsify settings show
-falsify settings set provider="Mein Provider" apiBase="https://example.invalid/v1" model="mein/modell"
+falsify settings set provider="Mein Provider" apiBase="https://example.invalid/v1"
+# Modell-ID waehlt der Nutzer interaktiv: falsify onboard
 falsify settings set apiKeyName="MEIN_API_KEY" apiKey="secret"
 falsify models
 falsify models --api-base "https://example.invalid/v1" --api-key "$MEIN_API_KEY"
@@ -699,7 +707,7 @@ und übergibt die Auswertung an den USER AGENT.
 ```bash
 npm run test:fast               # Unit-Verträge, ~8 s (jeder Commit)
 npm run test:core               # + Prozess-/DB-Suiten, ~2 min (vor Push)
-npm test                        # gesamte Testsuite (alle 33 Dateien, Release)
+npm test                        # gesamte Testsuite (Root- + DOKI-Tests, Release)
 npm run test:security           # Security-/Regressionstests (tests/security.test.mjs)
 npm run selftest                # Produkt-E2E: CLI→Queue→sichtbares Fenster→Worker→
                                 # run.mjs→ERROR-Pfad ohne Key; Read-only-Checksummen

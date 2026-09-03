@@ -290,3 +290,37 @@ test("handoff report: Guards (Job ohne Handoff, fehlende Handoff-Datei, existier
     fs.rmSync(project, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
+
+test("handoff complete: Agent-Report ohne job_id wird VOR jedem DB-Zugriff abgewiesen (Exit 2, kein sqlite-Bind-Fehler)", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-hr-home-"));
+  const project = tempProject();
+  try {
+    await setupAuthorizedJob({ home: tmp, project, header: "Die Funktion add addiert zwei Zahlen." });
+
+    // Kaputter Agent-Report: job_id fehlt komplett. Der JSON-Pfad ist UNTRUSTED
+    // und getJob lief VOR validateChangeReport — ohne Guard traf fehlendes
+    // job_id die node:sqlite-Bind-Falle (irreführende Meldung, Exit 3 statt
+    // der ehrlichen Exit-2-Vertragsklasse).
+    const broken = path.join(tmp, "report-ohne-job-id.json");
+    fs.writeFileSync(broken, JSON.stringify({ handoff_id: "h-x", writer_id: "fake" }), "utf8");
+    const b = runCli({ home: tmp, args: ["handoff", "complete", "--file", broken, "--root", project] });
+    const bOut = await b.outP;
+    const bCode = await b.doneP;
+    assert.equal(bCode, 2, `fehlendes job_id → Exit 2\n=== AUSGABE ===\n${bOut}`);
+    assert.match(bOut, /job_id/, "ehrliche Pflichtfeld-Meldung");
+    assert.doesNotMatch(bOut, /Provided value cannot be bound|SQLITE/i, "kein roher sqlite-Bind-Fehler");
+
+    // Gleiche Vertragsklasse: Nicht-String und Leer-String.
+    for (const bad of [{ job_id: 42 }, { job_id: "   " }]) {
+      const p = path.join(tmp, "report-bad.json");
+      fs.writeFileSync(p, JSON.stringify(bad), "utf8");
+      const r = runCli({ home: tmp, args: ["handoff", "complete", "--file", p, "--root", project] });
+      const rOut = await r.outP;
+      assert.equal(await r.doneP, 2, `job_id=${JSON.stringify(bad.job_id)} → Exit 2\n=== AUSGABE ===\n${rOut}`);
+    }
+  } finally {
+    if (process.env.FALSIFY_HOME === tmp) delete process.env.FALSIFY_HOME;
+    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    fs.rmSync(project, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});

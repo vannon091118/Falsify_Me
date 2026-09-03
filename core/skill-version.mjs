@@ -131,7 +131,10 @@ function canonicalEntries(manifest) {
   return manifest.files;
 }
 
-function compareVersions(a, b) {
+// Semantischer Vergleich (1 = a neuer, -1 = a aelter, 0 = gleich). Exportiert,
+// damit doctor die installierten ~/.agents-Skills gegen die Runtime-version
+// vergleichen kann — EINE Vergleichs-Quelle (UI-148).
+export function compareVersions(a, b) {
   const parse = (v) => String(v).replace(/-.*/, "").split(".").map(Number);
   const av = parse(a); const bv = parse(b);
   for (let i = 0; i < 3; i++) if (av[i] !== bv[i]) return av[i] > bv[i] ? 1 : -1;

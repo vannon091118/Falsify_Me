@@ -163,6 +163,7 @@ export function parseProbeResults(content) {
  */
 export function normalizeProbeResults(raw, probes = []) {
   const byId = new Map();
+  const duplicateIds = new Set();
   for (const r of Array.isArray(raw) ? raw : []) {
     if (!r || typeof r !== "object") continue;
     const id = String(r.probe_id ?? r.id ?? "").trim();
@@ -171,6 +172,7 @@ export function normalizeProbeResults(raw, probes = []) {
     const status = ["BESTAETIGT", "BEST\u00c4TIGT", "WIDERSPRUCH", "UNKLAR"].includes(statusRaw)
       ? (statusRaw === "BEST\u00c4TIGT" ? "BESTAETIGT" : statusRaw)
       : "UNKLAR";                                       // unbekanntes Wort = UNKLAR
+    if (byId.has(id)) duplicateIds.add(id);
     byId.set(id, { probe_id: id, status, evidence: String(r.evidence ?? "").trim() });
   }
   const known = new Set(probes.map((p) => String(p.id ?? "").trim()));
@@ -178,8 +180,11 @@ export function normalizeProbeResults(raw, probes = []) {
   for (const p of probes) {
     const id = String(p.id ?? "").trim();
     const r = byId.get(id);
-    // Fehlende probe_id → UNKLAR (fail-closed; keine Probe verschwindet still).
-    results.push(r ?? { probe_id: id, status: "UNKLAR", evidence: "kein Ergebnis des Gegenprüfers für diese Probe" });
+    // Fehlende oder doppelte probe_id → UNKLAR (fail-closed; kein Ergebnis
+    // darf still verschwinden oder ein anderes Ergebnis überschatten).
+    results.push(duplicateIds.has(id)
+      ? { probe_id: id, status: "UNKLAR", evidence: "doppeltes Ergebnis des Gegenprüfers für diese Probe" }
+      : (r ?? { probe_id: id, status: "UNKLAR", evidence: "kein Ergebnis des Gegenprüfers für diese Probe" }));
   }
   // Unbekannte IDs (Autoritätsanspruch ohne Probe) werden verworfen – das
   // Probe-Set ist die einzige Pflichtliste; Zusatzaussagen tragen kein Urteil.

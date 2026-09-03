@@ -208,11 +208,17 @@ case "$cmd" in
   worker)
     # Hintergrund-Worker: `falsify worker start [1..3]` startet ui/worker.mjs
     # detached und verifiziert die Registrierung ehrlich (kein Fake-Erfolg).
+    # `falsify worker kill` stoppt GEZIELT Orphan-Worker (UI-141): stale
+    # Heartbeat oder tote PID, registriert in DIESEM FALSIFY_HOME. Waisen-Jobs
+    # schließt die bestehende Recovery fail-closed (kein Fake-Verdict).
     sub="${1:-}"; [ $# -gt 0 ] && shift
     if [ "$sub" = "start" ]; then
       node "$V2_DIR/cli/worker-start.mjs" "$@"
+    elif [ "$sub" = "kill" ]; then
+      node "$V2_DIR/cli/worker-kill.mjs" "$@"
     else
-      echo "Nutzung: falsify worker start <1..3>  – startet einen registrierten Hintergrund-Worker." >&2
+      echo "Nutzung: falsify worker start <1..3> [--name <Agent-Name>]  – registrierter Hintergrund-Worker." >&2
+      echo "        falsify worker kill [--dry-run] [fenster|--force fenster]  – Orphan-Worker gezielt stoppen." >&2
       echo "  (Sichtbarer Betrieb: Desktop-Icon \"FalsifyMe\" oder ui\\start-dock.cmd 1)" >&2
       exit 2
     fi
@@ -247,7 +253,10 @@ case "$cmd" in
     node "$V2_DIR/cli/main.mjs" ensure-home
     ;;
   doctor)
-    node "$V2_DIR/cli/main.mjs" doctor
+    # --repair-skills: repariert fehlende Agent-Skills (~/.agents/skills/falsifyme)
+    # aus derselben Quelle wie der Bootstrap (idempotent) — kein Komplett-
+    # Bootstrap, keine Icons, kein Core-Copy.
+    node "$V2_DIR/cli/main.mjs" doctor "$@"
     ;;
   settings)
     node "$V2_DIR/cli/main.mjs" settings "$@"

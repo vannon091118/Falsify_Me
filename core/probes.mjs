@@ -349,29 +349,51 @@ export function probeEvidenceOk(result, twinRun, opts = {}) {
  */
 export function computeVerdict({ parseError = null, validation = null, results = null, structuralBlocks = [], divergence = null, filesUnchanged = true } = {}) {
   const reasons = [];
-  // 1) Probe-Set gültig?
+  // 1) Probe-Set gültig? Ohne validierte Probe-Liste gibt es keine
+  // autorisierte Ergebnis-Menge, selbst wenn der Twin formal Ergebnisse liefert.
   if (parseError) reasons.push(`Probe-Set unlesbar: ${parseError}`);
-  if (validation && !validation.ok) {
-    for (const r of validation.reasons) reasons.push(`Probe-Set: ${r}`);
+  if (!validation?.ok) {
+    if (validation?.reasons?.length) {
+      for (const r of validation.reasons) reasons.push(`Probe-Set: ${r}`);
+    } else {
+      reasons.push("Probe-Set nicht validiert (keine autorisierte Probe-Liste)");
+    }
   }
   // 2) Twin ausgeführt (vollständiges ProbeResult[])?
   if (!parseError && (!Array.isArray(results) || results.length === 0)) {
     reasons.push("Gegenprüfung fehlgeschlagen: kein ProbeResult geliefert (Twin nicht ausgeführt)");
   }
   if (Array.isArray(results) && results.length) {
-    const have = new Set(results.map((r) => String(r?.probe_id ?? "")));
+    const expected = new Set(validation?.ok ? validation.probes.map((p) => p.id) : []);
+    const seen = new Set();
+    for (const r of results) {
+      const probeId = String(r?.probe_id ?? "").trim();
+      if (!probeId) {
+        reasons.push("ProbeResult ohne probe_id (→ UNKLAR)");
+        continue;
+      }
+      if (seen.has(probeId)) {
+        reasons.push(`Probe ${probeId}: doppeltes ProbeResult (→ UNKLAR)`);
+      } else {
+        seen.add(probeId);
+      }
+      if (validation?.ok && !expected.has(probeId)) {
+        reasons.push(`Probe ${probeId}: unbekannte probe_id (nicht im validierten Probe-Set)`);
+      }
+    }
     if (validation?.ok) {
       for (const p of validation.probes) {
-        if (!have.has(p.id)) reasons.push(`Probe ${p.id}: fehlt im ProbeResult (→ UNKLAR)`);
+        if (!seen.has(p.id)) reasons.push(`Probe ${p.id}: fehlt im ProbeResult (→ UNKLAR)`);
       }
     }
     // 3) Jede Pflicht-Probe BESTAETIGT? 4) Jede Bestätigung mit gültiger Evidence?
     for (const r of results) {
+      const probeId = String(r?.probe_id ?? "?").trim() || "?";
       if (r?.status !== "BESTAETIGT") {
         const ev = r?.evidence ? ` – ${String(r.evidence).slice(0, 120)}` : "";
-        reasons.push(`Probe ${r?.probe_id ?? "?"}: ${r?.status ?? "UNBEKANNT"}${ev}`);
-      } else if (r?.evidenceOk === false) {
-        reasons.push(`Probe ${r?.probe_id ?? "?"}: BESTAETIGT ohne gültige Evidence (kein eigenes Lesen/keine verifizierte Referenz nachgewiesen)`);
+        reasons.push(`Probe ${probeId}: ${r?.status ?? "UNBEKANNT"}${ev}`);
+      } else if (r?.evidenceOk !== true) {
+        reasons.push(`Probe ${probeId}: BESTAETIGT ohne explizit bestätigte Evidence (kein eigenes Lesen/keine verifizierte Referenz nachgewiesen)`);
       }
     }
   }

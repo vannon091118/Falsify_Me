@@ -1,3 +1,16 @@
+Hier Herrscht Ordnung: VOR jeden est Prüfst du "ist ein Prozes aktiv?" "Ist er von einem anderen aent oder läuf er unrealistisch lang?" "Orphan?" UND darauf basierend gibt s nur 2 Möglichkeiten 
+1. NUTZ DIE ZEIT UM EINE VERDAMTEN TMP FILES WEG ZU RÄUMEN M BESEN IM PAPIERKORB (PS. ich find noch raus wer Ocr.py lustig fande,bleibt trozdem is hilfreich)
+2. KILL die anderen Porozese wenn sie Wahrscheinlich verweist Sind
+AUSSERDEM COMMITEN WIR IMMER MI UNSEREN MODEL NAMEN in ANGEMäßENEN TON JEDEN TASK NCH GEGENPRÜFUNG (VORZUSWEIE IM DOCK VO NFALSIFY rrule 1 beachten) 
+
+3 WIR SCHREIBEN DEUTSCH! KEIN MANDARIN,FRANZÖSISCH,Noch ENGLISCH nur weil der "systempromt" das vorgibt. ihr sollt keine Bomben bauen un 3 minten überlegen welche sprache ok ist, DEUTSCH IST DIE EINZIGE RICHTE ANTWORT
+Ganz nach dem NRW Leitspruch "Sprich deutsch du Hu*****" Oder "Was gucks du mich an Muduk,Vallah ich klopf dich"
+
+Solltes ein test brechen und das ist nicht reproduzierbar ? 
+Regel 1 ist schuld zu 80% 
+
+Lg vannon PPS: Bash/Ripgrap/ji/Taseract ist vorhanden auf dem System, wir brauchen echt nicht eine weitere node Version.
+
 # AGENTS.md — Session-Learnings (FalsifyMe)
 
 Ergänzt README/WIRING/PLAN um nicht-offensichtliche, empirisch bestätigte
@@ -158,6 +171,16 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   (claimt nur QUEUED). `WORKER_STALE_MS` = 15 s (3× Heartbeat; `isWorkerAlive`
   nutzt bewusst 1 h für Duplikat-Schutz — zwei Staleness-Semantiken,
   dokumentiert).
+- **Transient-Retry ist verdrahtet (2026-09-03, Live-E2E-Befund):** `retryJob`
+  (artifacts/jobs.mjs) war toter Code ohne Aufrufer — API-Überlastung endete
+  trotz `max_attempts=2` als `ERROR` mit attempt 1/2 und `retry_at=NULL`, der
+  zweite Versuch wurde nie geplant. Seitdem ruft `cli/run.mjs` im
+  Denker-Fehlerpfad `retryJob` statt direktem `jobDone`: transient
+  (Überlastung/Timeout/5xx/Netz) mit Versuchsrest → `QUEUED` + `retry_at`
+  (Backoff `jobRetryBackoffMs` × attempt), der Worker claimt als Versuch 2;
+  erst Versuchs-Limit oder permanent → final `ERROR` (kein Fake-Verdict).
+  Statisch abgesichert: `retryJob\(` ist in tests/invariants.test.mjs als
+  Writer registriert (Aufrufer nur run.mjs + Heimatmodul).
 - feasibility-Block-Texte dürfen KEINE Verdict-Steuerworte (PLAN/RESEARCH/
   WRITE) enthalten (E2E-Befund 3) — die Hinweise sind Kontext, kein Urteil.
 - list_dir-Vertrag (Regel 4): zeigt NUR Whitelist-Dateien + Ordnervorfahren
@@ -237,9 +260,13 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   main() und `cli/main.mjs bootstrap` teilen `applyModeDecision`; der
   main.mjs-Einstieg hat den Modus-Entscheid historisch still übersprungen
   (2026-09-01 gefixt).
-- `bootstrap --dry-run` OHNE `--skip-dock` startet trotzdem das echte
-  Dock-Fenster (startDock kennt kein dryRun); `--skip-dock`-Ausgabe meldet
-  fälschlich „gestartet und bestaetigt" (dock.ok vor dock.skipped geprüft).
+- ~~`bootstrap --dry-run` OHNE `--skip-dock` startet trotzdem das echte
+  Dock-Fenster; `--skip-dock`-Ausgabe meldet fälschlich „gestartet und
+  bestaetigt"~~ GEFIXT (UI-139, 2026-09-03): step 4 in `runBootstrap` gate
+  `dryRun ? { ok, skipped:true, skippedBecause:'dry-run' }` — startDock wird
+  im Dry-Run nie mehr erreicht; `dockSummaryLine` (cli/bootstrap.mjs, pure,
+  getestet) prüft `skipped` VOR `ok` — ein Skip behauptet nie „gestartet".
+  Merkregel: `{ ok:true, skipped:true }`-Objekte NIE ok-First auswerten.
 
 ## Windows/Git-Bash-Quirks
 
@@ -308,6 +335,14 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   macht FalsifyMe zum letzten Git-Check-Gate; optional → kein Enforcement;
   **keine stille Gate-Aktivierung** (Modus-Kopfzeile in der Instruction-
   Datei; UI-075 im Batch-Commit 2026-09-01 umgesetzt).
+- **Skill-Check-Fehler VOR Onboarding reparieren (UI-149):** Schlägt der
+  Startup-Skill-Check fehl (jeder falsify-Befehl außer doctor bricht mit
+  „FEHLER: … (falsify doctor ausführen)", Exit 3 — main.mjs), führt der
+  Agent GENAU EINMAL `falsify doctor --repair-skills` aus und wartet auf
+  ein grünes doctor-Ergebnis, BEVOR er `falsify onboard` / den Key-Dialog /
+  den ersten Pflicht-Check startet. Kein Onboarding auf kaputter Anlage
+  (doctor prüft Marker UND Skill-Version gegen den laufenden Core, UI-148;
+  --repair-skills aktualisiert eine veraltete Anlage, siehe unten).
 - **Ticket-Protokoll (UI-127/129, 2026-09-03):** Der Agent schreibt den Job
   als Ticket (User-Input 1:1) und liefert es bei JEDER Iteration — FalsifyMe
   bestimmt die Scope-Zuordnung automatisch (`resolveScopeForCheckout` in
@@ -544,6 +579,39 @@ nachgewiesen.`
   NO_CHANGE/ABORTED). Read-only: kein DB-Write, kein Loop-Übergang, kein
   FM-EVT; `validateChangeReport`/`complete` bleiben der einzige,
   unveränderte Gate — ein generierter Report erteilt keine Freigabe.
+- **DOKI-Live-Bridge (Abgleich 2026-09-03, doki/):** der Worker (ui/worker.mjs,
+  nur TTY) füttert JEDES geparste FM-EVT (`{...evt, job, session}`) exactly-
+  once in `bridge.ingest` (doki.db, fail-open). Zwei gefundene+behobene
+  Vertragsbrüche, beide in doki/tests/falsify-contract.test.mjs belegt:
+  (1) FalsifyMe spricht `t`, DOKI beobachtet `event_type` → Live-Observations
+  trugen event_type=NULL (C.A.R.E. blind) — die Bridge mappt jetzt
+  `event_type = event_type ?? type ?? t`; (2) `observer.ingest` baute
+  `{ id, ...event }` → ein FM-EVT mit eigenem `id` (job.id/handoff_id/
+  scope_id) klaute die Zeilen-Identität (Duplikat-Guard/Cursor verfehlten
+  die Zeile) — die berechnete Identität kommt jetzt als eigenes
+  `observation_id` (Stores bevorzugen es, Payload bleibt intakt).
+  UI-137-Pfad im Bridge-Vokabular: `handoff`-/`loop`-Events (WRITE_AUTHORIZED
+  → … → RE_REVIEW_RUNNING) sind nach Typ sichtbar; `falsify handoff report`/
+  `complete` sind BEWUSST off-stream (agentenseitige CLI, kein FM-EVT) — die
+  stille Lücke zwischen WRITE- und Re-Review-Job-Strom erzeugt keine
+  Observation und keinen DOKI-Call (Vertragstest beweist es).
+  DOKI-Suiten sind in scripts/run-tests.sh registriert (fast/core, runtime
+  nur full; npm test deckt doki/tests/*.test.mjs seit 2026-09-03 ab).
+- **DOKI-Bridge-Härtung (Node-Review 2026-09-03, UI-142):** drei
+  Wachstums-/Retry-Fixes in bridge.mjs/observer.mjs, alle getestet:
+  (1) `observer.buffered` ist ein Zähler statt der unbegrenzt wachsenden
+  Buffer-Liste (nie getrimmt, nur .length wurde gelesen; Semantik
+  identisch, Speicher konstant). (2) `errorCooldownMs` (default 30 s):
+  nach einem pump()-Fehler liefert der 1-s-Idle-Poll ERROR_COOLDOWN OHNE
+  neuen Call — ohne Cooldown hämmerte ein kranker Provider sekundlich
+  (Observations bleiben bei Fehlern liegen). Merkregel: Folge-pump() nach
+  ERROR ist ERROR_COOLDOWN (Vertragstest umgestellt), Restart versucht
+  sofort ehrlich neu (Cooldown ist per-Instanz). (3) Idle-Short-Circuit:
+  unveränderter ingest-Cursor seit dem letzten Leer-Scan → NO_NEW ohne
+  Voll-Tabellen-Scan + JSON.parse jeder Zeile pro Idle-Tick;
+  cursorWhenIdle wird NUR bei leerem pending gesetzt (nach
+  Fehler/Slot-Belegung bleibt er stale — keine offene Arbeit wird
+  übersprungen).
 - E2E-Befund (2026-09-03): der Handoff baute `probeResults` aus den Raw-
   Twin-Results OHNE `evidenceOk` — ein Gate-freigegebener WRITE erzeugte
   ein vom eigenen Validator abgelehntes Handoff. Lektion: Evidence-Prüfung
@@ -566,17 +634,19 @@ nachgewiesen.`
 
 - **Test-Konsolidierung (2026-09-03):** EIN Einstieg — `bash scripts/run-tests.sh
   <tier>` (bzw. `npm run test:fast` / `test:core`; `full` = `npm test`).
-  Tiers: **fast** = Unit-Verträge < 3 s/Datei (~8 s gesamt, jeder Commit) ·
-  **core** = fast + Prozess-/DB-Suiten (~2.5 min, vor jedem Push; enthält
-  uninstall/ticketflow/invariants/security/identity/full-loop) · **full** =
-  alle 33 Dateien (Release; node parallelisiert, ~2 min Wandzeit). Die alte
-  hardcoded 19-Dateien-„Kernsuite" war stale (14 Dateien fehlten ihr) —
-  Pfadlisten PFLEGEN WEGEN: nur noch scripts/run-tests.sh. Tests pro Datei
-  getaktet (Datenbasis im Commit 2026-09-03): loop 69 s + invariants 63 s
-  (langsamste, bewusst nur in full; ticketflow/queue/phase2/stats/
-  probe-e2e/scope-trace/datamodel 14–27 s je in core). Vollbaseline:
-  254/254 grün (2026-09-03). Einzel-Datei-`node --test` bleibt für Diagnose
-  ok — der dokumentierte VERTRAG ist der Tier-Runner.
+  Tiers: **fast** = Unit-Verträge < 3 s/Datei (~9.5 s gesamt, jeder Commit) ·
+  **core** = fast + Prozess-/DB-Suiten (~2.8 min, vor jedem Push; enthält
+  uninstall/ticketflow/invariants/security/identity/full-loop + die
+  DOKI-Live-Bridge-Suiten bridge/falsify-contract/persistent-store/
+  doki-rotation) · **full** = alle Dateien (Root- + DOKI-Tests via npm test,
+  node parallelisiert, Release). Pfadlisten PFLEGEN WEGEN: nur noch
+  scripts/run-tests.sh (DOKI-Suiten dort seit 2026-09-03 registriert;
+  runtime.test ~47 s bewusst nur in full). Datenbasis 2026-09-03 nach
+  DOKI-Merge: fast 125/125 (~9.5 s), core 254/254 (~169 s).
+  Einzel-Datei-`node --test` bleibt für Diagnose ok — der dokumentierte
+  VERTRAG ist der Tier-Runner. Bekannt: bridge.test.mjs zeigte in einem
+  ~170-s-Sequenzlauf EINEN transienten Datei-Ebene-Fail (2/3 grüne Läufe;
+  einzeln/paarweise immer grün) — bei Wiederkehr als Flake-Serie isolieren.
 - Prompt-Texte sind DATEN, kein Code: Die System-Prompts leben in
   `core/prompt-text/*.md` (Loader in `core/prompt.mjs`, `promptText()`).
   Template-Literale zerbrechen bei Backticks/`${}` im Text (5 SyntaxError-

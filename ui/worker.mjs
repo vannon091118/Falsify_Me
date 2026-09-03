@@ -7,8 +7,14 @@
 // Scope bleibt möglichst in seinem Fenster (Scope-Affinität). Die Warteschlange
 // liegt in SQLite – Jobs werden ATOMAR geclaimt (kein Lock-File-Rennen mehr).
 //
-//   node ui/worker.mjs --check   → "RUNNING <pid> (Fenster <idx>)" je Fenster | "STOPPED"
-//   node ui/worker.mjs --state   → "IDLE" | "BUSY <idx> <jobid>"
+//   node ui/worker.mjs --check   → "RUNNING <pid> (Agent <name>, Fenster <idx>)" je Fenster | "STOPPED"
+//   node ui/worker.mjs --state   → "IDLE" | "BUSY <agent-name> <idx> <jobid>"
+//
+// Agent-Namen  (UI-142): Jedes Fenster trägt einen sprechenden Namen
+// (FALSIFY_AGENT_NAME, Default "Agent <N>"). Damit können zwei parallel
+// laufende Agents sich in den Logs/Docks gegenseitig ADRESSIEREN, statt ein
+// fremdes Fenster als Bug/Fremdprozess zu identifizieren. Der Name ist
+// Registrierungs-Metadatum (artifacts/jobs.mjs) — keine Liveness-Semantik.
 //   node ui/worker.mjs           → Worker starten (FALSIFY_WINDOW, Default 1)
 //
 // Fenster sind IMMER SICHTBAR – der Start läuft ausschliesslich über
@@ -26,7 +32,7 @@ import { openDb, closeDb, falsifyHome } from "../artifacts/db.mjs";
 import {
   claimNextJob, getJob, jobDone, reapStaleJobs,
   registerWorker, unregisterWorker, heartbeatWorker,
-  workerPid, isWorkerAlive, listWorkers, listJobs,
+  workerPid, isWorkerAlive, listWorkers, listJobs, agentName,
   isAbortRequested, clearJobAbort, jobRuntimeConfig,
 } from "../artifacts/jobs.mjs";
 import { enforceQueueConsistency } from "../artifacts/invariants.mjs";
@@ -44,6 +50,9 @@ const V2_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const RUN_ENTRY = path.join(V2_DIR, "cli", "run.mjs");
 const MAX_WINDOWS = Number(process.env.FALSIFY_MAX_WINDOWS || 3);
 const WINDOW_IDX = Number(process.env.FALSIFY_WINDOW || 1);
+// Sprechender Agent-Name: für Mehr-Agent-Betriebe setzbar (z. B. über den
+// Desktop-Icon-Kontext oder FALSIFY_AGENT_NAME="Agent-Coder"), Default "Agent <N>".
+const AGENT_NAME = (process.env.FALSIFY_AGENT_NAME || "").trim().slice(0, 24) || `Agent ${WINDOW_IDX}`;
 
 const title = (t) => process.stdout.write(`\x1b]0;${t}\x07`);
 const bell = () => process.stdout.write("\x07");
@@ -54,16 +63,30 @@ let doki = null;           // DOKI-Bridge (nur TTY; fail-open)
 let dokiStoreRef = null;   // doki.db handle (fuer close; nur TTY gesetzt)
 
 const DEBUG_LOG = path.join(falsifyHome(), "logs", "worker.debug.log");
-// logs/ sicherstellen: In einem frischen FALSIFY_HOME fehlt der Ordner und
-// appendFileSync wuerde sonst still scheitern (kein Debug-Log sichtbar).
+const CRASH_LOG = path.join(falsifyHome(), "logs", "worker.crash.log");
+const ensureLogDir = () => fs.mkdirSync(path.dirname(DEBUG_LOG), { recursive: true });
+
+// sync fs-Audit (nodejs-best-practices, 2026-09-03, UI-149): dlog ist ein
+// Wrapper, KEIN roher Sync-Write — der statische Invarianten-Census in
+// tests/invariants.test.mjs verbietet Sync-Write-APIs in Hot-Callbacks
+// (stdout-Handler, abortPoller-Intervall, 1-s-Loop-Tick) und erzwingt über
+// SYNC_FS_ALLOWED genau diese drei dokumentierten Stellen.
+//
+// WAHRSCHEINLICHKEIT statt Dogma: dlog feuert nur auf Lebenszyklus-Kanten
+// (Start/Exit/Claim-Ende/Fehler — 0–6 Zeilen je Job, gemessen), also ist der
+// geschätzte Hot-Pfad-Kostenanteil ~0 und ein Stream-Umbau würde den
+// Crash-Pfad verkomplizieren. Bleibt bewusst appendFileSync, bis der Log
+// jemals heiß wird (kill-Kriterium: gemessener Heap-/Latenz-Trend, nicht
+// vage Sorge). Crash-Handler bleiben Sync-MUST (process.on("exit")/exit(1)
+// überlebt keine async flush — siehe unten).
 const dlog = (msg) => {
   try {
-    fs.mkdirSync(path.dirname(DEBUG_LOG), { recursive: true });
+    ensureLogDir();
     fs.appendFileSync(DEBUG_LOG, `${new Date().toISOString()} ${msg}\n`);
   } catch { /* egal */ }
 };
 
-dlog(`worker.mjs gestartet (pid=${process.pid}, fenster=${WINDOW_IDX})`);
+dlog(`worker.mjs gestartet (pid=${process.pid}, fenster=${WINDOW_IDX}, agent="${AGENT_NAME}")`);
 
 // ── Echter Startup-Selftest (Spec §6) ───────────────────────────────────────
 // Prueft die realen Komponenten in der echten Reihenfolge und emit-t das
@@ -81,6 +104,9 @@ async function runRealSelftest({ ui, windowIdx, db }) {
   // (FALSIFY_HOME/logs/selftest.log), damit die Verifikation auch ohne
   // sichtbares Fenster pruefbar ist (kein Mock, keine Demo-Behauptung).
   const SELFTEST_LOG = path.join(falsifyHome(), "logs", "selftest.log");
+  // SYNC_FS_ALLOWED (UI-149): Boot-Selbsttest, läuft einmal vor dem Loop —
+  // kein Hot-Pfad; der Boot-Screen erwartet die Logzeile synchron (Verifikation
+  // ohne Fenster, vgl. AGENTS.md „FALSIFY_HOME/logs/selftest.log“).
   const logSelf = (line) => {
     try {
       fs.mkdirSync(path.dirname(SELFTEST_LOG), { recursive: true });
@@ -193,7 +219,9 @@ function aliveWorkers(filter = () => true) {
 if (process.argv.includes("--check")) {
   const alive = aliveWorkers();
   if (!alive.length) console.log("STOPPED");
-  for (const w of alive) console.log(`RUNNING ${w.pid} (Fenster ${w.idx})`);
+  // Name in Klammern: Maschinen-Parsen (PID/Nummer) bleibt vorn stabil
+  // (Skills parsen `RUNNING \K\d+` bzw. `RUNNING …`); der Name ist Zusatz.
+  for (const w of alive) console.log(`RUNNING ${w.pid} (${w.name}, Fenster ${w.idx})`);
   process.exit(0);
 }
 
@@ -201,7 +229,7 @@ if (process.argv.includes("--check")) {
 if (process.argv.includes("--state")) {
   const busy = aliveWorkers((w) => w.runningJob);
   if (!busy.length) console.log("IDLE");
-  for (const w of busy) console.log(`BUSY ${w.idx} ${w.runningJob}${w.runningScope ? ` (scope ${w.runningScope})` : ""}`);
+  for (const w of busy) console.log(`BUSY ${w.name} ${w.idx} ${w.runningJob}${w.runningScope ? ` (scope ${w.runningScope})` : ""}`);
   // Progression-Statistik (User-Anker, UI-110): der EIN-SATZ-Anker aus der
   // Queue — für Agents/Skripte maschinenlesbar als PROGRESSION-Zeile.
   try {
@@ -231,12 +259,17 @@ function cleanup() {
 process.on("exit", cleanup);
 process.on("SIGINT", () => process.exit(0));
 process.on("SIGTERM", () => process.exit(0));
+// SYNC_FS_ALLOWED (UI-149): Sync-MUST — diese Handler laufen in/um
+// process.exit(1); ein fs.append-Stream würde ESM-Teardown-Ceremony-trotzend
+// einfach nicht mehr geflusht (Ziel: Crash-Beweis in worker.crash.log).
+// Bewusst RAW-Sync (nicht dlog): Der Crash-Log schreibt die eigene Diagnose,
+// auch wenn ausgerechnet dlog die Ursache wäre.
 process.on("uncaughtException", (e) => {
-  try { fs.appendFileSync(path.join(falsifyHome(), "logs", "worker.crash.log"), `${new Date().toISOString()} UNCAUGHT ${e?.stack || e}\n`); } catch { /* egal */ }
+  try { fs.appendFileSync(CRASH_LOG, `${new Date().toISOString()} UNCAUGHT ${e?.stack || e}\n`); } catch { /* egal */ }
   process.exit(1);
 });
 process.on("unhandledRejection", (e) => {
-  try { fs.appendFileSync(path.join(falsifyHome(), "logs", "worker.crash.log"), `${new Date().toISOString()} UNHANDLED ${e}\n`); } catch { /* egal */ }
+  try { fs.appendFileSync(CRASH_LOG, `${new Date().toISOString()} UNHANDLED ${e}\n`); } catch { /* egal */ }
   process.exit(1);
 });
 
@@ -265,7 +298,8 @@ async function main() {
     // „Recovery ok“ durchgehen (Worker-Recovery lügt sonst wie die Queue).
     dlog(`reapStaleJobs-Fehler: ${e && e.message ? e.message : e}`);
   }
-  registerWorker(db, WINDOW_IDX, process.pid);
+  registerWorker(db, WINDOW_IDX, process.pid, AGENT_NAME);
+  dlog(`Agent-Name registriert: fenster=${WINDOW_IDX} name="${AGENT_NAME}"`);
 
   // ── Kontinuierlicher Herzschlag (auch waerend Jobs) ───────────────────────
   // Grundlage der Status-API: --check/--state zaehlen nur frische Heartbeats.
@@ -367,14 +401,14 @@ async function main() {
 
   say("");
   say("┌─────────────────────────────────────────────────────────────┐");
-  const box = `  Falsify-Dock · Fenster ${WINDOW_IDX}/${MAX_WINDOWS}`;
+  const box = `  Falsify-Dock · ${AGENT_NAME} · Fenster ${WINDOW_IDX}/${MAX_WINDOWS}`;
   say(`│${box}${' '.repeat(58 - box.length)}│`);
   say("│  Dieses Fenster bleibt OFFEN und verarbeitet Jobs aus der   │");
   say("│  SQLite-Warteschlange (FALSIFY_HOME), live, parallel.       │");
   say("└─────────────────────────────────────────────────────────────┘");
   say(`FALSIFY_HOME : ${falsifyHome()}`);
   say("Strg+C beendet dieses Fenster. Status je Job: falsify status <job-id>");
-  title(`Falsify-Dock ${WINDOW_IDX}/${MAX_WINDOWS} · wartet auf Jobs`);
+  title(`Falsify-Dock ${AGENT_NAME} (${WINDOW_IDX}/${MAX_WINDOWS}) · wartet auf Jobs`);
   say("");
 
   // Progression-Statistik (User-Anker): beim Start + beim Idle-Uebergang
@@ -452,11 +486,11 @@ async function main() {
         continue;
       }
     }
-    title(`Falsify-Dock ${WINDOW_IDX} · ${job.scope_id || "ohne Scope"} · ${job.id}`);
+    title(`Falsify-Dock ${AGENT_NAME} · ${job.scope_id || "ohne Scope"} · ${job.id}`);
     uiEvt({ t: "job", id: job.id, scope: job.scope_id || null });
     uiEvt({ t: "state", s: "CLAIMING" });
     say(`\n──────────────────────────────────────────────`);
-    say(`▶ JOB ${job.id}  gestartet ${new Date().toLocaleTimeString()}  (Fenster ${WINDOW_IDX})`);
+    say(`▶ JOB ${job.id}  gestartet ${new Date().toLocaleTimeString()}  (${AGENT_NAME}, Fenster ${WINDOW_IDX})`);
     say(`  Scope: ${job.scope_id || "–"}  ·  Phase: ${job.mode || "?"}`);
     if (job.root) say(`  Datenzugriff: ${job.root}`);
     if (job.files) say(`  Whitelist: ${job.files}`);
@@ -522,7 +556,7 @@ async function main() {
     // Job-Abschluss im Dock vermelden (Zeile + Titel + Klingelzeichen).
     const announce = (state, line) => {
       say(line);
-      title(`Falsify-Dock ${WINDOW_IDX} · ${state}`);
+      title(`Falsify-Dock ${AGENT_NAME} · ${state}`);
       bell();
     };
     const d = getJob(db, job.id);
@@ -540,7 +574,7 @@ async function main() {
     say(`──────────────────────────────────────────────\n`);
 
     await sleep(400);
-    title(`Falsify-Dock ${WINDOW_IDX}/${MAX_WINDOWS} · wartet auf Jobs`);
+    title(`Falsify-Dock ${AGENT_NAME} (${WINDOW_IDX}/${MAX_WINDOWS}) · wartet auf Jobs`);
   }
 }
 

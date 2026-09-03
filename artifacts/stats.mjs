@@ -13,8 +13,28 @@ import { falsifyHome } from "./db.mjs";
 
 const n = (v) => Number(v) || 0;
 
+// Identifier-Allowlist (nodejs-best-practices-Audit 2026-09-03): SQLite kann
+// Tabellen-/Spaltennamen NICHT als Parameter binden — die Interpolation in
+// countBy/rowsPerTable war zwar bislang nur mit hardcodierten Konstanten
+// aufgerufen, aber die Sicherheit war KONVENTION, nicht mechanisch erzwungen.
+// Jede Abweichung fail-fast hier (eine Stelle, fail-closed statt stiller
+// SQL-Injektionsfläche).
+const ALLOWED_TABLES = new Set(["meta", "scopes", "findings", "jobs", "rate_limit"]);
+const ALLOWED_COLUMNS = new Set([
+  "id", "status", "verdict", "wave", "phase", "scope_id", "window_idx", "failure_kind",
+]);
+
+function assertIdentifier(kind, value, allowed) {
+  if (!allowed.has(value)) {
+    throw new Error(`stats: ${kind}-Identifier nicht allowlisted: "${value}" (nur ${[...allowed].join(", ")})`);
+  }
+  return value;
+}
+
 /** Gruppiert eine Tabelle nach Spalte k -> { wert: anzahl } (read-only). */
 function countBy(db, table, col) {
+  assertIdentifier("Tabelle", table, ALLOWED_TABLES);
+  assertIdentifier("Spalte", col, ALLOWED_COLUMNS);
   const rows = db.prepare(`SELECT ${col} AS k, COUNT(*) AS n FROM ${table} GROUP BY ${col}`).all();
   const out = {};
   for (const r of rows) out[r.k ?? "(leer)"] = n(r.n);
@@ -62,6 +82,7 @@ export function collectStats(db) {
   const bytes = fs.existsSync(file) ? fs.statSync(file).size : 0;
   const rowsPerTable = {};
   for (const t of ["meta", "scopes", "findings", "jobs", "rate_limit"]) {
+    assertIdentifier("Tabelle", t, ALLOWED_TABLES);
     try { rowsPerTable[t] = one(`SELECT COUNT(*) AS n FROM ${t}`); } catch { rowsPerTable[t] = 0; }
   }
 

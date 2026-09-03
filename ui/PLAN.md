@@ -1790,3 +1790,311 @@ Regression gruen: loop+full-loop-negative 30/30, full-loop-e2e 1/1.
 Grenze: der Generator erteilt keine Freigabe – `falsify handoff complete`
 bleibt der einzige Gate (misst selbst nach); NO_CHANGE/ABORTED setzt der
 Agent im generierten Report (ehrliche Hinweiszeile).
+
+───────────────────────────────────────────────────────────────────────────────
+# NACHTRAG 2026-09-03 (geteilte-Worktree-Kollision): ui/PLAN.md wurde von
+# einem parallelen Agent-Stream ueberschrieben (nur noch dessen letzte
+# Eintraege uebrig). Aus git (HEAD) + Konversations-Protokoll rekonstruiert:
+# Eintraege UI-147..UI-149 DIESES Sessions-Strangs und die zwei Eintraege des
+# parallelen Strangs (UI-148 CI-Guard, UI-149 Sync-fs, identische IDs —
+# Kollision bewusst NICHT umnummeriert, Duplikate sind als solche markiert).
+# Die Eintraege UI-138..146 des Sessions-Strangs (worker-kill/agent-names/
+# doki-bridge/stats/skills-repair/doctor/summary) sind durch die Kollision
+# verloren und hier NICHT rekonstruierbar (nur in alter Datei-Fassung).
+
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-147
+TASK: Bootstrap-Preflight (2026-09-03): Die dangling-warnings-Klasse
+strukturell beseitigen — der Bootstrap repariert/prueft Skills, Anker und
+API-Key VOR jeder Instruction-Write statt NACH ihr zu warnen. Neu:
+runPreflight({ root, homeDir, targetRoot, dryRun, interactive, skipDock })
+in cli/bootstrap/main.mjs, exportiert + getestet, laeuft in runBootstrap
+zwischen Installation und writeInstruction. Reihenfolge/Abhaengigkeit:
+(1) Skills: ensureAgentSkillsInstalled (EINE Quelle, idempotent) — ok:false
+→ fail-closed Stage preflight-skills VOR jedem Schreiben (auch der Anker
+bleibt unberuehrt); (2) Anker: initAnchor + bindAnchor (Projekt-Identitaet,
+die Instructions voraussetzen); (3) API-Key: ensureApiKeyAtBootstrap —
+interaktiv Onboarding-Dialog, headless Anleitung. Der fruehere Key-Check
+NACH Instruction+Dock ist entfernt (kein Doppel-Dialog: der Call existiert
+genau einmal, im Preflight). Der Preflight ist EINE Quelle fuer Skills- und
+Key-Wahrheit im Rueckgabe-Vertrag: instruction wird um
+skillsInstalled/skillsRepaired aus preflight.skills angereichert (sonst
+zeigte die UI-146-Summary nach einem echten Repair nie NACHINSTALLIERT —
+writeInstruction findet die Marker ja schon vor), key: preflight.key
+(dry-run ehrlich configured:false statt erfundener true). Dry-run: keinerlei
+Side-Effekte (frueher Return). Boot-Header-Kommentar + Section-Nummern
+nachgezogen; Agent-Detektion druckt VOR dem Preflight (Kontext).
+STATUS: DONE
+DEPENDS_ON: UI-144 (ensureAgentSkillsInstalled/Instruction-Vertrag), UI-146
+(Skills-Summary-Zeile), apikey.mjs ensureApiKeyAtBootstrap
+VERIFY: node --test tests/bootstrap.test.mjs (18/18, davon 3 neu: Preflight
+repariert fehlende Skills+Anker+Key-Guide idempotent mit isolierter
+FALSIFY_HOME/temp-Home/temp-Projekt; fail-closed ohne Skill-Quelle laesst
+den Anker unberuehrt; Verdrahtungs-Vertrag runPreflight VOR writeInstruc-
+tion + genau EIN ensureApiKeyAtBootstrap-Call, vor runBootstrap); fast
+(138/138); core (281/281)
+RESULT: PASS — Merkregel: Vorbedingungen, auf die eine geschriebene
+Instruction zeigt, gehoeren VOR den Write (reparieren statt danach warnen);
+Rueckgabe-Wahrheit (Repair/Key) an EINER Stelle (Preflight) bilden, sonst
+luegt die Summary.
+
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-148  [PARALLELER STRANG — ID-KOLLISION zu UI-148 unten, bewusst]
+TASK: Repo-weiter CI-Guard fuer interpolierte SQL-Identifier (nodejs-best-
+practices-Skill, 2026-09-03): `scripts/check-sql-identifiers.mjs` scannt den
+kompletten JavaScript/TypeScript-Quellbaum ausser `.git`/`node_modules`,
+erkennt SQL-Template-Literale und prueft Interpolation nur an Identifier-
+Positionen (FROM/JOIN/UPDATE/INTO/TABLE/GROUP BY/ORDER BY/HAVING/PRAGMA).
+Werte-Interpolation und gebundene `?`-Parameter werden nicht verwechselt.
+Jeder interpolierte Identifier muss im selben Scope durch
+`assertIdentifier`/`assertSqlIdentifier` und ein `ALLOWED_*`-`Set` geschuetzt
+sein; Verstoss meldet Datei/Zeile und beendet den Check fail-closed. Die
+bestehenden Ausnahmen `artifacts/stats.mjs`, `doki/src/cli.mjs` und der
+Schema-Test verwenden explizite Guards. `npm run check:sql` ist der direkte
+CI-Einstieg; `npm test` und alle `scripts/run-tests.sh`-Tiers fuehren ihn aus.
+STATUS: DONE
+DEPENDS_ON: UI-143 (stats.mjs-Allowlist als lokaler Standard)
+VERIFY: npm run check:sql; node --test tests/sql-identifiers.test.mjs;
+node --check scripts/check-sql-identifiers.mjs doki/src/cli.mjs
+ tests/datamodel.test.mjs; bash scripts/run-tests.sh fast
+RESULT: PASS - Repository-Scan PASS; 5/5 Guard-Regressionen und 145/145
+Fast-Tests gruen. Der Guard ist statisch, dependency-frei und erzeugt keinen
+Runtime-/Queue-/Verdict-Pfad.
+
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-148  [DIESER SESSIONS-STRANG]
+TASK: doctor-Sektion 7 prueft die VERSION der installierten ~/.agents-Skills
+gegen die Runtime (2026-09-03, Follow-up UI-145): vorhanden != aktuell.
+Neu in cli/doctor.mjs: agentSkillVersion(homeDir) (exportiert, homeDir-
+injizierbar) liest den Version-Marker der mitkopierten agent-skill-falsify-
+config.json (ok:false ohne lesbare Konfig/Version = kein Urteil, fail-
+closed). Sektion 7 vergleicht nach dem Marker-Check semantisch gegen
+pkg.version des laufenden doctor (= installierter Core): gleich -> OK-Zeile;
+installierte Skills AELTER als Core -> bad() „Drift" + Aktualisierungs-
+Kommando falsify doctor --repair-skills; NEUER -> bad() (Core aktualisieren,
+nie still nutzen). Damit die Reparatur-Kommandozeile Veraltetes wirklich
+behebt, kann ensureAgentSkillsInstalled (cli/bootstrap/instructions.mjs)
+seit UI-148 eine vorhandene, aber VERALTETE Anlage ueberschreibend
+aktualisieren: installedVersion < Quell-Version ODER Konfig/Version fehlt in
+der Anlage -> kopieren (repaired:true, refreshed:true, fromVersion/
+toVersion ehrlich berichtet); gleiche/neuere Version -> unveraendert
+(repaired:false, nie Downgrade). --repair-skills-Meldung unterscheidet
+aktualisiert (v0.9.0 -> v0.9.2) / nachinstalliert / bereits aktuell.
+compareVersions ist exportiert (core/skill-version.mjs) — EINE Vergleichs-
+Quelle fuer Manifest-Transition und doctor.
+STATUS: DONE
+DEPENDS_ON: UI-145 (doctor-Sektion 7), core/skill-version.mjs compareVersions
+VERIFY: node --test tests/bootstrap.test.mjs (Refresh: veraltete Anlage wird
+auf Quell-Version gebracht + Idempotenz + kein Downgrade; fehlende Konfig
+loest Refresh aus) + tests/uninstall.test.mjs (agentSkillVersion-Matrix,
+Verdrahtungs-Vertrag Drift/NEUER/Reparatur); fast (140/140); core (285/285);
+Live: falsify doctor zeigt auf dieser Maschine „Agent-Skills v0.9.0 sind
+AELTER als der installierte Core v0.9.2" + Reparatur-Kommando (realer Fund)
+RESULT: PASS — Merkregel: Marker beweisen Existenz, nicht Aktualitaet; jede
+Versions-Aussage braucht eine lesbare Versions-Quelle (fail-closed), und
+eine angebotene Reparatur muss den Zustand, den sie meldet, wirklich heilen
+(Refresh statt nur Diagnose).
+
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-149  [PARALLELER STRANG — ID-KOLLISION zu UI-149 unten, bewusst]
+TASK: Sync-fs-Audit ui/ + artifacts/ (nodejs-best-practices-Follow-up,
+2026-09-03): Inventar (grep über den ganzen Baum): ~90 Sync-fs-Stellen in 26
+Dateien, davon CLI-Toolchain ~80 (einmalige Kommandoaufrufe, kein Event-Loop-
+Kostenargument); der Laufzeitpfad ui/+artifacts/ trägt nur 11 Stellen
+(worker 6, db 4, stats 1 — alle Read/Bootstrap). Klassifikation: Crash-
+Handler (uncaughtException/unhandledRejection → process.exit(1)) sind
+Sync-MUST — async flush überlebt den ESM-Teardown nicht, worker.crash.log
+wäre im Crash leer; dlog (appendFileSync-Wrapper) feuert nur auf
+Lebenszyklus-Kanten (0-6 Zeilen/Job, gemessen an den 9 call sites: Start,
+Exit, Claim-Ende, Abort, Fehler) — Hot-Pfad-Kostenanteil ~0; logSelf ist
+einmaliger Boot-Selbsttest; db.mjs schreibt die .env-Vorlage einmalig beim
+ersten Start. MIGRATION: keine — der einzige Kandidat dlog wurde bewusst
+NICHT auf einen Stream umgestellt (Kill-Kriterium: gemessener Heap-/Latenz-
+Trend, nicht vage Sorge); statt Form-Slop macht der statische Census die
+Audit-Antwort mechanisch: tests/invariants.test.mjs Sync-fs-Census
+(alleiniger Prod-Scan) verbietet rohe Sync-Write-APIs in ui/+artifacts/
+außerhalb allowlisteter Dateien (Pflicht-WHY), verb
+───────────────────────────────────────────────────────────────────────────────
+# NACHTRAG 2026-09-03 (geteilte-Worktree-Kollision): ui/PLAN.md wurde von
+# einem parallelen Agent-Stream ueberschrieben (nur noch dessen letzte
+# Eintraege uebrig). Aus git (HEAD) + Konversations-Protokoll rekonstruiert:
+# Eintraege UI-147..UI-149 DIESES Sessions-Strangs und die zwei Eintraege des
+# parallelen Strangs (UI-148 CI-Guard, UI-149 Sync-fs, identische IDs —
+# Kollision bewusst NICHT umnummeriert, Duplikate sind als solche markiert).
+# Die Eintraege UI-138..146 des Sessions-Strangs (worker-kill/agent-names/
+# doki-bridge/stats/skills-repair/doctor/summary) sind durch die Kollision
+# verloren und hier NICHT rekonstruierbar (nur in alter Datei-Fassung).
+
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-147
+TASK: Bootstrap-Preflight (2026-09-03): Die dangling-warnings-Klasse
+strukturell beseitigen — der Bootstrap repariert/prueft Skills, Anker und
+API-Key VOR jeder Instruction-Write statt NACH ihr zu warnen. Neu:
+runPreflight({ root, homeDir, targetRoot, dryRun, interactive, skipDock })
+in cli/bootstrap/main.mjs, exportiert + getestet, laeuft in runBootstrap
+zwischen Installation und writeInstruction. Reihenfolge/Abhaengigkeit:
+(1) Skills: ensureAgentSkillsInstalled (EINE Quelle, idempotent) — ok:false
+→ fail-closed Stage preflight-skills VOR jedem Schreiben (auch der Anker
+bleibt unberuehrt); (2) Anker: initAnchor + bindAnchor (Projekt-Identitaet,
+die Instructions voraussetzen); (3) API-Key: ensureApiKeyAtBootstrap —
+interaktiv Onboarding-Dialog, headless Anleitung. Der fruehere Key-Check
+NACH Instruction+Dock ist entfernt (kein Doppel-Dialog: der Call existiert
+genau einmal, im Preflight). Der Preflight ist EINE Quelle fuer Skills- und
+Key-Wahrheit im Rueckgabe-Vertrag: instruction wird um
+skillsInstalled/skillsRepaired aus preflight.skills angereichert (sonst
+zeigte die UI-146-Summary nach einem echten Repair nie NACHINSTALLIERT —
+writeInstruction findet die Marker ja schon vor), key: preflight.key
+(dry-run ehrlich configured:false statt erfundener true). Dry-run: keinerlei
+Side-Effekte (frueher Return). Boot-Header-Kommentar + Section-Nummern
+nachgezogen; Agent-Detektion druckt VOR dem Preflight (Kontext).
+STATUS: DONE
+DEPENDS_ON: UI-144 (ensureAgentSkillsInstalled/Instruction-Vertrag), UI-146
+(Skills-Summary-Zeile), apikey.mjs ensureApiKeyAtBootstrap
+VERIFY: node --test tests/bootstrap.test.mjs (18/18, davon 3 neu: Preflight
+repariert fehlende Skills+Anker+Key-Guide idempotent mit isolierter
+FALSIFY_HOME/temp-Home/temp-Projekt; fail-closed ohne Skill-Quelle laesst
+den Anker unberuehrt; Verdrahtungs-Vertrag runPreflight VOR writeInstruc-
+tion + genau EIN ensureApiKeyAtBootstrap-Call, vor runBootstrap); fast
+(138/138); core (281/281)
+RESULT: PASS — Merkregel: Vorbedingungen, auf die eine geschriebene
+Instruction zeigt, gehoeren VOR den Write (reparieren statt danach warnen);
+Rueckgabe-Wahrheit (Repair/Key) an EINER Stelle (Preflight) bilden, sonst
+luegt die Summary.
+
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-148  [PARALLELER STRANG — ID-KOLLISION zu UI-148 unten, bewusst]
+TASK: Repo-weiter CI-Guard fuer interpolierte SQL-Identifier (nodejs-best-
+practices-Skill, 2026-09-03): `scripts/check-sql-identifiers.mjs` scannt den
+kompletten JavaScript/TypeScript-Quellbaum ausser `.git`/`node_modules`,
+erkennt SQL-Template-Literale und prueft Interpolation nur an Identifier-
+Positionen (FROM/JOIN/UPDATE/INTO/TABLE/GROUP BY/ORDER BY/HAVING/PRAGMA).
+Werte-Interpolation und gebundene `?`-Parameter werden nicht verwechselt.
+Jeder interpolierte Identifier muss im selben Scope durch
+`assertIdentifier`/`assertSqlIdentifier` und ein `ALLOWED_*`-`Set` geschuetzt
+sein; Verstoss meldet Datei/Zeile und beendet den Check fail-closed. Die
+bestehenden Ausnahmen `artifacts/stats.mjs`, `doki/src/cli.mjs` und der
+Schema-Test verwenden explizite Guards. `npm run check:sql` ist der direkte
+CI-Einstieg; `npm test` und alle `scripts/run-tests.sh`-Tiers fuehren ihn aus.
+STATUS: DONE
+DEPENDS_ON: UI-143 (stats.mjs-Allowlist als lokaler Standard)
+VERIFY: npm run check:sql; node --test tests/sql-identifiers.test.mjs;
+node --check scripts/check-sql-identifiers.mjs doki/src/cli.mjs
+ tests/datamodel.test.mjs; bash scripts/run-tests.sh fast
+RESULT: PASS - Repository-Scan PASS; 5/5 Guard-Regressionen und 145/145
+Fast-Tests gruen. Der Guard ist statisch, dependency-frei und erzeugt keinen
+Runtime-/Queue-/Verdict-Pfad.
+
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-148  [DIESER SESSIONS-STRANG]
+TASK: doctor-Sektion 7 prueft die VERSION der installierten ~/.agents-Skills
+gegen die Runtime (2026-09-03, Follow-up UI-145): vorhanden != aktuell.
+Neu in cli/doctor.mjs: agentSkillVersion(homeDir) (exportiert, homeDir-
+injizierbar) liest den Version-Marker der mitkopierten agent-skill-falsify-
+config.json (ok:false ohne lesbare Konfig/Version = kein Urteil, fail-
+closed). Sektion 7 vergleicht nach dem Marker-Check semantisch gegen
+pkg.version des laufenden doctor (= installierter Core): gleich -> OK-Zeile;
+installierte Skills AELTER als Core -> bad() „Drift" + Aktualisierungs-
+Kommando falsify doctor --repair-skills; NEUER -> bad() (Core aktualisieren,
+nie still nutzen). Damit die Reparatur-Kommandozeile Veraltetes wirklich
+behebt, kann ensureAgentSkillsInstalled (cli/bootstrap/instructions.mjs)
+seit UI-148 eine vorhandene, aber VERALTETE Anlage ueberschreibend
+aktualisieren: installedVersion < Quell-Version ODER Konfig/Version fehlt in
+der Anlage -> kopieren (repaired:true, refreshed:true, fromVersion/
+toVersion ehrlich berichtet); gleiche/neuere Version -> unveraendert
+(repaired:false, nie Downgrade). --repair-skills-Meldung unterscheidet
+aktualisiert (v0.9.0 -> v0.9.2) / nachinstalliert / bereits aktuell.
+compareVersions ist exportiert (core/skill-version.mjs) — EINE Vergleichs-
+Quelle fuer Manifest-Transition und doctor.
+STATUS: DONE
+DEPENDS_ON: UI-145 (doctor-Sektion 7), core/skill-version.mjs compareVersions
+VERIFY: node --test tests/bootstrap.test.mjs (Refresh: veraltete Anlage wird
+auf Quell-Version gebracht + Idempotenz + kein Downgrade; fehlende Konfig
+loest Refresh aus) + tests/uninstall.test.mjs (agentSkillVersion-Matrix,
+Verdrahtungs-Vertrag Drift/NEUER/Reparatur); fast (140/140); core (285/285);
+Live: falsify doctor zeigt auf dieser Maschine „Agent-Skills v0.9.0 sind
+AELTER als der installierte Core v0.9.2" + Reparatur-Kommando (realer Fund)
+RESULT: PASS — Merkregel: Marker beweisen Existenz, nicht Aktualitaet; jede
+Versions-Aussage braucht eine lesbare Versions-Quelle (fail-closed), und
+eine angebotene Reparatur muss den Zustand, den sie meldet, wirklich heilen
+(Refresh statt nur Diagnose).
+
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-149  [PARALLELER STRANG — ID-KOLLISION zu UI-149 unten, bewusst]
+TASK: Sync-fs-Audit ui/ + artifacts/ (nodejs-best-practices-Follow-up,
+2026-09-03): Inventar (grep ueber den ganzen Baum): ~90 Sync-fs-Stellen in 26
+Dateien, davon CLI-Toolchain ~80 (einmalige Kommandoaufrufe, kein Event-Loop-
+Kostenargument); der Laufzeitpfad ui/+artifacts/ traegt nur 11 Stellen
+(worker 6, db 4, stats 1 — alle Read/Bootstrap). Klassifikation: Crash-
+Handler (uncaughtException/unhandledRejection → process.exit(1)) sind
+Sync-MUST — async flush ueberlebt den ESM-Teardown nicht, worker.crash.log
+waere im Crash leer; dlog (appendFileSync-Wrapper) feuert nur auf
+Lebenszyklus-Kanten (0-6 Zeilen/Job, gemessen an den 9 call sites: Start,
+Exit, Claim-Ende, Abort, Fehler) — Hot-Pfad-Kostenanteil ~0; logSelf ist
+einmaliger Boot-Selbsttest; db.mjs schreibt die .env-Vorlage einmalig beim
+ersten Start. MIGRATION: keine — der einzige Kandidat dlog wurde bewusst
+NICHT auf einen Stream umgestellt (Kill-Kriterium: gemessener Heap-/Latenz-
+Trend, nicht vage Sorge); statt Form-Slop macht der statische Census die
+Audit-Antwort mechanisch: tests/invariants.test.mjs Sync-fs-Census
+(alleiniger Prod-Scan) verbietet rohe Sync-Write-APIs in ui/+artifacts/
+ausserhalb allowlisteter Dateien (Pflicht-WHY), verbatim in heissen Regionen
+(setInterval-Koerper + for(;;)-Tick) und zertifiziert sich selbst
+(worker=4: dlog+logSelf+2 Crash-Handler, db=1: .env-Vorlage).
+STATUS: DONE
+DEPENDS_ON: UI-143 (Allowlist-Praezedenzfall), UI-144 (Tier-Registrierung)
+VERIFY: node --test tests/invariants.test.mjs (11/11; Negativ-Nachweise:
+Wegwerf-Datei ui/zz-census-probe.mjs → Verstoß by name; Wegwerf-Probe im
+abortPoller-Intervall → BOTH Violations gleichzeitig (Anzahl 5!=4 + heisse
+Region); beide Proben entfernt); bash scripts/run-tests.sh fast
+RESULT: PASS — Merkregel: Sync-fs ist in ui/+artifacts/ eine
+Allowlist-Entscheidung mit Pflicht-WHY, keine Konvention; Crash-Handler
+bleiben Sync-MUST (exit(1) ueberlebt kein async flush); ein Wrapper (dlog)
+ist die erlaubte Form in heissen Zonen, und eine Allowlist ohne
+Selbstzertifizierung wird still blind.
+
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-149  [DIESER SESSIONS-STRANG]
+TASK: Repair-Regel auf AGENTS.md-Ebene (2026-09-03, Follow-up UI-145/148):
+Jede ausgelieferte Instruction (und die eigene Repo-AGENTS.md) schreibt dem
+Agenten vor, bei fehlgeschlagenem Startup-Skill-Check GENAU EINMAL `falsify
+doctor --repair-skills` auszufuehren und auf gruen zu warten, BEVOR
+`falsify onboard` / der erste Pflicht-Check startet — kein Onboarding auf
+kaputter oder veralteter Skill-Anlage. Eingebaut in: cli/bootstrap/templates/
+agents-codebuff.md (Regeln-Bullet), generic.md (neue Sektion „Reparatur vor
+Onboarding"), bash.sh + powershell.ps1 (Kommentar-Block vor der Lade-Zeile),
+AGENTS.md (User-Workflow-Vorgaben, neues Pflicht-Bullet UI-149). Alle
+Template-Kanaele ASCII-sicher (md nutzt lokal \xNN-Escapes, sh/ps1 reines
+ASCII — keine Umlaut-Bytes gemischt). Text-Vertrag per Test fixiert.
+STATUS: DONE
+DEPENDS_ON: UI-145 (doctor --repair-skills), UI-148 (doctor prueft Marker +
+Version; --repair-skills aktualisiert veraltete Anlagen)
+VERIFY: node --test tests/bootstrap.test.mjs (21/21, davon 1 neu: alle vier
+Template-Kanaele + Repo-AGENTS.md nennen repair-skills/GENAU EINMAL/BEVOR/
+kein Onboarding auf kaputter Anlage); bash -n Template; fast (146/146);
+core (292/292)
+RESULT: PASS — Merkregel: Eine Selbstheilungs-Kommandozeile ist erst eine
+Regel, wenn der Agent sie im Instruction-Kanal liest (AGENTS.md-Ebene),
+nicht nur im doctor-Output.
+
+───────────────────────────────────────────────────────────────────────────────
+ID: UI-150
+TASK: Onboarding-Leak Modellwahl (Live-E2E 2026-09-03): Die bisherige Reihenfolge
+fragte eine freie Modell-ID ab und bot `/models` danach nur optional als Anzeige
+an. Dadurch konnte der Agent Katalognamen vorgeben, die das NVIDIA-Konto nicht
+aufrufen durfte (404 „Function not found for account"), und DeepSeek/Mistral-
+Überlastung konnte fälschlich als Modellproblem behandelt werden. Neu: Der
+Onboarding-Dialog lädt den Katalog nach Endpunkt/Key, lässt den Nutzer per
+Nummer oder exakter ID wählen, prüft genau diese ID mit einer Minimal-Completion
+und speichert erst danach. Nur ein expliziter Entitlement-/Function-404 erlaubt
+eine weitere Nutzerwahl; 401/403, 429, Timeout und 5xx bleiben fail-closed.
+`core/settings.mjs` stellt dafür `probeModelAccess` bereit; `--model` ist im
+Runtime-CLI kein Agent-Override mehr. Die Runtime-Queue, Verdict-Hoheit und
+Evil-Twin-Gates bleiben unverändert.
+STATUS: DONE
+DEPENDS_ON: UI-149 (Repair-Regel/Onboarding-Vorbedingung)
+VERIFY: node --test --test-concurrency=1 tests/onboard.test.mjs tests/settings.test.mjs
+(24/24 nach Ergänzung); node --check core/settings.mjs cli/onboard/steps.mjs
+cli/run.mjs; `GET /v1/models` + `POST /v1/chat/completions` gegen NVIDIA-
+Dokumentation und das Konto-Protokoll in Docs/nim-konto-modelle-2026-09-03.md.
+RESULT: PASS — Die Modellentscheidung liegt sichtbar beim Nutzer; Katalog und
+Konto-Entitlement werden getrennt, kein automatischer Modellwechsel bei
+Kapazitäts-/Key-Fehlern, und die gewählte ID wird im Probe-Request verifiziert.

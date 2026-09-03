@@ -46,11 +46,13 @@ function fmtAge(ms) {
 export function workerHintLines({ indent = "  " } = {}) {
   if (process.platform === "win32") {
     return [
+      `${indent}Orphan-Worker beseitigen (Slot blockiert?): falsify worker kill --dry-run`,
       `${indent}Sofort starten (Hintergrund): falsify worker start 1`,
       `${indent}Sichtbar (Empfehlung, \"Niemals headless\"): Desktop-Icon \"FalsifyMe\" oder ui\\start-dock.cmd 1`,
     ];
   }
   return [
+    `${indent}Orphan-Worker beseitigen (Slot blockiert?): falsify worker kill --dry-run`,
     `${indent}Sofort starten (Hintergrund): falsify worker start 1`,
     `${indent}Ohne eigenes Fenster: FALSIFY_WINDOW=1 node ui/worker.mjs (im Installationsverzeichnis)`,
   ];

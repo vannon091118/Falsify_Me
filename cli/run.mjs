@@ -26,7 +26,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDb, closeDb, falsifyHome } from "../artifacts/db.mjs";
-import { createJob, getJob, jobFilesList, jobDone, claimJob, registerWorker, heartbeatWorker, reapStaleJobs, jobRuntimeConfig, classifyFailure } from "../artifacts/jobs.mjs";
+import { createJob, getJob, jobFilesList, jobDone, claimJob, registerWorker, heartbeatWorker, reapStaleJobs, jobRuntimeConfig, classifyFailure, retryJob } from "../artifacts/jobs.mjs";
 import { enforceQueueConsistency } from "../artifacts/invariants.mjs";
 import { getScope, createScope, resolveScopeForCheckout, updateScopeAfterReview, addFinding, getFindings, nextRound } from "../artifacts/scopes.mjs";
 import { loadApiKey, loadApiKeyForNames, keyEnvFile, keyNames } from "../core/keys.mjs";
@@ -126,7 +126,8 @@ Optionen:
                        automatisch: kein offener Scope mit diesem Ticket → neuer Scope
                        (ID von FalsifyMe gemintet); genau einer → Fortsetzung; mehrere →
                        fail-closed (Exit 2, Liste). Agenten verwenden NUR --header.
-  --model <id>         Modell-ID (Default: ${cfg.model})
+  Modellwahl           erfolgt durch Nutzer-Onboarding (falsify onboard) oder
+                       bewusstes falsify settings set model=…; kein --model-Override
   --lang de|en         Sprache der Kritik (Default: ${cfg.lang})
   --max-rpm <n>        Rate-Limit (Default: ${cfg.maxRpm})
   --no-wait            Rate-Limit-Wartezeit überspringen
@@ -191,7 +192,10 @@ for (let i = 0; i < args.length; i++) {
     case "--diff-file": diffFile = next(); break;
     case "--agent-intent": agentIntent = next(); break;
     case "--affected": affectedArg = next(); break;
-    case "--model": model = next(); break;
+    case "--model":
+      console.error("FEHLER: --model ist kein Agent-Override. Der Nutzer waehlt das Modell mit `falsify onboard`; danach wird die gespeicherte Auswahl verwendet.");
+      process.exit(2);
+      break;
     case "--lang": lang = next(); break;
     case "--max-rpm": maxRpm = Number(next()); break;
     case "--no-wait": noWait = true; break;
@@ -759,9 +763,14 @@ async function main() {
       }
     }
   } catch (e) {
-    // Timeout-Eskalation (2026-09-01): Ueberlastete Provider enden ehrlich —
-    // kein Fake-Verdict, Job als ERROR mit Ursache, Exit 3, Hinweis zum
-    // erneuten Einreichen. Der TIMEOUT-State im Dock zeigt die Ueberlastung.
+    // Timeout-Eskalation + Transient-Retry (2026-09-01/03): Ueberlastete
+    // Provider enden NICHT sofort als ERROR — retryJob reiht transiente
+    // Fehler (Überlastung/Timeout/5xx/Netz) mit retry_at erneut ein, solange
+    // das Job-Versuchskonto (max_attempts) reicht. Der Worker holt den Job
+    // nach retry_at automatisch (claimNextJob). Erst beim Versuchs-Limit oder
+    // bei permanenten Fehlern finalisiert retryJob intern (jobDone) — kein
+    // Fake-Verdict, Exit 3, Hinweis zum erneuten Einreichen. Der TIMEOUT-
+    // State im Dock zeigt die Ueberlastung.
     const msg = String(e.message || "");
     // Rotation-Fenster schliesst auch im Fehlerfall (der Denker-Call ist
     // beendet — ob erfolgreich oder nicht ist fuer die Rotation egal).
@@ -771,14 +780,28 @@ async function main() {
     const overloaded = /überlastung|Überlastung/i.test(msg);
     const timedOut = /timeout/i.test(msg);
     uiEvt({ t: "state", s: timedOut || overloaded ? "TIMEOUT" : "ERROR" });
+    // Transient-Retry (Live-E2E 2026-09-03): retryJob statt direktem jobDone —
+    // requeued (QUEUED + retry_at) ODER finalisiert (permanent / Versuchs-
+    // Limit, intern via jobDone). Vorher toter Pfad: API-Überlastung endete
+    // trotz max_attempts=2 als ERROR mit attempt 1/2 und retry_at=NULL — der
+    // zweite Versuch wurde nie geplant, der Worker konnte ihn nie holen.
+    const retried = retryJob(db, jobId, msg, { failureKind: classifyFailure(e), backoffMs });
+    const secs = ((Date.now() - t0) / 1000).toFixed(1);
+    if (retried.retried) {
+      console.error(yellow(`\n⚠ ${msg}`));
+      console.error(yellow(`  Transient — Job wird als Versuch ${retried.attempt + 1}/${retried.maxAttempts} erneut eingereiht (retry_at ${retried.retryAt}). Der Worker holt ihn automatisch.`));
+      console.log(dim(`── ${secs}s – erneut eingereiht ──`));
+      console.log(dim(`Job: ${jobId}  ·  Status: QUEUED (falsify status ${jobId})`));
+      closeDb();
+      process.exitCode = 3;
+      return;
+    }
     if (overloaded) {
       console.error(red(`\n✖ API-Überlastung: ${msg}`));
       console.error(yellow("  Keine Freigabe, kein Fake-Verdict — Job als ERROR beendet. Bitte später erneut einreichen oder die Whitelist/den Umfang verkleinern."));
     } else {
       console.error(red(`\n✖ ${msg}`));
     }
-    jobDone(db, jobId, null, msg, { failureKind: classifyFailure(e) });
-    const secs = ((Date.now() - t0) / 1000).toFixed(1);
     console.log(dim(`── ${secs}s – Fehler ──`));
     console.log(dim(`Job: ${jobId}  ·  Status: ERROR (falsify status ${jobId})`));
     closeDb();

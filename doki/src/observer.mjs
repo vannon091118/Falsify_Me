@@ -49,16 +49,36 @@ export class DokiObserver {
     this.store = store;
     this.state = 'COLLECTING';
     this.cursor = store?.readCursor?.() ?? null;
-    this.buffer = [];
+    // Akzeptierte-Observations-Zaehler statt Ring/Array (Audit-Fix
+    // 2026-09-03): die alte this.buffer[]-Liste wuchs UEBER DIE GESAMTE
+    // Worker-Lebensdauer unbegrenzt (push pro Event, nie getrimmt), obwohl
+    // NIE ein Element gelesen wurde — nur .length ging in emit()/snapshot().
+    // Der durable Store ist die Wahrheit; der Zaehler erhaelt die exakte
+    // Semantik (kumulativ seit Konstruktion) bei konstantem Speicher.
+    this.buffered = 0;
   }
 
   ingest(event) {
     const id = observationId(event);
     if (this.store?.hasObservation?.(id)) return { accepted: false, id, duplicate: true };
-    const observation = { id, ...event, source_event_id: event?.source_event_id ?? event?.event_id ?? id };
+    // Identitaet darf NIE vom Event-Spread ueberschrieben werden und der Raw-
+    // Payload muss intakt bleiben: echte FM-EVT-Events tragen eigene `id`-
+    // Felder (job.id, handoff_id, scope_id …). Mit der alten Reihenfolge
+    // ({ id, ...event }) klaute das Event-`id` die berechnete observation_id —
+    // die Zeile lag unter der fremden id, der Duplikat-Guard (hasObservation)
+    // und der Cursor verfehlten sie (belegt durch
+    // doki/tests/falsify-contract.test.mjs). Deshalb: der berechnete
+    // Beobachtungs-Schluessel kommt als eigenes `observation_id`-Feld NACH dem
+    // Spread (der Store bevorzugt es vor einem Payload-`id`), das Event-JSON
+    // bleibt unveraendert.
+    const observation = {
+      ...event,
+      source_event_id: event?.source_event_id ?? event?.event_id ?? id,
+      observation_id: id,
+    };
     this.store?.appendObservation?.(observation);
     this.cursor = id;
-    this.buffer.push(observation);
+    this.buffered++;
     this.state = 'COLLECTING';
     return { accepted: true, id, duplicate: false };
   }
@@ -86,6 +106,6 @@ export class DokiObserver {
   }
 
   snapshot() {
-    return Object.freeze({ state: this.state, cursor: this.cursor, buffered: this.buffer.length });
+    return Object.freeze({ state: this.state, cursor: this.cursor, buffered: this.buffered });
   }
 }

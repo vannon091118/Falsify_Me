@@ -7,7 +7,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { padStart } from "../wcwidth.mjs";
-import { BLOCK_ROWS } from "../boot.mjs";
+import { BLOCK_ROWS, CATCHPHRASE } from "../boot.mjs";
 
 const h = React.createElement;
 
@@ -60,13 +60,14 @@ export default function BootView({ snap, cols, rows }) {
   const center = (text, color = "white") => h(Text, { key: `b${allRows.length}`, color }, padStart(text, inner));
 
   // Puffer oben (vertikale Zentrierung).
-  const wordH = wordRows.length + 7; // Wortmarke + Status + Statusbar + Abstaende
+  const wordH = wordRows.length + 8; // Wortmarke + Catchphrase + Status + Statusbar + Abstaende
   const topPad = Math.max(1, Math.floor((rows - wordH) / 2));
   for (let i = 0; i < topPad; i++) allRows.push(h(Text, { key: `p${i}`, color: "gray" }, ""));
 
   for (const line of wordRows) {
     allRows.push(h(Text, { key: `w${allRows.length}`, color: "white", bold: true }, " ".repeat(padW) + line));
   }
+  allRows.push(center(CATCHPHRASE, "cyan"));
   allRows.push(h(Text, { key: `s0`, color: "gray" }, ""));
   allRows.push(center(status, statusColor));
   allRows.push(center(statusRow, "cyan"));
