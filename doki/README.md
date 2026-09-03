@@ -20,7 +20,7 @@ DOKI MUST NOT
   -> authorize or perform a FalsifyMe write
 ```
 
-This is enforced structurally by the current staging implementation: no FalsifyMe module is imported, `falsify.db` is opened with `readOnly: true`, and all derived state is persisted only in the separate DOKI database. The current staging diff contains only `doki/*` files relative to `main`.
+This is enforced structurally: no FalsifyMe module is imported, `falsify.db` is opened with `readOnly: true`, and all derived state is persisted only in the separate DOKI database. The implementation is additive under `doki/`.
 
 Runtime contract:
 
@@ -30,20 +30,20 @@ The DOKI runtime itself may terminate with fallback or failure, but that termina
 
 No FalsifyMe module is imported. The interface is the documented table/JSON contract.
 
-Node.js >= 22.5 is required because `node:sqlite` and `DatabaseSync` were introduced in Node 22.5. The `readOnly` database option is supported by that API. citeturn159180search0turn159180search1
+Node.js >= 22.5 is required because `node:sqlite` and `DatabaseSync` are used by the runtime.
 
 ## Configuration
 
-`DOKI_API_BASE`, `DOKI_API_KEY`, `DOKI_GREEN_MODEL`, `DOKI_THINKER_MODEL`, `DOKI_TIMEOUT_MS`, `DOKI_MAX_CALLS`, and `DOKI_TOKEN_BUDGET` configure model access and local budget.
+`DOKI_API_BASE`, `DOKI_API_KEY`, `DOKI_GREEN_MODEL`, `DOKI_THINKER_MODEL`, `DOKI_TIMEOUT_MS`, `DOKI_MAX_CALLS`, `DOKI_TOKEN_BUDGET`, and `DOKI_RPM` configure model access and local budget. `DOKI_RPM` defaults to 40 and is hard-capped to a minimum inter-request delay of 1.5 seconds so local parallel callers cannot exceed the 40 requests/minute budget.
 
 The CLI requires the FalsifyMe database path and a separate DOKI database path:
 
 `node doki/src/cli.mjs run --falsify-db <path/to/falsify.db> --doki-db <path/to/doki.db>`
 
-DOKI never writes `falsify.db`, `rate_limit`, `.env`, `config.json`, or FalsifyMe logs.
+DOKI never writes `falsify.db`, FalsifyMe lifecycle state, FalsifyMe verdicts, or FalsifyMe logs.
 
-## Current staging status
+## Current status
 
-This implementation lives in `doki/` on the `codex/doki-rev2-staging` branch of FalsifyMe only because the available GitHub integration cannot create a brand-new repository. The code is deliberately isolated so it can be moved into its own repository without changing imports or runtime contracts.
+This branch is based directly on the current `main` baseline. DOKI is carried only as additive `doki/*` content, with the model-call rate limiter in `doki/src/rate-limit.mjs`.
 
 Before any real API run, rotate every API key that has previously been pasted into chat or repository context.
