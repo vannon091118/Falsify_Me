@@ -18,15 +18,16 @@ function claimUpdate(db, updateId, eventId) {
 
 function makeReport(snapshot, history, analysis, updateId) {
   const report = {
-    schema:'doki.phase_report/v2', report_id:'', update_id:updateId, loop_event_ref:snapshot.loop_event.id,
+    schema:'doki.phase_report/v3', report_id:'', update_id:updateId, loop_event_ref:snapshot.loop_event.id,
     job_id:snapshot.loop_event.job_id, scope_id:snapshot.loop_event.scope_id ?? null,
     phase:snapshot.job?.loop_state ?? snapshot.loop_event.to_state,
     from_state:snapshot.loop_event.from_state, to_state:snapshot.loop_event.to_state,
     verdict_ref:snapshot.job?.verdict ?? null,
     wave_refs:[...new Set((snapshot.findings??[]).map((f)=>f.wave))],
     history_refs:history.refs, statistics:analysis.stats, matches:analysis.matches,
-    tracked:analysis.tracked, correlation_status:correlation(snapshot),
-    facts_digest:digestJson({ snapshot, stats:analysis.stats, matches:analysis.matches, history:history.refs }),
+    narrator:analysis.narrator, mood:analysis.mood, tracked:analysis.tracked,
+    correlation_status:correlation(snapshot),
+    facts_digest:digestJson({ snapshot, analysis, history:history.refs }),
     rule_versions:{runtime:RUNTIME_VERSION, prompt:'doki.prompt.x-output.v1'}, report_digest:''
   };
   report.report_digest=digestJson(report);
@@ -48,7 +49,7 @@ async function narrate({report,snapshot,history,analysis,updateId,env,falsifyDb,
   if(!sharedKeyWindowOpen(falsifyDb,snapshot.loop_event.id) || activeThinkerRunExists(falsifyDb)) return fallback(prompt,'DOKI Shared-Key-Fenster ist geschlossen.');
   try {
     const result=await callModel(prompt.body,{env,shouldAbort:()=>!sharedKeyWindowOpen(falsifyDb,snapshot.loop_event.id)||activeThinkerRunExists(falsifyDb)});
-    dokiDb.prepare('INSERT OR REPLACE INTO rotation_state(id,window_key,reswitch_count,call_count,token_count,updated_at) VALUES(1,?,?,?,?,?)').run(snapshot.loop_event.job_id,0,1,0,now());
+    dokiDb.prepare('INSERT OR REPLACE INTO rotation_state(id,window_key,reswitch_count,call_count,token_count,updated_at) VALUES(1,?,?,?,?,?)').run(snapshot.loop_event.job_id,0,1,0,0,now());
     return {mode:'NARRATIVE',renderPath:'THINKER_OUTPUT',body:result.text,prompt};
   } catch(error) {
     return fallback(prompt,`DOKI-LLM-Fehler: ${String(error?.message||error||'unbekannter Fehler')}.`);
@@ -66,11 +67,11 @@ export async function processEvent({falsifyDb,dokiDb,eventId,env=process.env}){
     if(gap)dokiDb.prepare('INSERT INTO gaps(update_id,job_id,kind,detail,created_at) VALUES(?,?,?,?,?)').run(updateId,snapshot.loop_event.job_id,gap.kind,gap.detail,now());
     dokiDb.prepare('INSERT INTO observations(update_id,loop_event_id,job_id,scope_id,event_type,from_state,to_state,snapshot_json,snapshot_digest,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(updateId,eventId,snapshot.loop_event.job_id,snapshot.loop_event.scope_id??null,snapshot.loop_event.event_type,snapshot.loop_event.from_state,snapshot.loop_event.to_state,JSON.stringify(snapshot),snapshotDigest,now());
     const history=buildHistory(dokiDb,snapshot);
-    const analysis=narrativeAnalysis(snapshot);
+    const analysis=narrativeAnalysis(snapshot,history);
     const report=makeReport(snapshot,history,analysis,updateId);
     dokiDb.prepare('INSERT INTO phase_reports(report_id,update_id,report_json,report_digest,created_at) VALUES(?,?,?,?,?)').run(report.report_id,updateId,JSON.stringify(report),report.report_digest,now());
     const r=await narrate({report,snapshot,history,analysis,updateId,env,falsifyDb,dokiDb});
-    const message={schema:'doki_message/v1',message_id:digestJson(updateId),update_ref:updateId,phase_report_ref:report.report_id,mode:r.mode,render_path:r.renderPath,reswitch_count:0,narrator_ref:r.prompt.promptId,body:r.body,evidence_refs:report.wave_refs,anomaly_refs:[],authority:'NONE'};
+    const message={schema:'doki_message/v1',message_id:digestJson(updateId),update_ref:updateId,phase_report_ref:report.report_id,mode:r.mode,render_path:r.renderPath,reswitch_count:0,narrator_ref:analysis.narrator,body:r.body,evidence_refs:report.wave_refs,anomaly_refs:[],authority:'NONE'};
     dokiDb.prepare('INSERT INTO dialog_messages(message_id,update_id,message_json,created_at) VALUES(?,?,?,?)').run(message.message_id,updateId,JSON.stringify(message),now());
     dokiDb.prepare("UPDATE update_jobs SET status='DONE',finished_at=? WHERE update_id=?").run(now(),updateId); return message;
   }catch(error){
