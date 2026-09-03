@@ -1,11 +1,12 @@
 import { digestJson } from './hash.mjs';
 import { buildHistory, correlation } from './history.mjs';
-import { chooseAction, updateQ, budgetDefaults } from './qlearning.mjs';
 import { compilePrompt, detectInstructionLikeData } from './prompt.mjs';
 import { callModel, modelForAction, activeThinkerRunExists } from './model.mjs';
-import { DEFAULT_MAX_RESWITCH, RUNTIME_VERSION, checkContract } from './contracts.mjs';
+import { RUNTIME_VERSION, checkContract } from './contracts.mjs';
 import { inspectEventContinuity, readSnapshot } from './falsify-reader.mjs';
 import { sharedKeyWindowOpen } from './rotation.mjs';
+import { buildNarratorContext } from './narrator-context.mjs';
+import { narrateOnce } from './thinker-orchestrator.mjs';
 
 const now = () => new Date().toISOString();
 const updateIdFor = (eventId) => digestJson(`doki:${eventId}:${RUNTIME_VERSION}`);
@@ -15,14 +16,7 @@ function claimUpdate(db, updateId, eventId) {
   if (existing) {
     const message = db.prepare('SELECT message_json FROM dialog_messages WHERE update_id=?').get(updateId);
     if (message) return { claimed: false, message: JSON.parse(message.message_json) };
-    // Crash-Recovery: Update wurde geclaimt, aber nie finalisiert (kein
-    // dialog_message). Teilweise persistierte Zwischenstände entfernen und
-    // das Update deterministisch neu aufnehmen — keine doppelte Narration,
-    // keine verlorene Idempotenz (message_id = digest(updateId) bleibt stabil).
-    for (const table of ['observations','phase_reports','prompt_runs','gaps','anomalies','dialog_messages']) {
-      db.prepare('DELETE FROM ' + table + ' WHERE update_id = ?').run(updateId);
-    }
-    // q_table hat keine update_id-Spalte, ist aber an source_event_id (= loop_event.id) gebunden
+    for (const table of ['observations','phase_reports','prompt_runs','gaps','anomalies','dialog_messages']) db.prepare('DELETE FROM ' + table + ' WHERE update_id = ?').run(updateId);
     db.prepare('DELETE FROM q_table WHERE source_event_id = ?').run(eventId);
     db.prepare("UPDATE update_jobs SET status='RUNNING', started_at=?, error=NULL, finished_at=NULL WHERE update_id=?").run(now(), updateId);
     return { claimed: true, resumed: true };
@@ -46,39 +40,60 @@ function makeReport(snapshot, history, updateId) {
   return report;
 }
 
-function fallback(prompt, reason='DOKI konnte keine Prosa erzeugen.', reswitchCount=0) {
-  return { mode:'FACTUAL_FALLBACK', renderPath:'FACTUAL_FALLBACK', reswitchCount, body:`${reason} Fakten bleiben erhalten.`, prompt };
+function fallback(prompt, reason='DOKI konnte keine Prosa erzeugen.') {
+  return { mode:'FACTUAL_FALLBACK', renderPath:'FACTUAL_FALLBACK', body:`${reason} Fakten bleiben erhalten.`, prompt, narratorContext: prompt.narratorContext ?? null };
 }
 
-async function narrate({report,snapshot,history,action,updateId,env,falsifyDb,dokiDb,modelCall = callModel}) {
-  const budget=budgetDefaults(env);
-  const prompt=compilePrompt(report,snapshot,history,{perspective:report.correlation_status==='DIVERGENCE'?'abweichende Perspektiven explizit benennen':'neutral'});
+function deriveCare(snapshot, report) {
+  const findings = snapshot.findings ?? [];
+  const evil = findings.filter((f) => f.wave === 'evil' || f.wave === 'evil-twin');
+  const evidence = findings.map((f) => ({ id:f.id ?? null, wave:f.wave ?? null, verdict:f.verdict ?? null, befund:f.befund ?? null, content:f.content ?? null }));
+  return {
+    CLAIM: { statement: snapshot.job?.agent_intent ?? snapshot.scope?.header ?? null, source: 'observed' },
+    ATTACK: evil.map((f) => ({ verdict:f.verdict ?? null, befund:f.befund ?? null, content:f.content ?? null })),
+    RE_EVALUATE: { correlation: report.correlation_status, verdict: snapshot.job?.verdict ?? null },
+    EVIDENCE: evidence,
+  };
+}
+
+async function narrate({report,snapshot,history,updateId,env,falsifyDb,dokiDb,modelCall=callModel}) {
+  if (!sharedKeyWindowOpen(falsifyDb, snapshot.loop_event.id) || activeThinkerRunExists(falsifyDb)) {
+    return fallback({ promptDigest:null, narratorContext:null }, 'DOKI wartet auf den freien Thinker-Slot.');
+  }
+  const narratorContext = buildNarratorContext({
+    observed: snapshot,
+    report,
+    history,
+    ensemble: {},
+    relevance: [],
+    care: deriveCare(snapshot, report),
+    evidence: snapshot.findings ?? [],
+  });
+  const prompt = compilePrompt(report, snapshot, history, { narratorContext });
   dokiDb.prepare('INSERT OR REPLACE INTO prompt_runs(prompt_id,update_id,prompt_digest,report_digest,prompt_json,created_at) VALUES(?,?,?,?,?,?)').run(prompt.promptId,updateId,prompt.promptDigest,report.report_digest,JSON.stringify(prompt),now());
-  if(detectInstructionLikeData(snapshot)){
+  if (detectInstructionLikeData(snapshot)) {
     dokiDb.prepare('INSERT INTO anomalies(update_id,kind,detail,created_at) VALUES(?,?,?,?)').run(updateId,'INSTRUCTION_LIKE_DATA','Narrative input contained instruction-like data; authority unchanged.',now());
-    return fallback(prompt,'DOKI hat instruction-like Daten erkannt.');
+    return fallback({ ...prompt, narratorContext }, 'DOKI hat instruction-like Daten erkannt.');
   }
-  if(!sharedKeyWindowOpen(falsifyDb,snapshot.loop_event.id) || activeThinkerRunExists(falsifyDb)) return fallback(prompt,'DOKI Shared-Key-Fenster ist geschlossen.');
-  let current=action, calls=0, reswitch=0, lastError=null;
-  while(calls < budget.maxCalls){
-    if(!sharedKeyWindowOpen(falsifyDb,snapshot.loop_event.id) || activeThinkerRunExists(falsifyDb)) return fallback(prompt,'DOKI Kill-Switch ausgelöst.');
-    try{
-      const result=await modelCall(prompt.body,modelForAction(current,env),{env,shouldAbort:()=>!sharedKeyWindowOpen(falsifyDb,snapshot.loop_event.id)||activeThinkerRunExists(falsifyDb)});
-      calls++;
-      dokiDb.prepare('INSERT OR REPLACE INTO rotation_state(id,window_key,reswitch_count,call_count,token_count,updated_at) VALUES(1,?,?,?,?,?)').run(snapshot.loop_event.job_id,reswitch,calls,0,now());
-      return {mode:'NARRATIVE',renderPath:current==='RED'?'RESWITCH_THINKER_MODEL':'SMALL_MODEL',reswitchCount:reswitch,body:result.text,prompt};
-    }catch(error){
-      lastError=error; calls++;
-      if(reswitch>=DEFAULT_MAX_RESWITCH) break;
-      reswitch++; current='RED';
-      if(reswitch>DEFAULT_MAX_RESWITCH) break;
-    }
+  if (!sharedKeyWindowOpen(falsifyDb, snapshot.loop_event.id) || activeThinkerRunExists(falsifyDb)) return fallback({ ...prompt, narratorContext }, 'DOKI Kill-Switch ausgelöst.');
+  try {
+    const result = await narrateOnce({
+      prompt: prompt.body,
+      callThinker: (body) => modelCall(body, modelForAction('RED', env), {
+        env,
+        shouldAbort: () => !sharedKeyWindowOpen(falsifyDb, snapshot.loop_event.id) || activeThinkerRunExists(falsifyDb),
+      }),
+      shouldRun: () => sharedKeyWindowOpen(falsifyDb, snapshot.loop_event.id) && !activeThinkerRunExists(falsifyDb),
+    });
+    if (result.status === 'DEFERRED') return fallback({ ...prompt, narratorContext }, 'DOKI wartet auf den freien Thinker-Slot.');
+    dokiDb.prepare('INSERT OR REPLACE INTO rotation_state(id,window_key,reswitch_count,call_count,token_count,updated_at) VALUES(1,?,?,?,?,?)').run(snapshot.loop_event.job_id,0,1,0,now());
+    return { mode:'NARRATIVE', renderPath:'THINKER', reswitchCount:0, body:result.text, prompt, narratorContext, model:result.model };
+  } catch (error) {
+    return fallback({ ...prompt, narratorContext }, 'DOKI-LLM-Fehler: ' + String(error?.message || error || 'unbekannter Fehler') + '.');
   }
-  return fallback(prompt, reswitch>=DEFAULT_MAX_RESWITCH ? 'RESWITCH-Limit (5) erreicht.' : ('DOKI-LLM-Fehler: ' + String(lastError?.message||lastError||'unbekannter Fehler') + '.'), reswitch);
 }
 
-export async function processEvent({falsifyDb,dokiDb,eventId,env=process.env,modelCall=callModel}){
-  // FalsifyMe-Contract-Anker: unbekannte Struktur darf nie interpretiert werden.
+export async function processEvent({falsifyDb,dokiDb,eventId,env=process.env,modelCall=callModel}) {
   const contract=checkContract(env);
   if(!contract.ok){
     const updateId=updateIdFor(eventId);
@@ -93,10 +108,8 @@ export async function processEvent({falsifyDb,dokiDb,eventId,env=process.env,mod
     dokiDb.prepare('INSERT INTO observations(update_id,loop_event_id,job_id,scope_id,event_type,from_state,to_state,snapshot_json,snapshot_digest,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(updateId,eventId,snapshot.loop_event.job_id,snapshot.loop_event.scope_id??null,snapshot.loop_event.event_type,snapshot.loop_event.from_state,snapshot.loop_event.to_state,JSON.stringify(snapshot),snapshotDigest,now());
     const history=buildHistory(dokiDb,snapshot); const report=makeReport(snapshot,history,updateId);
     dokiDb.prepare('INSERT INTO phase_reports(report_id,update_id,report_json,report_digest,created_at) VALUES(?,?,?,?,?)').run(report.report_id,updateId,JSON.stringify(report),report.report_digest,now());
-    const action=chooseAction(dokiDb,report).action;
-    updateQ(dokiDb,report,{action,reward:report.correlation_status==='CONVERGENT'?1:0});
-    const r=await narrate({report,snapshot,history,action,updateId,env,falsifyDb,dokiDb,modelCall});
-    const message={schema:'doki_message/v1',message_id:digestJson(updateId),update_ref:updateId,phase_report_ref:report.report_id,mode:r.mode,render_path:r.renderPath,reswitch_count:r.reswitchCount,narrator_ref:r.prompt.promptId,body:r.body,evidence_refs:report.wave_refs,anomaly_refs:[],authority:'NONE'};
+    const r=await narrate({report,snapshot,history,updateId,env,falsifyDb,dokiDb,modelCall});
+    const message={schema:'doki_message/v1',message_id:digestJson(updateId),update_ref:updateId,phase_report_ref:report.report_id,mode:r.mode,render_path:r.renderPath,reswitch_count:r.reswitchCount,narrator_ref:r.narratorContext?.contextDigest ?? null,body:r.body,evidence_refs:report.wave_refs,anomaly_refs:[],authority:'NONE'};
     dokiDb.prepare('INSERT INTO dialog_messages(message_id,update_id,message_json,created_at) VALUES(?,?,?,?)').run(message.message_id,updateId,JSON.stringify(message),now());
     dokiDb.prepare('UPDATE update_jobs SET status=\'DONE\',finished_at=? WHERE update_id=?').run(now(),updateId); return message;
   }catch(error){
