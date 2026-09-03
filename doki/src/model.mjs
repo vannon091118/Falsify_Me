@@ -1,5 +1,5 @@
 import { digestJson } from './hash.mjs';
-import { ACTIVE_STATES } from './contracts.mjs';
+import { ACTIVE_STATES, DEFAULT_MAX_RESWITCH } from './contracts.mjs';
 
 function now() { return new Date().toISOString(); }
 
@@ -42,6 +42,15 @@ export async function callModel(prompt, model, { env = process.env, shouldAbort 
     if (typeof text !== 'string' || !text.trim()) throw new Error('LLM lieferte keine Message');
     return { text: text.trim(), model };
   } finally { clearTimeout(timer); clearInterval(abortPoll); }
+}
+
+export function resolveSwitches(decisions = []) {
+  const reswitchCount = decisions.filter((decision) => decision === 'RED').length;
+  const last = decisions.at(-1);
+  if (reswitchCount > DEFAULT_MAX_RESWITCH) {
+    return { action: 'FACTUAL_FALLBACK', reswitchCount: DEFAULT_MAX_RESWITCH };
+  }
+  return { action: last ?? 'FACTUAL_FALLBACK', reswitchCount };
 }
 
 export function config(env = process.env) { return apiConfig(env); }
