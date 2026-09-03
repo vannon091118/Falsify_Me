@@ -1,22 +1,85 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="320" viewBox="0 0 1200 320" role="img" aria-labelledby="title desc">
-  <title id="title">FALSIFYME — Claim, Contradiction, Re-evaluation</title>
-  <desc id="desc">FalsifyMe makes a claim from evidence. Evil Twin attacks the claim explicitly. FalsifyMe re-evaluates the claim and only then can the gate open.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="420" viewBox="0 0 1400 420" role="img" aria-labelledby="title desc">
+  <title id="title">FALSIFYME — C.A.R.E.</title>
+  <desc id="desc">FalsifyMe confidently makes a claim. Evil Twin attacks it brutally. FalsifyMe re-evaluates itself. Evidence decides.</desc>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#05070d"/><stop offset="0.58" stop-color="#0a1220"/><stop offset="1" stop-color="#05070d"/></linearGradient>
-    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#49f0bd"/><stop offset="1" stop-color="#76b8ff"/></linearGradient>
-    <linearGradient id="red" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff536f"/><stop offset="1" stop-color="#c61f45"/></linearGradient>
-    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#fff" stroke-opacity="0.035"/></pattern>
-    <filter id="glow"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#05070c"/><stop offset="0.52" stop-color="#101728"/><stop offset="1" stop-color="#05070c"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#69f6d2"/><stop offset="1" stop-color="#71a7ff"/></linearGradient>
+    <linearGradient id="hot" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff6685"/><stop offset="1" stop-color="#d51d4c"/></linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffd36a"/><stop offset="1" stop-color="#ff9f43"/></linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#fff" stroke-opacity=".035"/></pattern>
+    <filter id="glowC"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="glowR"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
   </defs>
-  <rect width="1200" height="320" rx="22" fill="url(#bg)"/>
-  <rect width="1200" height="320" rx="22" fill="url(#grid)"/>
-  <g font-family="Consolas, Menlo, monospace" font-size="11" fill="#7186a3" opacity="0.34"><text x="34" y="34">loop_events → evidence → verdict</text><text x="34" y="298">read-only · append-only truth · fail-closed</text><text x="1014" y="34">DOKI // OBSERVER</text></g>
-  <g font-family="Consolas, Menlo, monospace"><text x="44" y="104" font-size="48" font-weight="800" letter-spacing="1" fill="#f3f7ff">FALSIFY<tspan fill="url(#mint)">_ME</tspan></text><text x="47" y="133" font-size="13" letter-spacing="3" fill="#8299b7">THE SYSTEM THAT ARGUES WITH ITSELF</text></g>
-  <g transform="translate(44 164)"><rect width="304" height="92" rx="14" fill="#0b1726" stroke="#1c3550"/><circle cx="22" cy="24" r="5" fill="#49f0bd" filter="url(#glow)"/><text x="38" y="28" font-family="Consolas, Menlo, monospace" font-size="12" fill="#8da6c6">FALSIFYME / CLAIM</text><text x="20" y="56" font-family="Inter, Arial, sans-serif" font-size="16" fill="#eaf2ff">„Die Behauptung hält.“</text><text x="20" y="76" font-family="Consolas, Menlo, monospace" font-size="11" fill="#5f7694">evidence-backed · still falsifiable</text></g>
-  <g transform="translate(374 158)"><path d="M0 46 H86" stroke="#2a4664" stroke-width="2"/><path d="M33 31 L52 46 L33 61" fill="none" stroke="#49f0bd" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="100" cy="46" r="18" fill="#0b1220" stroke="#ff536f" stroke-width="2"/><path d="M92 38 L108 54 M108 38 L92 54" stroke="#ff536f" stroke-width="3" stroke-linecap="round"/></g>
-  <g transform="translate(488 164)"><rect width="304" height="92" rx="14" fill="#190d15" stroke="#4d1a2b"/><circle cx="22" cy="24" r="5" fill="#ff536f" filter="url(#glow)"/><text x="38" y="28" font-family="Consolas, Menlo, monospace" font-size="12" fill="#ff8ba0">EVIL TWIN / WIDERSPRUCH</text><text x="20" y="56" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="700" fill="#fff0f3">„Nein. Das ist falsch.“</text><line x1="20" y1="45" x2="205" y2="45" stroke="#ff536f" stroke-width="3" stroke-linecap="round"/><text x="20" y="76" font-family="Consolas, Menlo, monospace" font-size="11" fill="#b96a7e">independent attack · no shared reasoning</text></g>
-  <g transform="translate(828 164)"><rect width="320" height="92" rx="14" fill="#17170e" stroke="#4a3d20"/><circle cx="22" cy="24" r="5" fill="#ffc65d"/><text x="38" y="28" font-family="Consolas, Menlo, monospace" font-size="12" fill="#e3bd72">FALSIFYME / RE-EVALUATE</text><text x="20" y="56" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="700" fill="#fff6d8">„Dann war meine Aussage zu stark.“</text><text x="20" y="76" font-family="Consolas, Menlo, monospace" font-size="11" fill="#aa9364">claim rewritten from surviving evidence</text></g>
-  <path d="M1134 272 C1082 303 1018 303 968 274 C914 244 853 244 815 270" fill="none" stroke="#ffc65d" stroke-width="2" stroke-dasharray="5 6"/><path d="M815 270 L830 260 L828 279 Z" fill="#ffc65d"/>
-  <g transform="translate(505 25)" font-family="Consolas, Menlo, monospace"><rect width="190" height="34" rx="17" fill="#08101a" stroke="#24384e"/><circle cx="18" cy="17" r="4" fill="#ff536f"/><text x="30" y="22" font-size="11" fill="#9fb3ce">WRITE GATE</text><text x="162" y="22" font-size="11" text-anchor="end" fill="#ffb454">RETHINK FIRST</text></g>
-  <text x="600" y="306" text-anchor="middle" font-family="Consolas, Menlo, monospace" font-size="14" letter-spacing="2" fill="#a5b8d0">CLAIM → CONTRADICTION → RE-EVALUATION</text>
+
+  <rect width="1400" height="420" rx="28" fill="url(#bg)"/>
+  <rect width="1400" height="420" rx="28" fill="url(#grid)"/>
+
+  <g font-family="Consolas,Menlo,monospace">
+    <text x="48" y="42" font-size="12" letter-spacing="2" fill="#7c91ae">DOKI // OBSERVER</text>
+    <text x="1352" y="42" text-anchor="end" font-size="12" letter-spacing="2" fill="#7c91ae">LOOP_EVENTS → EVIDENCE → VERDICT</text>
+
+    <text x="48" y="105" font-size="56" font-weight="900" letter-spacing="1" fill="#f4f8ff">FALSIFY<tspan fill="url(#cyan)">_ME</tspan></text>
+    <text x="51" y="136" font-size="14" letter-spacing="4" fill="#91a6c3">THE VOICE THAT IS CERTAIN IT IS RIGHT</text>
+  </g>
+
+  <!-- C.A.R.E. spine -->
+  <g transform="translate(50 175)">
+    <rect x="0" y="0" width="1300" height="170" rx="20" fill="#080d17" fill-opacity=".78" stroke="#233651"/>
+    <path d="M28 142 H1272" stroke="#1b2b41"/>
+
+    <g font-family="Consolas,Menlo,monospace">
+      <text x="28" y="30" font-size="11" letter-spacing="3" fill="#617893">C.A.R.E. / THE LOOP</text>
+      <text x="1238" y="30" text-anchor="end" font-size="11" fill="#617893">NOT A DEBATE · A CONTROLLED SELF-CORRECTION</text>
+    </g>
+
+    <!-- Claim -->
+    <g transform="translate(28 49)">
+      <rect width="300" height="82" rx="14" fill="#0c1724" stroke="#28506a"/>
+      <circle cx="22" cy="22" r="6" fill="#69f6d2" filter="url(#glowC)"/>
+      <text x="38" y="26" font-family="Consolas,Menlo,monospace" font-size="12" letter-spacing="1.5" fill="#8eb9c8">C · CLAIM</text>
+      <text x="20" y="53" font-family="Inter,Arial,sans-serif" font-size="15" font-weight="700" fill="#f0f6ff">„Die Agenten haben es verstanden.“</text>
+      <text x="20" y="71" font-family="Consolas,Menlo,monospace" font-size="10.5" fill="#607a96">FalsifyMe believes me.</text>
+    </g>
+
+    <!-- Attack -->
+    <g transform="translate(352 49)">
+      <rect width="300" height="82" rx="14" fill="#1b0d15" stroke="#632039"/>
+      <circle cx="22" cy="22" r="6" fill="#ff6685" filter="url(#glowR)"/>
+      <text x="38" y="26" font-family="Consolas,Menlo,monospace" font-size="12" letter-spacing="1.5" fill="#ff9ab0">A · ATTACK</text>
+      <text x="20" y="53" font-family="Inter,Arial,sans-serif" font-size="15" font-weight="800" fill="#fff0f3">„Was laberst du für einen Quatsch?“</text>
+      <text x="20" y="71" font-family="Consolas,Menlo,monospace" font-size="10.5" fill="#be7183">Evil Twin · independent · brutal</text>
+    </g>
+
+    <!-- Re-evaluation -->
+    <g transform="translate(676 49)">
+      <rect width="300" height="82" rx="14" fill="#19170d" stroke="#655329"/>
+      <circle cx="22" cy="22" r="6" fill="#ffd36a"/>
+      <text x="38" y="26" font-family="Consolas,Menlo,monospace" font-size="12" letter-spacing="1.5" fill="#e8c576">R · RE-EVALUATE</text>
+      <text x="20" y="53" font-family="Inter,Arial,sans-serif" font-size="15" font-weight="800" fill="#fff6d8">„Moment. Das ist kein Beweis.“</text>
+      <text x="20" y="71" font-family="Consolas,Menlo,monospace" font-size="10.5" fill="#aa9565">FalsifyMe retracts or weakens.</text>
+    </g>
+
+    <!-- Evidence -->
+    <g transform="translate(1000 49)">
+      <rect width="272" height="82" rx="14" fill="#0d1513" stroke="#2d5b4d"/>
+      <circle cx="22" cy="22" r="6" fill="#77e7b4"/>
+      <text x="38" y="26" font-family="Consolas,Menlo,monospace" font-size="12" letter-spacing="1.5" fill="#91d8ba">E · EVIDENCE</text>
+      <text x="20" y="53" font-family="Inter,Arial,sans-serif" font-size="15" font-weight="800" fill="#edfff7">„Jetzt prüfen wir es wirklich.“</text>
+      <text x="20" y="71" font-family="Consolas,Menlo,monospace" font-size="10.5" fill="#669984">truth outranks both voices</text>
+    </g>
+
+    <!-- connectors -->
+    <g fill="none" stroke-linecap="round">
+      <path d="M328 90 H347" stroke="#44657d" stroke-width="2"/><path d="M341 83 L348 90 L341 97" stroke="#69f6d2" stroke-width="2"/>
+      <path d="M652 90 H671" stroke="#5a4251" stroke-width="2"/><path d="M665 83 L672 90 L665 97" stroke="#ff6685" stroke-width="2"/>
+      <path d="M976 90 H995" stroke="#64563b" stroke-width="2"/><path d="M989 83 L996 90 L989 97" stroke="#ffd36a" stroke-width="2"/>
+    </g>
+  </g>
+
+  <g font-family="Consolas,Menlo,monospace">
+    <text x="50" y="386" font-size="12" letter-spacing="2" fill="#7287a3">SELF-CONFIDENCE → CONTRADICTION → SELF-CORRECTION</text>
+    <text x="1350" y="386" text-anchor="end" font-size="12" letter-spacing="2" fill="#7287a3">READ-ONLY · FAIL-CLOSED</text>
+  </g>
 </svg>
