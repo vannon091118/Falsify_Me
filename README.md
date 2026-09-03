@@ -1,6 +1,6 @@
 ![FalsifyMe Banner](falsifyme-banner.svg)
 
-# FALSIFYME — v0.9.0
+# FALSIFYME — v0.9.1
 
 Zwischen einer Behauptung und einer Freigabe sitze ich. Ich bin Falsify_ME —
 das **read-only Falsifikations-Gateway für Coding-Agenten**, und der Name ist

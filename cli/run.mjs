@@ -714,6 +714,12 @@ async function main() {
   const t0 = Date.now();
   let result;
   uiEvt({ t: "state", s: "THINKING" });
+  // Rotation-Wahrheit (DOKI-Blocker 6, 2026-09-03): thinker_start/done sind
+  // die EINZIGE Quelle fuer die Shared-Key-Rotation (doki/src/rotation.mjs
+  // liest genau diese Event-Typen). Sie werden um den REALen Modell-Loop
+  // geschrieben — nicht um den Job, nicht um den Twin (Twin hat eigenes
+  // Modell/eigenen Key-Vertrag). Payload traegt das tatsaechliche Modell.
+  recordLoopEvent(db, { jobId, scopeId: scope ? scope.id : null, eventType: "thinker_start", payload: { model } });
   // NVIDIA-Overload-Kompensation (2026-09-02): Überlastung/Timeout beendet den
   // Job NICHT sofort — das Modell arbeitet weiter, sobald das 40-RPM-Budget
   // wieder Platz hat (enforceRateLimit blockiert bis zum freien Slot).
@@ -740,6 +746,8 @@ async function main() {
         uiEvt({ t: "activity", tool: info.tool, file: info.file, label: `${info.tool}(${info.file ?? ""})` });
       },
       });
+      // Denker-Loop erfolgreich beendet: Fenster schliessen (Rotation-Vertrag).
+      recordLoopEvent(db, { jobId, scopeId: scope ? scope.id : null, eventType: "thinker_done", payload: { model, secs: Number(((Date.now() - t0) / 1000).toFixed(1)) } });
       break;
       } catch (e) {
         if (!retryableOverload(String(e.message || "")) || attempt >= maxAttempts) throw e;
@@ -755,6 +763,11 @@ async function main() {
     // kein Fake-Verdict, Job als ERROR mit Ursache, Exit 3, Hinweis zum
     // erneuten Einreichen. Der TIMEOUT-State im Dock zeigt die Ueberlastung.
     const msg = String(e.message || "");
+    // Rotation-Fenster schliesst auch im Fehlerfall (der Denker-Call ist
+    // beendet — ob erfolgreich oder nicht ist fuer die Rotation egal).
+    try {
+      recordLoopEvent(db, { jobId, scopeId: scope ? scope.id : null, eventType: "thinker_done", payload: { model, error: msg } });
+    } catch { /* Rotation ist Metadatum, nie kritisches Pfad */ }
     const overloaded = /überlastung|Überlastung/i.test(msg);
     const timedOut = /timeout/i.test(msg);
     uiEvt({ t: "state", s: timedOut || overloaded ? "TIMEOUT" : "ERROR" });
