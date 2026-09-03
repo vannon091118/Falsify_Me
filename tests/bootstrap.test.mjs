@@ -141,6 +141,29 @@ test("bootstrap: dry-run schreibt weder Instruction noch Home-Datei", async () =
   assert.equal(fs.readdirSync(home).length, 0, "Dry-run darf das Home nicht veraendern");
 });
 
+test("apikey: leerer FALSIFY_HOME = kein Key; Key an beliebiger Namensposition zaehlt", async () => {
+  const saved = process.env.FALSIFY_HOME;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bs-keyhome-"));
+  process.env.FALSIFY_HOME = tmp;
+  const origLog = console.log;
+  console.log = () => {}; // headless-Guidance unterdruecken (nur Struktur testen)
+  try {
+    const { hasApiKey, ensureApiKeyAtBootstrap } = await import(B("apikey.mjs"));
+    assert.equal(hasApiKey(), false, "leere Home: ehrlich kein Key");
+    const r = await ensureApiKeyAtBootstrap({ interactive: false });
+    assert.equal(r.configured, false);
+    assert.equal(r.mode, "headless");
+    // Key an ZWEITER Namensposition (OPENAI statt Default-NVIDIA) muss zaehlen:
+    fs.writeFileSync(path.join(tmp, ".env"), "OPENAI_API_KEY=sk-test-123\n", "utf8");
+    assert.equal(hasApiKey(), true, "beliebiger Name der Key-Liste zaehlt (loadApiKey)");
+  } finally {
+    console.log = origLog;
+    if (saved === undefined) delete process.env.FALSIFY_HOME;
+    else process.env.FALSIFY_HOME = saved;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("dock: Plattform-Ehrlichkeit + Retry-Poll (kein Fake-Erfolg)", async () => {
   const { startDock } = await import(B("dock.mjs"));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "bs-dock-"));

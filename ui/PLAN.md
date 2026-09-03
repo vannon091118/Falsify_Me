@@ -1546,3 +1546,41 @@ DEPENDS_ON: UI-123
 VERIFY: tests/full-loop-e2e.test.mjs mit FALSIFY_UI=1 erweitern (FM-EVT
 loop-Zeilen im stdout behaupten); negative Pfade analog.
 RESULT: —
+
+ID: UI-125
+TASK: Bootstrap/Onboarding-API-Key-Gate: fehlt ein API-Key, erklaert der
+Bootstrap ehrlich, wozu FalsifyMe (bis zu) zwei APIs nutzt (Hauptmodell/
+Thinker, Pflicht + optionale Evil-Twin-API via twinApiBase/twinModel/
+twinApiKeyEnv) und nennt die Online-Key-Seiten der Beispiel-Anbieter
+(NVIDIA build.nvidia.com, OpenAI platform.openai.com/api-keys). Interaktiv
+(TTY) uebergibt er in den Onboarding-Dialog (falsify onboard), headless
+(Agent) druckt er die exakte Anleitung (falsify settings set …) — kein
+stiller Abschluss, kein Fake-Verdict. Neue Module: cli/onboard/explain.mjs
+(pure Texte, keine Secrets) + cli/bootstrap/apikey.mjs (ensureApiKeyAtBootstrap);
+Onboarding (steps.mjs) druckt die Erklaerung ebenfalls, wenn loadApiKey()
+leer ist (beliebige Key-Namensposition, nicht nur die erste).
+STATUS: DONE
+DEPENDS_ON: UI-123 (Konvention: Verifikation isoliert, ohne Runtime zu stoeren)
+VERIFY: node --test --test-concurrency=1 tests/onboard.test.mjs
+tests/bootstrap.test.mjs (isolierte FALSIFY_HOME-mkdtemp, kein Dock, keine
+echte DB); git diff --check
+RESULT: 16/16 gruen (bootstrap+onboard inkl. 3 neuer Tests: explain-Inhalt
+2-APIs+Links, runOnboard druckt Erklaerung bei fehlendem Key, apikey
+headless-Mode + Key an zweiter Namensposition zaehlt). Volle Kernsuite
+bewusst NICHT gelaufen (Nutzer-E2E aktiv: keine Tests, die die Runtime
+stoeren). README (Bootstrap-Schritt 5, API-Key-Abschnitt), WIRING (§1/§12/
+§13) nachgezogen; Aenderungen uncommitted.
+
+ID: UI-126
+TASK: User-Projekt pusht FalsifyMe nicht mit: initAnchor (Bootstrap, `falsify
+anchor init|clone`) traegt den checkout-lokalen Identitaetsanker
+`/FalsifyME.md` automatisch in die Projekt-`.gitignore` ein (markierter
+Block, idempotent, bestehende .gitignore-Inhalte bleiben erhalten;
+best-effort, Anker-Vertrag bleibt unberuehrt). Zentral in core/identity.mjs
+(ensureAnchorGitIgnored), damit ALLE Erzeugungswege abgedeckt sind.
+STATUS: DONE
+DEPENDS_ON: UI-125 (Konvention: Verifikation isoliert)
+VERIFY: node --test --test-concurrency=1 tests/identity.test.mjs; git diff --check
+RESULT: 8/8 gruen inkl. neuem Test (FalsifyME.md in .gitignore, idempotent,
+bestehende Inhalte erhalten). README (Bootstrap-Schritt 6 + Anchor-Hinweis),
+WIRING §16 nachgezogen; Aenderungen uncommitted.

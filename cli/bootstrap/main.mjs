@@ -16,7 +16,7 @@ import { openDb, closeDb } from "../../artifacts/db.mjs";
 import { bindAnchor } from "../../artifacts/projects.mjs";
 import { initAnchor } from "../../core/identity.mjs";
 
-export async function runBootstrap({ root, projectRoot, homeDir, dryRun = false, skipDock = false, noDesktop = false, mode = "optional", reichweite = "projekt" } = {}) {
+export async function runBootstrap({ root, projectRoot, homeDir, dryRun = false, skipDock = false, noDesktop = false, mode = "optional", reichweite = "projekt", interactive = Boolean(process.stdin?.isTTY) } = {}) {
   // 1. Installation (existierendes install.mjs aus dem Paket-Root)
   //    noDesktop:true unterdrueckt Desktop-Icons (Agent-/Headless-Kontext);
   //    Default (false) = volle Installation inkl. Icons, wie node install.mjs.
@@ -78,7 +78,19 @@ export async function runBootstrap({ root, projectRoot, homeDir, dryRun = false,
   // 4. Sichtbares Dock
   const dock = skipDock ? { ok: true, skipped: true } : await startDock({ coreDir: installLocation.coreDir });
 
-  // 5. Workflow-Protokoll
+  // 5. API-Key-Check (kein stiller Abschluss ohne Key): fehlt der Key,
+  //    erklaert der Bootstrap ehrlich, wozu FalsifyMe (bis zu) zwei APIs
+  //    nutzt (Hauptmodell + optionaler Evil-Twin-Anbieter) + Provider-Links;
+  //    interaktiv -> Uebergang in den Onboarding-Key-Dialog.
+  const key = { configured: true };
+  if (!dryRun) {
+    const { ensureApiKeyAtBootstrap } = await import("./apikey.mjs");
+    const keyResult = await ensureApiKeyAtBootstrap({ interactive, skipDock });
+    key.configured = keyResult.configured;
+    key.mode = keyResult.mode;
+  }
+
+  // 6. Workflow-Protokoll
   return {
     ok: true,
     agent,
@@ -86,5 +98,6 @@ export async function runBootstrap({ root, projectRoot, homeDir, dryRun = false,
     instruction: written,
     dock,
     install,
+    key,
   };
 }

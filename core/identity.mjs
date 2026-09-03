@@ -164,6 +164,50 @@ export function validateAnchorForRoot(root, anchor = readAnchor(root)) {
   return { ok: true, ...anchor, root: resolved, records: recordSection.records };
 }
 
+const GITIGNORE_BEGIN = "# >>> FalsifyMe (lokal – nicht committen) <<<";
+const GITIGNORE_END = "# <<< FalsifyMe (lokal) <<<";
+
+// FalsifyME.md ist CHECKOUT-lokal (PROJECT_ID/CHECKOUT_ID/Root-Binding/
+// Records). Wird er mitcommittet, erben fremde Kopien eine fremde Bindung
+// (Foreign-Project-Gate!) und das Repo wird mit FalsifyMe-interner Identitaet
+// verschmutzt. Deshalb traegt FalsifyMe den Anker bei JEDER Erzeugung in die
+// Projekt-.gitignore ein (markierter Block, idempotent; User-Ticket
+// 2026-09-03: „damit das User-Projekt FalsifyMe nicht mitpusht").
+// Best-effort: schlaegt die .gitignore-Pflege fehl, bleibt der
+// Anker-Vertrag unberuehrt (der Anker selbst ist das Vertragsobjekt).
+function gitIgnoreBody() {
+  return [
+    GITIGNORE_BEGIN,
+    "# Identitaetsanker ist checkout-lokal (PROJECT_ID/CHECKOUT_ID/Records) -",
+    `# niemals committen/pushen (fremde Kopien erben sonst deine Bindung).`,
+    `/${ANCHOR_FILE}`,
+    GITIGNORE_END,
+  ].join("\n");
+}
+
+export function ensureAnchorGitIgnored(root) {
+  try {
+    const resolved = canonicalRoot(root);
+    const file = path.join(resolved, ".gitignore");
+    let existing = "";
+    try { existing = fs.readFileSync(file, "utf8"); } catch { /* fehlt noch */ }
+    const body = gitIgnoreBody();
+    const beginIdx = existing.indexOf(GITIGNORE_BEGIN);
+    const endIdx = existing.indexOf(GITIGNORE_END);
+    let next;
+    if (beginIdx !== -1 && endIdx !== -1 && endIdx > beginIdx) {
+      next = existing.slice(0, beginIdx) + body + existing.slice(endIdx + GITIGNORE_END.length);
+    } else {
+      const base = existing.replace(/\s*$/, "");
+      next = (base ? `${base}\n\n` : "") + body + "\n";
+    }
+    fs.writeFileSync(file, next, "utf8");
+    return { ok: true, file };
+  } catch {
+    return { ok: false }; // Anker-Vertrag nicht blockieren
+  }
+}
+
 export function initAnchor(root, { projectId = randomIdentity("project"), checkoutId = randomIdentity("checkout"), createdAt = new Date().toISOString(), records = [] } = {}) {
   const resolved = canonicalRoot(root);
   const file = path.join(resolved, ANCHOR_FILE);
@@ -171,9 +215,13 @@ export function initAnchor(root, { projectId = randomIdentity("project"), checko
   try {
     fs.writeFileSync(file, text, { encoding: "utf8", flag: "wx" });
   } catch (error) {
-    if (error.code === "EEXIST") return validateAnchorForRoot(resolved);
+    if (error.code === "EEXIST") {
+      ensureAnchorGitIgnored(resolved); // Anker existiert schon: Ignore trotzdem sicherstellen
+      return validateAnchorForRoot(resolved);
+    }
     return fail("ANCHOR_INIT", `Anchor konnte nicht angelegt werden: ${error.message}`, { file });
   }
+  ensureAnchorGitIgnored(resolved);
   return validateAnchorForRoot(resolved);
 }
 

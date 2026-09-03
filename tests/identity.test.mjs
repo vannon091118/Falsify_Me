@@ -68,6 +68,27 @@ test("anchor: mintet stabil, validiert nur gegen den gebundenen Root", () => {
   }
 });
 
+test("anchor init: .gitignore schuetzt FalsifyME.md (kein Mitpushen, idempotent)", () => {
+  // User-Ticket 2026-09-03: Bootstrap darf den Anker nicht ins User-Repo
+  // pushen lassen — initAnchor traegt /FalsifyME.md in die .gitignore ein.
+  const root = tempRoot();
+  try {
+    fs.writeFileSync(path.join(root, ".gitignore"), "node_modules/\ndist/\n");
+    const anchor = initAnchor(root);
+    assert.equal(anchor.ok, true, anchor.message);
+    let gi = fs.readFileSync(path.join(root, ".gitignore"), "utf8");
+    assert.ok(gi.includes("node_modules/"), "bestehende .gitignore-Inhalte bleiben erhalten");
+    assert.ok(gi.includes("/FalsifyME.md"), "Anker wird ignoriert (nicht committen/pushen)");
+    // Zweiter Lauf idempotent: genau ein markierter Block, genau ein Eintrag.
+    initAnchor(root);
+    gi = fs.readFileSync(path.join(root, ".gitignore"), "utf8");
+    assert.equal(gi.match(/\/FalsifyME\.md/g).length, 1, "kein Doppel-Eintrag");
+    assert.ok(fs.existsSync(path.join(root, "FalsifyME.md")), "Anker existiert weiterhin");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("anchor: Payload- und Records-Tampering fail-closed", () => {
   const root = tempRoot();
   try {

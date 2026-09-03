@@ -93,6 +93,11 @@ artifacts/stats.mjs        ← Progression-Statistik (read-only User-Anker aus d
 cli/stats.mjs              ← falsify stats [--json] (Anzeige der Statistik)
 cli/onboard/prompts.mjs    ← echter readline-Dialog: ask/askSecret(maskiert)/confirm
 cli/onboard/steps.mjs      ← Onboarding-Ablauf (Settings abfragen, Dock-Start)
+cli/onboard/explain.mjs    ← API-Key-Erklaerung (pure): wozu (bis zu) zwei
+                             APIs (Thinker + optionale Twin-API) + Provider-Links
+cli/bootstrap/apikey.mjs   ← Bootstrap-API-Key-Check: fehlt der Key ->
+                             Erklaerung + Uebergang in Onboarding (TTY) /
+                             Anleitung fuer den Agenten (headless)
 uninstall.mjs              ← vollständige Deinstallation (Gegenstück zu install.mjs)
 ```
 
@@ -270,6 +275,26 @@ hartkodierten Benutzerpfade. Achtung: das Install-Verzeichnis heißt
 `.Falsify_Core` (mit führendem Punkt); ein Pfad ohne Punkt existiert nicht
 (`MODULE_NOT_FOUND`).
 
+Artefakt-Mapping install.mjs → Ziel (empirisch geprüft, Stand 2026-09-03):
+
+```text
+skills/ (ganzer Ordner)          → ~/.agents/skills/falsifyme/
+skills/falsifyme-falsiflow.md    → ~/.agents/skills/falsifyme-falsiflow/SKILL.md
+skills/falsifyme-selfinstall.md  → ~/.agents/skills/falsifyme-selfinstall/SKILL.md
+(install.mjs schreibt)           → ~/.Falsify_Core/install-location.json
+                                   {coreDir, privateDir, skillsDir, version}
+```
+
+Workflow-Kette (eine Zeile): Install (`falsify bootstrap`/`node install.mjs`)
+→ Modus-/Reichweiten-Entscheid mit dem Nutzer (PFLICHT/optional/aus, keine
+stille Aktivierung) → Agent-Skills (Tabelle oben) → sichtbares Dock
+(`ui/start-dock.cmd`) → `falsify scope new` (User-Input 1:1 als HEADER) →
+`falsify submit` → Queue → Worker → Thinker → Proben/Evil-Twin/Gate →
+Verdict → Exit 0 `WRITE` → Handoff (`falsify handoff brief`) → externer
+Coder → `falsify handoff complete` → Change-Digest → Re-Review
+(`RE_REVIEW_QUEUED`) → Loop bis hardened/done. Die Nutzer-Sicht auf diesen
+Workflow steht im README (Abschnitt „Der komplette Workflow").
+
 Der Skill beschreibt den FalsiFlow für die jeweilige Agent-Session: Scope-Start,
 unveränderter User-Input als Header, read-only Prüfung, Verdict-Schleife und
 Review im selben Scope. Er ersetzt keine Agentensteuerung und verändert keine
@@ -445,6 +470,7 @@ Dateien nicht mehr durch Escape-Fehler kaputtgehen koennen).
 | `cli/bootstrap/instructions.mjs` | schreibt die persistente Instruction-Datei (Enforcement) |
 | `cli/bootstrap/dock.mjs` | sichtbares Dock: Windows-only, Retry-Poll, kein Fake-Erfolg |
 | `cli/bootstrap/main.mjs` | Kompositionswurzel (`runBootstrap`) |
+| `cli/bootstrap/apikey.mjs` | API-Key-Check nach der Installation: fehlt ein Key, erklaert er wozu FalsifyMe (bis zu) zwei APIs nutzt (Thinker + optionale Evil-Twin-API via twinApiBase/twinModel/twinApiKeyEnv) und nennt die Provider-Key-Seiten; interaktiv Uebergang in `falsify onboard`, headless: Anleitung fuer den Agenten (kein stiller Abschluss) |
 | `cli/bootstrap/templates/*.md/.sh/.ps1` | Instruction-Templates mit `{{PLATZHALTERN}}` |
 
 ### Modus-Entscheid (UI-075, keine stille Gate-Aktivierung)
@@ -517,7 +543,8 @@ startet danach das sichtbare Dock (Windows, TUI).
 |---|---|
 | `cli/onboard.mjs` | duenner Einstiegspunkt: Flags `--skip-dock`/`--help`, TTY-Guard (ohne Terminal: klare Fehlermeldung + Agent-Hinweis auf `falsify settings set …`, Exit 2) |
 | `cli/onboard/prompts.mjs` | Dialog-Bausteine: `ask` (Default aus Antwort), `askSecret` (jeder Tastendruck = \*), `confirm`, `fakePrompter` für Tests (injizierbar, Default-Verhalten identisch) |
-| `cli/onboard/steps.mjs` | `runOnboard` (Kompositionswurzel): `showStatus` → `collectSettings` → `updateRuntimeSettings` → optional `/models` → Dock-Start → `showSummary`; Prompter/Plattform injizierbar |
+| `cli/onboard/steps.mjs` | `runOnboard` (Kompositionswurzel): `showStatus` → (fehlt ein Key: 2-APIs-Erklaerung via explain.mjs) → `collectSettings` → `updateRuntimeSettings` → optional `/models` → Dock-Start → `showSummary`; Prompter/Plattform injizierbar |
+| `cli/onboard/explain.mjs` | API-Key-Erklaerung (pure Text, keine Logik/Secrets): wozu (bis zu) zwei APIs — Hauptmodell/Thinker (Pflicht) + optionale Evil-Twin-API — + Online-Key-Seiten (NVIDIA/OpenAI), .env-Ort; genutzt von Onboarding UND Bootstrap |
 
 ### Regeln / Verträge
 
@@ -691,6 +718,12 @@ nicht und fuehrt keine neue Modellrolle oder Schreibinstanz ein.
 - `falsify anchor init|check|rebind|clone|record` sind die einzigen expliziten
   Anchor-Lifecycle-Kommandos. `clone` erzeugt bei gleicher PROJECT_ID eine
   neue physische CHECKOUT_ID; ein impliziter Historien-Merge findet nicht statt.
+- **Nicht mitpushen (User-Ticket 2026-09-03):** `FalsifyME.md` ist
+  checkout-lokal. Jede Erzeugung (initAnchor — genutzt von Bootstrap, `anchor
+  init` und `anchor clone`) traegt `/FalsifyME.md` automatisch in die
+  Projekt-`.gitignore` ein (markierter Block, idempotent, bestehende Inhalte
+  bleiben; best-effort — schlaegt die Pflege fehl, bleibt der Anker-Vertrag
+  unberuehrt). Fremde Kopien erben so keine fremde PROJECT/CHECKOUT-Bindung.
 - Decision-Records werden als `UNTRUSTED CONTEXT` in den Thinker-Prompt gegeben.
   Sie koennen weder HEADER, Falsifikationsaufgabe noch Verdict ueberschreiben.
 

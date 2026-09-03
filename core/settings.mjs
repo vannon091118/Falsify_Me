@@ -37,10 +37,73 @@ function readJson(file) {
   }
 }
 
+// Atomar schreiben: erst in Temp-Datei, dann rename ueber das Ziel. Ein
+// Leser sieht nie eine halb geschriebene Datei (Rename ist auf demselben
+// Dateisystem atomar; Windows: MoveFileEx mit REPLACE_EXISTING).
 function writePrivate(file, content) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, content, { encoding: "utf8", mode: 0o600 });
+  const tmp = `${file}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, content, { encoding: "utf8", mode: 0o600 });
+  try { fs.chmodSync(tmp, 0o600); } catch { /* Windows ACLs */ }
+  fs.renameSync(tmp, file);
   try { fs.chmodSync(file, 0o600); } catch { /* Windows ACLs */ }
+}
+
+// ── Cross-Process-Settings-Lock (User-Ticket 2026-09-03) ──────────────────
+// Zwei parallele `falsify settings set`-Aufrufe (oder Onboarding parallel zu
+// einem Agenten) duerfen config.json/.env NICHT im Last-Write-Wins-Verfahren
+// ueberschreiben: jeder Schreiber liest-mutiert-schreibt die GESAMTE Datei.
+// Ohne Lock verliert der schnellere Schreiber still die Aenderung des anderen
+// (z. B. verschobene Primaer-Key-Reihenfolge, verlorener/zertrennter Key).
+// Der Lock serialisiert die Mutation ueber Prozessgrenzen; stale Locks
+// (> LOCK_STALE_MS) werden uebernommen, sonst ehrlicher Abbruch statt stiller
+// Korruption. Reentrant aus demselben Prozess ist nicht noetig (eine
+// Mutation pro updateRuntimeSettings-Aufruf).
+const LOCK_STALE_MS = 5000;
+const LOCK_WAIT_MAX_MS = 10000;
+const LOCK_RETRY_MS = 40;
+
+function settingsLockPath() {
+  return path.join(falsifyHome(), ".settings.lock");
+}
+
+function acquireSettingsLock() {
+  const deadline = Date.now() + LOCK_WAIT_MAX_MS;
+  for (;;) {
+    try {
+      const fd = fs.openSync(settingsLockPath(), "wx", 0o600);
+      try { fs.writeFileSync(fd, String(process.pid), { encoding: "utf8" }); } catch { /* PID nur Diagnose */ }
+      fs.closeSync(fd);
+      return;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      try {
+        const st = fs.statSync(settingsLockPath());
+        if (Date.now() - st.mtimeMs > LOCK_STALE_MS) {
+          try { fs.unlinkSync(settingsLockPath()); } catch { /* weg */ }
+          continue;
+        }
+      } catch { continue; } // Lock wurde zwischenzeitlich entfernt
+      if (Date.now() > deadline) {
+        throw new Error(`Settings-Lock haelt seit >${LOCK_STALE_MS} ms (${settingsLockPath()}) – abbrechen statt still zu ueberschreiben.`);
+      }
+      const until = Date.now() + LOCK_RETRY_MS;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.max(0, until - Date.now()));
+    }
+  }
+}
+
+function releaseSettingsLock() {
+  try { fs.unlinkSync(settingsLockPath()); } catch { /* schon weg */ }
+}
+
+function withSettingsLock(fn) {
+  acquireSettingsLock();
+  try {
+    return fn();
+  } finally {
+    releaseSettingsLock();
+  }
 }
 
 function readEnv(file) {
@@ -178,17 +241,22 @@ export function getRuntimeSettings() {
  */
 export function updateRuntimeSettings(patch = {}) {
   const normalized = validateSettings(patch);
-  const file = readJson(configPath());
-  const key = normalized.apiKey;
-  const keyName = normalized.apiKeyName || normalized.apiKeyEnv;
-  delete normalized.apiKey;
-  // Der Name darf in config.json stehen; der geheime Wert bleibt ausschliesslich
-  // in .env und wird nie in der Konfigurationsdatei gespeichert.
-  if (keyName) normalized.apiKeyName = keyName;
-  Object.assign(file, normalized);
-  writePrivate(configPath(), JSON.stringify(file, null, 2) + "\n");
-  if (key !== undefined) writeEnvKey(keyName || "FALSIFY_API_KEY", key);
-  return getRuntimeSettings();
+  // Unter dem Lock: config.json NEU lesen (nicht den Stand von vor dem Lock),
+  // mutieren, schreiben — und .env ebenso. Zwei parallele Aufrufe verlieren
+  // sich damit nicht mehr gegenseitig (Last-Write-Wins-Fix, 2026-09-03).
+  return withSettingsLock(() => {
+    const file = readJson(configPath());
+    const key = normalized.apiKey;
+    const keyName = normalized.apiKeyName || normalized.apiKeyEnv;
+    delete normalized.apiKey;
+    // Der Name darf in config.json stehen; der geheime Wert bleibt ausschliesslich
+    // in .env und wird nie in der Konfigurationsdatei gespeichert.
+    if (keyName) normalized.apiKeyName = keyName;
+    Object.assign(file, normalized);
+    writePrivate(configPath(), JSON.stringify(file, null, 2) + "\n");
+    if (key !== undefined) writeEnvKey(keyName || "FALSIFY_API_KEY", key);
+    return getRuntimeSettings();
+  });
 }
 
 function authHeaders(apiKey) {

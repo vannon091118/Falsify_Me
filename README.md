@@ -272,6 +272,12 @@ falsify models             # listet verfügbare Modelle des Endpunkts
 
 Keys liegen ausschließlich in `FALSIFY_HOME/.env` (private Rechte), nie im
 Repo und nie in `config.json`. `falsify settings show` maskiert Secrets.
+Der Dialog erklärt Schritt für Schritt auch, wozu FalsifyMe (bis zu)
+**zwei APIs** nutzt — Hauptmodell (Thinker/Falsifikation, Pflicht) und eine
+optionale zweite API für den Evil Twin (`twinApiBase`/`twinModel`/
+`twinApiKeyEnv`) — und nennt die offiziellen Key-Seiten der
+Beispiel-Anbieter (NVIDIA, OpenAI).
+
 Fehlt ein Terminal für den Dialog, verweigert `falsify onboard` ehrlich
 (Exit 2) und verweist auf `falsify settings set …`.
 
@@ -292,7 +298,10 @@ Fehlt ein Terminal für den Dialog, verweigert `falsify onboard` ehrlich
 ### 4 · Erster Auftrag
 
 Vor dem ersten Scope wird im Zielprojekt einmal der physische `FalsifyME.md`-
-Anker angelegt und in der privaten SQLite registriert. Der Anker enthält keine
+Anker angelegt und in der privaten SQLite registriert. Der Anker ist
+**checkout-lokal** — FalsifyMe trägt ihn bei jeder Erzeugung automatisch in
+die Projekt-`.gitignore` ein (markierter Block, idempotent), damit dein
+Projekt keine fremde FalsifyMe-Identität mitpusht. Der Anker enthält keine
 Scopes, Findings, Verdicts oder Regeln; er trennt nur logische Projekt-Historie
 (`PROJECT_ID`) und physische Checkout-Bindung (`CHECKOUT_ID`).
 
@@ -405,6 +414,66 @@ Event-Contract, Design-Check) und `ui/PLAN.md` (Task-Chain).
 
 ---
 
+## Der komplette Workflow (Installation → Skill → FalsiFlow → Loop)
+
+Dieser Abschnitt beantwortet die Frage „Wie läuft FalsifyMe vom ersten
+Install bis zum abgeschlossenen Auftrag?". Ein Bild zuerst, danach die
+Details — jede Zeile ist oben im README oder in `WIRING.md` belegt.
+
+| # | Nutzer / Coding-Agent | FalsifyMe (read-only Gateway) + Dock |
+|---|---|---|
+| 1 | installieren: `falsify bootstrap` / `node install.mjs` | Programm nach `~/.Falsify_Core`, Laufzeitdaten unter `FALSIFY_HOME` (Default `~/.Falsify_Private`); aufgelöste Pfade in `~/.Falsify_Core/install-location.json` |
+| 2 | Reichweite + Betriebsmodus **mit dem Nutzer** entscheiden | als Kopfzeile in der Instruction-Datei dokumentiert (`PFLICHT`/`optional`/`aus`) — **keine stille Gate-Aktivierung** |
+| 3 | — | installiert die **3 Agent-Skills** nach `~/.agents/skills/` (Mapping unten) |
+| 4 | Dock starten | `FalsifyMe.lnk` / `ui/start-dock.cmd` — sichtbar („Niemals headless") |
+| 5 | `falsify scope new "<User-Input 1:1>" --root <projekt>` | Scope mit HEADER = User-Input 1:1; Artefakt in der SQLite-Queue |
+| 6 | `falsify submit --plan … --root … --files "a.js,b.js"` | Queue → Worker → Thinker → Proben → Evil Twin → Gate → Verdict — live im sichtbaren Dock |
+| 7 | Exit 0 = `WRITE`: `falsify handoff brief`, dann umsetzen | Freigabe: der Coding-Agent (einziger Writer) setzt die Änderung um |
+| 8 | `falsify handoff complete …` | FalsifyMe misst selbst nach (Change-Digest, Whitelist) → Re-Review automatisch (`RE_REVIEW_QUEUED`) → Loop bis hardened/done — Dock bleibt sichtbar |
+
+### Installation und Skill-Installation: Wo landet was?
+
+`install.mjs` kopiert das Programm nach `~/.Falsify_Core` (Windows:
+`%USERPROFILE%\.Falsify_Core`) und legt die privaten Laufzeitdaten unter
+`FALSIFY_HOME` (Default `~/.Falsify_Private`: SQLite, Keys, Logs) an —
+Programm und Wissen sind getrennt. Die **aufgelösten Pfade der letzten
+Installation** stehen in `~/.Falsify_Core/install-location.json` (keine
+hartkodierten Benutzerpfade irgendwo im Code).
+
+Die **drei Agent-Skills** werden nach `~/.agents/skills/` installiert:
+
+| Im Repo (`skills/`) | Installiert nach | Zweck |
+|---|---|---|
+| `skills/` (ganzer Ordner, inkl. `falsifyme.md`, `agent-skill-falsify.sh/.mjs/.ps1`, `agent-skill-falsify.config.json`) | `~/.agents/skills/falsifyme/` | FalsifyMe-Skill: Pflicht-Review vor Code-Änderung; die Skripte lösen ihr Install-Verzeichnis selbst auf (Repo-Checkout relativ, installierte Kopie mit Fallback auf `~/.Falsify_Core`) |
+| `skills/falsifyme-falsiflow.md` | `~/.agents/skills/falsifyme-falsiflow/SKILL.md` | FalsiFlow-Session-Workflow (Scope-Protokoll, Verdict-Routing, Install-Pfade) |
+| `skills/falsifyme-selfinstall.md` | `~/.agents/skills/falsifyme-selfinstall/SKILL.md` | Self-Install-/Deinstall-Skill: FalsifyMe selbst einrichten, Modus-Entscheid, Rückabwicklung |
+
+Der FalsiFlow-Skill und der Self-Install-Skill haben einen eigenen Ordner
+mit `SKILL.md`, damit sie direkt nach der Installation funktionieren.
+
+### Der FalsiFlow in der Agent-Session
+
+1. **Scope anlegen** — `falsify scope new "<User-Input 1:1>" --root <projekt>`:
+   der User-Input wird unverändert zum HEADER; jeder Job startet eine
+   frische Modell-Konversation (kein Kontext-Mixing über Scopes).
+2. **Iteration einreichen** — `falsify submit --scope <id> --plan-file <datei>
+   --root <root> --files "a.js,b.js"` (blockiert bis zum Verdict; Whitelist
+   = `--files`). Optional `--agent-intent`/`--affected`.
+3. **Verdict lesen** — Exit 0 = `WRITE` (Freigabe read-only → write),
+   1 = `PLAN`/`RESEARCH` (Loop: Plan überarbeiten bzw. read-only
+   recherchieren, erneut einreichen), 5 = `ASK`, 2/3 = keine Freigabe.
+4. **WRITE umsetzen** — Handoff-Brief holen, als einziger Writer ändern.
+5. **Review im selben Scope** — nach der Umsetzung erneut einreichen bzw.
+   `falsify handoff complete`; das **letzte** Review bestimmt das
+   Output-Verdict. Loop bis der Scope erfüllt ist.
+
+Details: Bootstrap („Für Agents" weiter unten), `WIRING.md` §6 (Installation
+und FalsiFlow-Skills), Quelltexte `skills/*.md` und
+`skills/agent-skill-falsify.config.json` (Scope-Protokoll, Exit-Codes,
+Fenster-Regel).
+
+---
+
 ## Für Agents: LIES DAS. Wirklich.
 
 Dieses Repo beschreibt sich selbst. Bevor du irgendetwas anfasst:
@@ -497,6 +566,17 @@ Der Bootstrap:
 4. **Startet das sichtbare Dock** — Windows-only (`ui/start-dock.cmd`); auf
    anderen Plattformen meldet der Bootstrap das ehrlich und nennt den
    Worker-Aufruf (`node ui/worker.mjs`).
+5. **Prüft den API-Key** — ist keiner gesetzt, erklärt der Bootstrap, wozu
+   FalsifyMe (bis zu) **zwei APIs** nutzt (Hauptmodell/Thinker, Pflicht +
+   optionale zweite API für den Evil Twin), nennt die Online-Key-Seiten der
+   Beispiel-Anbieter (NVIDIA, OpenAI) und startet interaktiv den
+   Onboarding-Dialog (`falsify onboard`); ohne Terminal gibt er dem Agenten
+   die exakte Anleitung (`falsify settings set apiBase=… apiKey=…`). Ohne
+   Key startet kein echter Job — kein Fake-Verdict.
+6. **Schützt dein Repo vor FalsifyMe-internen Dateien** — der
+   Identitätsanker `FalsifyME.md` (PROJECT-/CHECKOUT-ID, checkout-lokal)
+   wird automatisch markiert in die Projekt-`.gitignore` eingetragen
+   (`/FalsifyME.md`), damit dein Projekt FalsifyMe nicht mitpusht.
 
 **Zwingende Entscheidung:** Nach der Installation legt der Coding-Agent mit
 dem Nutzer Reichweite (`projekt` / `global` / `aus`) und Betriebsmodus

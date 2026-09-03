@@ -4,11 +4,36 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
+import { spawn } from "node:child_process";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-settings-"));
 process.env.FALSIFY_HOME = home;
 process.env.FALSIFY_API_KEY_ENV = "CUSTOM_PROVIDER_KEY";
 const settings = await import("../core/settings.mjs");
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+// Kindprozess, der einen updateRuntimeSettings-Aufruf in EIGENEM FALSIFY_HOME
+// ausfuehrt (echter separater Prozess -> echter Cross-Process-Race, kein Mock).
+const CHILD_SCRIPT = `
+  const { updateRuntimeSettings } = await import(process.env.SETTINGS_URL);
+  updateRuntimeSettings(JSON.parse(process.env.PATCH));
+`;
+function runSettingsChild(tmp, patch) {
+  return new Promise((resolve) => {
+    const env = { ...process.env, FALSIFY_HOME: tmp, SETTINGS_URL: pathToFileURL(path.join(ROOT, "core", "settings.mjs")).href, PATCH: JSON.stringify(patch) };
+    delete env.FALSIFY_API_KEY_ENV; // Kind mit sauberen Default-Key-Namen starten
+    const child = spawn(process.execPath, ["--input-type=module", "-e", CHILD_SCRIPT], {
+      cwd: ROOT,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let err = "";
+    child.stderr.on("data", (d) => { err += d; });
+    child.on("close", (code) => resolve({ code, err }));
+  });
+}
 
 test.after(() => fs.rmSync(home, { recursive: true, force: true }));
 
@@ -123,6 +148,30 @@ test("F-3: twinReasoningEffort wird akzeptiert, enumsvalidiert und von loadConfi
   assert.throws(() => loadConfig(), /twinReasoningEffort/);
   fs.writeFileSync(path.join(home, "config.json"), JSON.stringify(before), "utf8");
   assert.equal(loadConfig().twinReasoningEffort, "high", "Restore: valid erneut ladbar");
+});
+
+test("parallele settings-Writes verlieren keine Aenderung (Lock, Last-Write-Wins-Fix)", async () => {
+  // User-Ticket 2026-09-03: Zwei GLEICHZEITIGE `settings set`-Aufrufe haben
+  // sich vor dem Lock gegenseitig ueberschrieben (Last-Write-Wins auf der
+  // ganzen Datei): Primaer-Key-Reihenfolge wurde verschoben, Keys verloren.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-settings-race-"));
+  try {
+    const [a, b] = await Promise.all([
+      runSettingsChild(tmp, { apiKeyName: "PARALLEL_KEY_A", apiKey: "va-aaaa", apiBase: "https://parallel-a.invalid/v1" }),
+      runSettingsChild(tmp, { apiKeyName: "PARALLEL_KEY_B", apiKey: "vb-bbbb", model: "parallel/b" }),
+    ]);
+    assert.equal(a.code, 0, `Kind A fehlgeschlagen: ${a.err}`);
+    assert.equal(b.code, 0, `Kind B fehlgeschlagen: ${b.err}`);
+    const cfg = JSON.parse(fs.readFileSync(path.join(tmp, "config.json"), "utf8"));
+    assert.equal(cfg.apiBase, "https://parallel-a.invalid/v1", "apiBase von A darf nicht verloren gehen");
+    assert.equal(cfg.model, "parallel/b", "model von B darf nicht verloren gehen");
+    assert.ok(["PARALLEL_KEY_A", "PARALLEL_KEY_B"].includes(cfg.apiKeyName), "apiKeyName eines der beiden Writes");
+    const env = fs.readFileSync(path.join(tmp, ".env"), "utf8");
+    assert.ok(env.includes('PARALLEL_KEY_A="va-aaaa"'), "Key A unversehrt gespeichert");
+    assert.ok(env.includes('PARALLEL_KEY_B="vb-bbbb"'), "Key B unversehrt gespeichert");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 test("F-11: twinMaxTokens wird akzeptiert, validiert und von loadConfig geladen", async () => {

@@ -17,8 +17,9 @@ import {
   getRuntimeSettings,
   updateRuntimeSettings,
 } from "../../core/settings.mjs";
-import { keyNames } from "../../core/keys.mjs";
+import { keyNames, loadApiKey } from "../../core/keys.mjs";
 import { falsifyHome } from "../../artifacts/db.mjs";
+import { printApiKeyExplanation } from "./explain.mjs";
 
 const SAY = "FALSIFYME ▸";
 const cmd = (name, args = "") => `falsify ${name}${args ? ` ${args}` : ""}`;
@@ -112,6 +113,15 @@ export async function runOnboard({
     console.log(`${SAY} Bitte zuerst installieren:`);
     console.log(`${SAY}   node install.mjs   (aus dem Repo) — danach dieses Onboarding erneut.`);
     return { ok: false, stage: "install" };
+  }
+
+  // Kein Key vorhanden -> kurz erklären, wozu FalsifyMe (bis zu) zwei APIs
+  // nutzt (Hauptmodell + optionaler Evil-Twin-Anbieter) + Provider-Links.
+  if (!loadApiKey()) {
+    console.log("");
+    console.log(`${SAY} Kein API-Key gesetzt — wozu FalsifyMe (bis zu) zwei APIs nutzt:`);
+    printApiKeyExplanation();
+    console.log("");
   }
 
   const { patch, questions, apiKeyEntered } = await collectSettings({ prompter, current });

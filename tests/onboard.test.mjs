@@ -12,7 +12,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fakePrompter } from "../cli/onboard/prompts.mjs";
-import { collectSettings, detectInstallation } from "../cli/onboard/steps.mjs";
+import { collectSettings, detectInstallation, runOnboard } from "../cli/onboard/steps.mjs";
+import { apiKeyExplanationLines, PROVIDER_LINKS } from "../cli/onboard/explain.mjs";
 import { getRuntimeSettings, updateRuntimeSettings } from "../core/settings.mjs";
 import { loadConfig } from "../core/config.mjs";
 
@@ -118,4 +119,42 @@ test("prompts.fakePrompter: confirm liefert Default bei leerer Antwort", async (
   assert.equal(yes, true);
   assert.equal(no, false);
   await p.close();
+});
+
+test("explain: Erklaerung nennt Haupt-API, optionale Evil-Twin-API und Provider-Links", () => {
+  const all = apiKeyExplanationLines().join("\n");
+  assert.match(all, /Haupt-API \(THINKER\/Falsifikation\)/);
+  assert.match(all, /Evil-Twin-API \(optional\)/);
+  assert.match(all, /twinApiBase/);
+  assert.match(all, /FALSIFY_HOME\/\.env/);
+  assert.ok(PROVIDER_LINKS.length >= 2, "mindestens zwei Beispiel-Anbieter");
+  for (const p of PROVIDER_LINKS) {
+    assert.match(p.keyUrl, /^https:\/\//, `${p.name} muss eine https-URL haben`);
+  }
+});
+
+test("runOnboard: ohne API-Key wird die 2-APIs-Erklaerung + Provider-Links gedruckt", async () => {
+  const home = withTempHome(); // FALSIFY_HOME: leer (kein Key)
+  const userHome = fs.mkdtempSync(path.join(os.tmpdir(), "falsify-onb-user-"));
+  const coreMain = path.join(userHome, ".Falsify_Core", "cli", "main.mjs");
+  fs.mkdirSync(path.dirname(coreMain), { recursive: true });
+  fs.writeFileSync(coreMain, ""); // installiert vortaeuschen (detectInstallation)
+  const logs = [];
+  const origLog = console.log;
+  console.log = (...a) => logs.push(a.join(" "));
+  try {
+    const prompter = fakePrompter({}); // leere Antworten -> Defaults; kein /models
+    const res = await runOnboard({ prompter, homeDir: userHome, platform: "linux", skipDock: true });
+    assert.equal(res.ok, true);
+    const all = logs.join("\n");
+    assert.match(all, /Kein API-Key gesetzt/);
+    assert.match(all, /zwei APIs nutzt/);
+    assert.match(all, /Evil-Twin-API/);
+    assert.match(all, /build\.nvidia\.com/);
+    assert.match(all, /platform\.openai\.com\/api-keys/);
+  } finally {
+    console.log = origLog;
+    home.cleanup();
+    fs.rmSync(userHome, { recursive: true, force: true });
+  }
 });
