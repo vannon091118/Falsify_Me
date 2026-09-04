@@ -63,7 +63,7 @@ function fakeApi(responder) {
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
 }
 
-function runCli({ home, args, apiBase, entry = "run" }) {
+function runCli({ home, args, apiBase, entry = "run", ui = false }) {
   const script = entry === "run" ? path.join(ROOT, "cli", "run.mjs") : path.join(ROOT, "cli", "main.mjs");
   const child = spawn(process.execPath, [script, ...args], {
     cwd: ROOT,
@@ -76,6 +76,8 @@ function runCli({ home, args, apiBase, entry = "run" }) {
       FALSIFY_MAX_RPM: "1000",
       FALSIFY_REASONING_EFFORT: "off",
       FALSIFY_TWIN_REASONING_EFFORT: "off",
+      // UI-124: FM-EVT-Marker nur anfordern, wenn der Test sie behauptet.
+      ...(ui ? { FALSIFY_UI: "1", FALSIFY_WINDOW: "1" } : {}),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -153,11 +155,14 @@ test("Full-Loop E2E: WRITE-Gate → Handoff → externer Write → automatisches
     closeDb();
 
     // 2. Direkt-Run bis zum WRITE-Verdict (echte Pipeline, kein Gate-Mock).
-    const run = runCli({ home: tmp, apiBase, entry: "run", args: ["--scope", scopeId, "--root", project, "--files", "src/app.js", "--no-wait", "Iteration: add und clip implementiert (src/app.js), beide Anforderungen erfuellt."] });
+    const run = runCli({ home: tmp, apiBase, entry: "run", ui: true, args: ["--scope", scopeId, "--root", project, "--files", "src/app.js", "--no-wait", "Iteration: add und clip implementiert (src/app.js), beide Anforderungen erfuellt."] });
     const out = await run.outP;
     const code = await run.doneP;
     assert.equal(code, 0, `WRITE-Lauf muss Exit 0 sein.\n=== AUSGABE ===\n${out}`);
     assert.match(out, /HANDOFF_ID=(\S+)/);
+    // UI-124: LOOP-State aus dem ECHTEN Pipeline-Out behaupten (Dock-Beweis
+    // aus echten Zuständen, nicht aus Fixtures/DB allein).
+    assert.match(out, /FM-EVT: \{"t":"loop","s":"WRITE_AUTHORIZED"/, "WRITE_AUTHORIZED als FM-EVT im Run-Out");
     const handoffId = out.match(/HANDOFF_ID=(\S+)/)[1].replace(/\x1b\[0m/, "").trim();
 
     // Parent-Job ist im Loop WRITE_AUTHORIZED (vom Handoff-Pfad gesetzt).
@@ -199,11 +204,13 @@ test("Full-Loop E2E: WRITE-Gate → Handoff → externer Write → automatisches
     fs.writeFileSync(reportFile, JSON.stringify(report, null, 2), "utf8");
 
     // 5. `falsify handoff complete` – der automatische Re-Review-Pfad.
-    const hc = runCli({ home: tmp, apiBase, entry: "main", args: ["handoff", "complete", "--file", reportFile, "--root", project] });
+    const hc = runCli({ home: tmp, apiBase, entry: "main", ui: true, args: ["handoff", "complete", "--file", reportFile, "--root", project] });
     const hcOut = await hc.outP;
     const hcCode = await hc.doneP;
     assert.equal(hcCode, 0, `handoff complete muss Exit 0 sein.\n=== AUSGABE ===\n${hcOut}`);
     assert.match(hcOut, /HANDOFF_OK=/);
+    // UI-124: RE_REVIEW_QUEUED als FM-EVT im handoff-complete-Out.
+    assert.match(hcOut, /FM-EVT: \{"t":"loop","s":"RE_REVIEW_QUEUED"/, "RE_REVIEW_QUEUED als FM-EVT im Complete-Out");
     const childId = (hcOut.match(/RE_REVIEW_JOB_ID=(\S+)/) || [])[1];
     assert.ok(childId, "Child-Job-ID gemeldet");
 

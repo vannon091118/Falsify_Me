@@ -1541,11 +1541,20 @@ TASK: Loop-E2E-Sichtbarkeit: ein echter WRITE-Lauf + Handoff-Completion
 (FALSIFY_UI=1) zeigt WRITE_AUTHORIZED → (nach Completion) RE_REVIEW_QUEUED
 im Dock-Event-Strom; ein NO_CHANGE-Report zeigt LOOP_BLOCKED. Beweis, dass
 die Anzeige aus echten Pipeline-Zuständen speist, nicht aus Test-Fixtures.
-STATUS: TODO
+STATUS: DONE
 DEPENDS_ON: UI-123
 VERIFY: tests/full-loop-e2e.test.mjs mit FALSIFY_UI=1 erweitern (FM-EVT
 loop-Zeilen im stdout behaupten); negative Pfade analog.
-RESULT: —
+RESULT: PASS (2026-09-04, Session „Freebuff-FalsiFlow bis erstes WRITE/Stagnation"):
+cli/handoff.mjs emittiert terminale Loop-Zustaende (LOOP_BLOCKED nach
+NO_CHANGE, ABORTED) vor Exit 3 im `!result.ok`-Block (nur Anzeige, CON-004,
+Gate FALSIFY_UI=1) — vorher erreichten terminale Negativ-Zustaende den
+Dock-Event-Strom NIE (Befund aus 5 falsify-Runden). full-loop-e2e.test.mjs:
+runCli-ui-Option (FALSIFY_UI/WINDOW=1), Asserts auf FM-EVT WRITE_AUTHORIZED
+(Run-Out) und RE_REVIEW_QUEUED (Complete-Out). full-loop-negative.test.mjs:
+neuer CLI-Test NO_CHANGE → Exit 3 + FM-EVT LOOP_BLOCKED im stdout; Kontroll-
+Lauf ohne FALSIFY_UI zeigt keinerlei Marker (Gate-Beweis). Verifikation:
+179/179 fast-Tier gruen, full-loop-e2e 1/1, full-loop-negative 11/11.
 
 ID: UI-125
 TASK: Bootstrap/Onboarding-API-Key-Gate: fehlt ein API-Key, erklaert der

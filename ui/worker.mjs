@@ -291,7 +291,7 @@ async function main() {
   // geräumt (Doppel-Start-Fenster bleiben unangetastet).
   try {
     const reaped = reapStaleJobs(db, MAX_WINDOWS);
-    if (reaped.length) say(`♻ Waisen-Jobs geschlossen (Worker tot): ${reaped.length}`);
+    if (reaped.length) dlog(`Waisen-Jobs geschlossen (Worker tot): ${reaped.length}`);
   } catch (e) {
     // RunDance-Befund 7: Fehler SICHTBAR machen (Debug-Log), statt still
     // zu schlucken – ein SQLITE_BUSY im Parallelbetrieb darf nicht als

@@ -6,12 +6,54 @@
 // DB-Schema inkl. sub_prompt-Migration. Kein Netzaufruf.
 // Exit: 0 = alles ok · 2 = Problem gefunden
 // ─────────────────────────────────────────────────────────────────────────────
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+// ── Install-Drift (root cause 2026-09-04) ───────────────────────────────────
+// Der Dock-Worker fuehrt die RUNTIME aus ~/.Falsify_Core aus (RUN_ENTRY =
+// V2_DIR/cli/run.mjs); Hardening im Repo-Checkout wird erst LIVE, wenn die
+// Installation synchron ist. Ohne Guard lief tagelang eine aeltere
+// Gate-Logik (PRAISE-False-Positive, fehlender selfReview-Frame, fehlende
+// Loop-FM-EVT-Emission) waehrend das Repo bereits gefixt war.
+const INSTALL_LOCATION_FILE = path.join(os.homedir(), ".Falsify_Core", "install-location.json");
+// Runtime-kritische Dateien: Aenderungen hier aendern das Verdict-/Gate-
+// Verhalten des laufenden Workers; Doku/Tests sind bewusst nicht dabei.
+const RUNTIME_CRITICAL = [
+  "cli/run.mjs", "cli/handoff.mjs", "cli/main.mjs", "cli/jobs.mjs", "cli/scope.mjs", "cli/doctor.mjs", "cli/anchor.mjs",
+  "core/prompt.mjs", "core/probes.mjs", "core/twin.mjs", "core/verdict.mjs", "core/agent.mjs",
+  "core/selfreview.mjs", "core/project-context.mjs", "core/identity.mjs", "core/evidence.mjs", "core/twin-evidence.mjs",
+  "artifacts/jobs.mjs", "artifacts/scopes.mjs", "artifacts/db.mjs", "artifacts/handoff.mjs", "artifacts/loopflow.mjs", "artifacts/loops.mjs",
+  "ui/worker.mjs",
+];
+
+function sha256File(p) {
+  return crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+}
+
+/**
+ * Reine Funktion: vergleicht die runtime-kritischen Dateien zweier Checkouts
+ * (Repo vs. Installations-Core) per Content-Hash. Dateien, die im Repo fehlen
+ * (z. B. alte Struktur), werden uebersprungen — nur echte Drift faellt auf.
+ * @returns {string[]} relative Pfade mit abweichendem Inhalt
+ */
+export function installDriftFiles({ repoRoot, installRoot }) {
+  const drifted = [];
+  for (const rel of RUNTIME_CRITICAL) {
+    const a = path.join(repoRoot, rel);
+    const b = path.join(installRoot, rel);
+    if (!fs.existsSync(a)) continue;
+    if (!fs.existsSync(b)) { drifted.push(`${rel} (fehlt in der Installation)`); continue; }
+    try {
+      if (sha256File(a) !== sha256File(b)) drifted.push(rel);
+    } catch { /* unlesbar → nicht als Drift zaehlen (laeuft woanders) */ }
+  }
+  return drifted;
+}
 
 // Marker-Dateien, die eine gültige Agent-Skill-Installation auszeichnen
 // (Parität mit instructions.mjs/install.mjs: dieselben drei Varianten).
@@ -318,6 +360,28 @@ export async function runDoctor(cliArgs = []) {
     } catch (e) {
       bad(`Skill-Integrität (Runtime): ${e.message}`);
     }
+  }
+
+  // 8) Install-Drift (root cause 2026-09-04): laeuft doctor aus einem
+  // FalsifyMe-REPO-Checkout (ROOT != Installations-Core), werden die
+  // runtime-kritischen Dateien gegen den Dock-Core verglichen. Drift = der
+  // laufende Worker hat eine aeltere Gate-Logik als das Repo — genau die
+  // Situation, die die Session blockierte. Aus dem installierten Core heraus
+  // (Normalbetrieb) ist nichts zu vergleichen → ehrlicher Hinweis.
+  try {
+    const installRoot = JSON.parse(fs.readFileSync(INSTALL_LOCATION_FILE, "utf8")).coreDir;
+    if (installRoot && path.resolve(installRoot) !== path.resolve(ROOT)) {
+      const drift = installDriftFiles({ repoRoot: ROOT, installRoot });
+      if (drift.length) {
+        bad(`Install-Drift: ${drift.length} runtime-kritische Datei(en) im Dock-Core (${installRoot}) weichen vom Repo ab (${drift.slice(0, 4).join(", ")}${drift.length > 4 ? ", …" : ""}) – der Worker führt eine ältere Gate-Logik. Abgleich: node install.mjs (aus dem Repo) ODER gezielt: cp <repo>/<datei> ${installRoot}/<datei>`);
+      } else {
+        ok(`Install-Synchronität: Repo == ${installRoot} (${RUNTIME_CRITICAL.length} runtime-kritische Dateien identisch)`);
+      }
+    } else {
+      console.log("  ℹ️  Install-Drift: doctor läuft im installierten Core selbst – kein separates Repo zu vergleichen.");
+    }
+  } catch (e) {
+    console.log(`  ℹ️  Install-Drift: keine install-location.json / kein Core gefunden (${e.message}) – übersprungen.`);
   }
 
   console.log("");

@@ -275,6 +275,12 @@ export async function runHandoff(args) {
     if (!result.ok) {
       console.error("FEHLER: Handoff-Completion abgelehnt:");
       for (const r of result.reasons) console.error(`  · ${r}`);
+      // UI-124: terminale Loop-Zustaende (LOOP_BLOCKED/ABORTED nach
+      // NO_CHANGE/ABORTED-Completion) muessen den Dock-Event-Strom erreichen —
+      // die DB-Wahrheit spiegeln, BEVOR die CLI mit Exit 3 endet. Nur Anzeige
+      // (CON-004), kein neuer Zustand; Gating via UI_EVTS (Z.24) bleibt.
+      const terminalLoopState = getLoopState(db, report.job_id);
+      if (terminalLoopState) emitLoop(terminalLoopState);
       closeDb(); process.exit(3);
     }
     enforceQueueConsistency(db);

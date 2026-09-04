@@ -1,10 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { openDb, closeDb } from "../artifacts/db.mjs";
-import { bindAnchor, assertAnchorBinding, getCheckout } from "../artifacts/projects.mjs";
+import { bindAnchor, assertAnchorBinding, getCheckout, getCheckoutForRoot } from "../artifacts/projects.mjs";
 import {
   appendDecisionRecord,
   canonicalRoot,
+  digestPayload,
   initAnchor,
   parseAnchor,
   parseDecisionRecords,
@@ -43,7 +44,8 @@ export function runAnchor(args = []) {
   if (sub === "rebind") return anchorRebind(rootFrom(args.slice(1)));
   if (sub === "clone") return anchorClone(args.slice(1));
   if (sub === "record") return anchorRecord(args.slice(1), rootFrom(args.slice(1)));
-  fail("Verwendung: falsify anchor init|check|rebind|clone|record …");
+  if (sub === "restore") return anchorRestore(rootFrom(args.slice(1)));
+  fail("Verwendung: falsify anchor init|check|rebind|restore|clone|record …");
 }
 
 function anchorInit(root) {
@@ -66,7 +68,12 @@ function anchorInit(root) {
 }
 
 function anchorCheck(root) {
-  const validated = validateAnchorForRoot(root);
+  // Fehlende Datei → ehrlicher Hinweis auf den Selbst-Heilungs-Pfad (root
+  // cause 2026-09-04: geloeschter Anker blockierte den Submit, nur manuell
+  // rekonstruierbar). `restore` regeneriert die Datei aus der DB-Identitaet.
+  const raw = readAnchor(root);
+  if (!raw.ok) fail(`${raw.message} – Wiederherstellung aus der DB-Identität: falsify anchor restore --root "${canonicalRoot(root)}"`);
+  const validated = validateAnchorForRoot(root, raw);
   if (!validated.ok) fail(validated.message);
   const db = openDb();
   try {
@@ -76,6 +83,63 @@ function anchorCheck(root) {
     console.log(`CHECKOUT_ID=${row.checkout_id}`);
     console.log(`ROOT=${row.bound_root}`);
     console.log(`RECORDS_DIGEST=${row.records_digest}`);
+  } finally {
+    closeDb();
+  }
+}
+
+/**
+ * Selbst-Heilung (root cause 2026-09-04): Die physische Anker-Datei ist weg
+ * ODER traegt eine unregistrierte Identitaet (z. B. naives `anchor init` nach
+ * Dateiverlust erzeugt frische IDs, die nicht in der DB sind). `restore`
+ * regeneriert die Datei BYTEGENAU aus der registrierten DB-Identitaet
+ * (renderAnchor + bindAnchor) — die Scope-/Checkout-Bindung bleibt unberuehrt.
+ * Fail-closed: ohne DB-Identitaet oder mit registrierten Decision-Records
+ * (liegen NUR im Anker, nicht rekonstruierbar) wird ehrlich abgelehnt.
+ */
+function anchorRestore(root) {
+  const db = openDb();
+  try {
+    const bound = getCheckoutForRoot(db, canonicalRoot(root));
+    if (!bound) {
+      fail(`Keine registrierte Checkout-Identität für ${canonicalRoot(root)} – erst "falsify anchor init --root \"${canonicalRoot(root)}\"" ausführen.`);
+    }
+    const current = readAnchor(root);
+    if (current.ok) {
+      const parsed = parseAnchor(current.text);
+      if (parsed.ok && parsed.value.checkoutId === bound.checkout_id) {
+        const validated = validateAnchorForRoot(root, current);
+        if (!validated.ok) fail(validated.message);
+        const row = assertAnchorBinding(db, validated);
+        console.log("FALSIFYME_ANCHOR=vorhanden");
+        console.log(`PROJECT_ID=${row.project_id}`);
+        console.log(`CHECKOUT_ID=${row.checkout_id}`);
+        return;
+      }
+      console.log(`FALSIFYME_ANCHOR=ersetzt (vorhandene Datei trägt ${parsed.ok ? `unregistrierte Identität ${parsed.value.checkoutId}` : "keine parsebare Identität"}, DB-Identität ${bound.checkout_id})`);
+    } else {
+      console.log(`FALSIFYME_ANCHOR=wiederhergestellt (Datei fehlte: ${current.message})`);
+    }
+    // Decision-Records existieren NUR im Anker — ist die Datei weg, sind sie
+    // nicht aus der DB rekonstruierbar (die DB haelt nur den Digest).
+    if (bound.records_digest !== digestPayload("")) {
+      fail(`Anker-Datei fehlt, aber es sind Decision-Records registriert (records_digest=${bound.records_digest}). Records liegen NUR im Anker und können nicht aus der DB rekonstruiert werden – Anker manuell wiederherstellen oder Decision-Records neu anlegen.`);
+    }
+    const rendered = renderAnchor({
+      projectId: bound.project_id,
+      checkoutId: bound.checkout_id,
+      rootName: bound.root_name,
+      root: bound.bound_root,
+      createdAt: bound.created_at,
+      records: [],
+    });
+    fs.writeFileSync(path.join(canonicalRoot(root), "FalsifyME.md"), rendered, "utf8");
+    const validated = validateAnchorForRoot(root);
+    if (!validated.ok) fail(validated.message);
+    const row = assertAnchorBinding(db, validated);
+    console.log(`PROJECT_ID=${row.project_id}`);
+    console.log(`CHECKOUT_ID=${row.checkout_id}`);
+    console.log(`ROOT=${row.bound_root}`);
   } finally {
     closeDb();
   }

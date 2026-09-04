@@ -163,6 +163,43 @@ test("P0-Cutover: buildUserContent rendert die Anforderungs-Liste als Coverage-A
   assert.doesNotMatch(uc2, /## Anforderungs-Liste/);
 });
 
+test("Self-Review-Flag: selfReview:true rendert die Selbstprüfungs-Sektion (philosophischer Bug)", () => {
+  // Mit optionalen Blöcken (Decision-Records, Sub-Prompt) – die Sektion muss
+  // DIREKT NACH dem Scope-Artefakt stehen, VOR ihnen (Review-Befund pu6gpq):
+  const uc = buildUserContent({
+    header: "H",
+    phase: "plan",
+    planText: "P",
+    root: ".",
+    whitelist: ["a.js"],
+    anchorRecords: [{ type: "decision", content: "R", source: "FalsifyME.md" }],
+    subPrompt: "Anker gegen Drift",
+    selfReview: true,
+  });
+  assert.match(uc, /## Kontext dieser Prüfung \(Selbstprüfung\)/);
+  assert.match(uc, /das geprüfte Projekt IST FalsifyMe selbst/);
+  assert.match(uc, /FalsiFlow-Falsifikations-Loops/);
+  assert.match(uc, /dieser Job ist Teil davon/);
+  assert.match(uc, /ein Plan muss ihn nicht „enthalten"/);
+  // Reihenfolge: Header → Scope-Artefakt → SELF-REVIEW-SEKTION → Decision-Records
+  // → Sub-Prompt (der Frame prägt die Lese-Reihenfolge, VOR optionalen Blöcken):
+  const headerPos = uc.indexOf("# Anforderung");
+  const scopePos = uc.indexOf("## Scope-Artefakt");
+  const sectionPos = uc.indexOf("## Kontext dieser Prüfung");
+  const recordsPos = uc.indexOf("## FalsifyME.md Decision-Records");
+  const subPos = uc.indexOf("## Sub-Prompt");
+  assert.ok(headerPos < scopePos && scopePos < sectionPos, "Sektion direkt nach dem Scope-Artefakt");
+  assert.ok(sectionPos < recordsPos && sectionPos < subPos, "Sektion VOR Decision-Records und Sub-Prompt");
+});
+
+test("Self-Review-Flag: Default (ohne Feld) rendert die Sektion NICHT – byte-identisch", () => {
+  const base = { header: "H", phase: "plan", planText: "P", root: ".", whitelist: ["a.js"] };
+  const withFlag = buildUserContent({ ...base, selfReview: false });
+  const withoutFlag = buildUserContent(base);
+  assert.doesNotMatch(withFlag, /## Kontext dieser Prüfung/);
+  assert.equal(withFlag, withoutFlag, "selfReview:false ist byte-identisch zum bisherigen Verhalten (Rückwärtskompatibilität)");
+});
+
 test("Fehlende Prompt-Datei schlägt laut fehl (fail-fast statt stiller Leere)", async () => {
   // Der Loader ist nicht exportiert – wir prüfen den Effekt über einen
   // dynamischen Import auf einen temporären Modul-Schnipsel mit kaputtem Pfad.

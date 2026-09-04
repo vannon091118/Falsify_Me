@@ -65,7 +65,9 @@ function moduleFiles(root) {
   const out = [];
   const walk = (dir) => {
     for (const name of fs.readdirSync(dir)) {
-      if (name === ".git" || name === "node_modules") continue;
+      // Runtime-/Tool-Verzeichnisse (gitignored: .git, .freebuff-Worktrees,
+      // .planning) und Abhängigkeiten nie mitzählen.
+      if (name.startsWith(".") || name === "node_modules") continue;
       const p = path.join(dir, name);
       const st = fs.statSync(p);
       if (st.isDirectory()) walk(p);
@@ -81,7 +83,9 @@ function codeFiles(root) {
   const out = [];
   const walk = (dir) => {
     for (const name of fs.readdirSync(dir)) {
-      if (name === ".git" || name === "node_modules") continue;
+      // Runtime-/Tool-Verzeichnisse (gitignored: .git, .freebuff-Worktrees,
+      // .planning) und Abhängigkeiten nie mitzählen.
+      if (name.startsWith(".") || name === "node_modules") continue;
       const p = path.join(dir, name);
       const st = fs.statSync(p);
       if (st.isDirectory()) walk(p);

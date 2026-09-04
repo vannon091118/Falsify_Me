@@ -49,6 +49,10 @@ export const SELF_REVIEW_CORE = [
   "core/identity.mjs", "artifacts/projects.mjs", "cli/anchor.mjs",
   // Prüf-Pipeline (Ausführung + Verdict-Hoheit)
   "cli/run.mjs", "cli/jobs.mjs", "cli/main.mjs", "cli/falsify.sh", "cli/help.mjs",
+  // Self-Review-ERKENNUNG selbst (resolveProjectContext/isSelfReviewRoot): das
+  // Modul, das das selfReview-Flag berechnet, darf im Selbstprüfungs-Scope nie
+  // unsichtbar sein (Regel 1; Review-Befund pu6gpq, 2026-09-04).
+  "core/project-context.mjs",
   "core/agent.mjs", "core/config.mjs", "core/feasibility.mjs", "core/keys.mjs",
   "core/prompt.mjs", "core/probes.mjs", "core/ratelimit.mjs", "core/selfreview.mjs", "core/settings.mjs",
   "core/tools.mjs", "core/twin.mjs", "core/verdict.mjs",

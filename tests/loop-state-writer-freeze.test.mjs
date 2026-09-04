@@ -41,7 +41,9 @@ function prodSources() {
   const out = [];
   const walk = (dir) => {
     for (const name of fs.readdirSync(dir)) {
-      if (name === ".git" || name === "node_modules" || name === "tests") continue;
+      // Runtime-/Tool-Verzeichnisse (gitignored: .git, .freebuff-Worktrees,
+      // .planning) und Abhängigkeiten nie mitzählen – nur Produktionscode.
+      if (name.startsWith(".") || name === "node_modules" || name === "tests") continue;
       const file = path.join(dir, name);
       const stat = fs.statSync(file);
       if (stat.isDirectory()) walk(file);

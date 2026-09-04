@@ -265,3 +265,79 @@ test("anchor CLI: check ohne Registrierung fail-closed (kein Still-Promote)", ()
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("anchor CLI: restore regeneriert eine gelöschte Anker-Datei bytegenau (root cause 2026-09-04)", () => {
+  const home = tempRoot("falsify-identity-restore-home-");
+  const root = tempRoot("falsify-identity-restore-root-");
+  const env = { ...process.env, FALSIFY_HOME: home };
+  const main = path.join(REPO_ROOT, "cli", "main.mjs");
+  const run = (...args) => spawnSync(process.execPath, [main, "anchor", ...args], {
+    encoding: "utf8", timeout: 60000, env, cwd: REPO_ROOT,
+  });
+  try {
+    const init = run("init", "--root", root);
+    assert.equal(init.status, 0, init.stderr);
+    const checkoutId = (init.stdout.match(/CHECKOUT_ID=(\S+)/) || [])[1];
+    assert.ok(checkoutId);
+    const original = fs.readFileSync(path.join(root, "FalsifyME.md"), "utf8");
+
+    // Datei weg → check fail-closed MIT Restore-Hinweis; restore regeneriert bytegenau.
+    fs.rmSync(path.join(root, "FalsifyME.md"));
+    const checkMissing = run("check", "--root", root);
+    assert.equal(checkMissing.status, 2);
+    assert.match(checkMissing.stderr, /anchor restore/);
+    const restore = run("restore", "--root", root);
+    assert.equal(restore.status, 0, restore.stderr);
+    assert.match(restore.stdout, /FALSIFYME_ANCHOR=wiederhergestellt/);
+    assert.match(restore.stdout, new RegExp(`CHECKOUT_ID=${checkoutId}`));
+    assert.equal(fs.readFileSync(path.join(root, "FalsifyME.md"), "utf8"), original, "bytegenau aus der DB-Identität rekonstruiert");
+
+    // restore auf vorhandener, korrekter Datei: no-op.
+    const again = run("restore", "--root", root);
+    assert.equal(again.status, 0, again.stderr);
+    assert.match(again.stdout, /FALSIFYME_ANCHOR=vorhanden/);
+
+    // Fehlende Datei MIT Decision-Records: fail-closed (Records nur im Anker).
+    const rec = run("record", "user-decision", "--root", root, "--id", "restore-rec-1", "--source", "user", "--content", "Ein bestätigter Record.", "--confirm");
+    assert.equal(rec.status, 0, rec.stderr);
+    fs.rmSync(path.join(root, "FalsifyME.md"));
+    const restoreWithRecords = run("restore", "--root", root);
+    assert.equal(restoreWithRecords.status, 2);
+    assert.match(restoreWithRecords.stderr, /Decision-Records/);
+  } finally {
+    closeDb();
+    for (const dir of [home, root]) fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("anchor CLI: restore ersetzt eine Datei mit unregistrierter Identität (naives re-init)", () => {
+  const home = tempRoot("falsify-identity-restore-home2-");
+  const root = tempRoot("falsify-identity-restore-root2-");
+  const env = { ...process.env, FALSIFY_HOME: home };
+  const main = path.join(REPO_ROOT, "cli", "main.mjs");
+  const run = (...args) => spawnSync(process.execPath, [main, "anchor", ...args], {
+    encoding: "utf8", timeout: 60000, env, cwd: REPO_ROOT,
+  });
+  try {
+    const init = run("init", "--root", root);
+    assert.equal(init.status, 0, init.stderr);
+    const checkoutId = (init.stdout.match(/CHECKOUT_ID=(\S+)/) || [])[1];
+    assert.ok(checkoutId);
+
+    // Datei löschen + naives re-init: erzeugt frische (unregistrierte) IDs oder
+    // schlägt fehl — beides egal, restore muss die DB-Identität wiederherstellen.
+    fs.rmSync(path.join(root, "FalsifyME.md"));
+    run("init", "--root", root);
+    fs.rmSync(path.join(root, "FalsifyME.md"), { force: true });
+
+    const restore = run("restore", "--root", root);
+    assert.equal(restore.status, 0, restore.stderr);
+    assert.match(restore.stdout, new RegExp(`CHECKOUT_ID=${checkoutId}`));
+    const check = run("check", "--root", root);
+    assert.equal(check.status, 0, check.stderr);
+    assert.match(check.stdout, new RegExp(`CHECKOUT_ID=${checkoutId}`));
+  } finally {
+    closeDb();
+    for (const dir of [home, root]) fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

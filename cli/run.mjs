@@ -433,13 +433,21 @@ if (submitMode) {
 }
 
 // ── Arbeitsverzeichnis + Zugriffs-Whitelist ─────────────────────────────────
-let ROOT = resolveProjectContext(rootArg, filesArg).root;
+const rootContext = resolveProjectContext(rootArg, filesArg);
+let ROOT = rootContext.root;
 // Self-Review-Regel (UI-097): bei erkannter Selbstprüfung werden die
 // Prüf-Kernkomponenten automatisch ergänzt – an JEDER Stelle, die von hier
 // aus startet (Direkt-Run, --job-id, --submit nutzt den gleichen Pfad vor
 // createJob; rig-Review 2026-09-01: der Direkt-Run übersprang die Ergänzung).
-let FILE_WHITELIST = resolveProjectContext(rootArg, filesArg).files;
-if (rootArg != null && !resolveProjectContext(rootArg, filesArg).selfReview && !FILE_WHITELIST.length) {
+let FILE_WHITELIST = rootContext.files;
+// Philosophischer-Bug-Fix (2026-09-04): das Self-Review-Flag wird dem Thinker
+// als Kontext übergeben (buildUserContent selfReview) – der Direkt-Run nutzt
+// rootContext.selfReview, der --job-id-Zweig überschreibt es weiter unten aus
+// jobContext.selfReview (der Prüf-Root des Jobs kann sich vom CLI-Root
+// unterscheiden). NIE neu berechnen, NIE neu importieren (ein Flag, eine
+// Quelle: resolveProjectContext).
+let reviewSelfReview = rootContext.selfReview;
+if (rootArg != null && !rootContext.selfReview && !FILE_WHITELIST.length) {
   console.error(red("FEHLER: Fremdprojekt ohne --files: Zugriff ist leer. --files ist für fremde --root-Projekte erforderlich."));
   closeDb();
   process.exit(2);
@@ -526,6 +534,10 @@ if (jobId) {
     process.exit(2);
   }
   FILE_WHITELIST = validateProjectFiles(ROOT, jobContext.files);
+  // Selbstprüfungs-Flag des JOB-Roots übernehmen (der Prüf-Root des Jobs kann
+  // sich vom CLI-Root unterscheiden – das Flag bestimmt der JOB, nicht der
+  // lokale Aufruf). Der Thinker erfährt so, dass er FalsifyMe selbst prüft.
+  reviewSelfReview = jobContext.selfReview;
   try {
     // New jobs are snapshot-bound. Legacy rows without a snapshot retain an
     // explicit current-config fallback, but are never silently synthesized.
@@ -713,6 +725,11 @@ async function main() {
     // P0 (Regel 1): Coverage-Anker des Probe-Sets – die Thinker-Antwort darf
     // requirement_ref nur auf diese Original-H_i-IDs beziehen (keine Paraphrase).
     requirementList: renderRequirementList(splitRequirement(scope ? scope.header : planText)),
+    // Selbstprüfungs-Kontext (2026-09-04): true nur, wenn der geprüfte Root
+    // FalsifyMe selbst ist (resolveProjectContext-Erkennung, oben reviewSelfReview).
+    // Der Thinker erfährt dann explizit, dass diese Prüfung Teil des laufenden
+    // FalsiFlow-Loops ist (Meta-HEADER-Falle). Fremdprojekte: false → byte-identisch.
+    selfReview: reviewSelfReview,
   });
 
   const t0 = Date.now();

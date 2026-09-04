@@ -11,6 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { spawnSync } from "node:child_process";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -216,6 +217,63 @@ test("negativ: Terminale Loop-Zustände sind unumkehrlich (SEC-004, Wiederholung
       assert.equal(again.ok, false, `${terminal} darf nie wieder öffnen`);
       const done = loops.transitionLoop(s.db, pid, "WRITE_AUTHORIZED");
       assert.equal(done.ok, false);
+    }
+  } finally {
+    s.cleanup();
+  }
+});
+
+test("negativ: NO_CHANGE per CLI emittiert LOOP_BLOCKED als FM-EVT (UI-124, FALSIFY_UI=1)", async () => {
+  const s = await setup();
+  try {
+    const jobs = await mod("artifacts/jobs.mjs");
+    const scopes = await mod("artifacts/scopes.mjs");
+    const changes = await mod("core/changes.mjs");
+    const identity = await mod("core/identity.mjs");
+    const projects = await mod("artifacts/projects.mjs");
+    const dir = tempProject();
+    try {
+      // validateChangeReport verlangt eine nicht-leere checkout_id; scopes
+      // bindet per FOREIGN KEY an `checkouts` — realer Anker + bindAnchor
+      // (Muster tests/full-loop-e2e.test.mjs). Schreibziel ist nur das temp-Projekt.
+      const anchor = identity.initAnchor(dir);
+      assert.equal(anchor.ok, true, anchor.message);
+      projects.bindAnchor(s.db, anchor, dir);
+      const checkoutId = anchor.value.checkoutId;
+      const scopeId = scopes.createScope(s.db, "Header", { checkoutId }).id;
+      const before = changes.snapshotRoot(dir, ["app.js"]);
+      const pid = jobs.createJob(s.db, { scopeId, checkoutId, payload: "p", root: dir, files: "app.js", mode: "write" });
+      s.db.prepare("UPDATE jobs SET loop_state = 'WRITE_AUTHORIZED' WHERE id = ?").run(pid);
+      // Handoff im Test-FALSIFY_HOME persistieren (wie die echte Pipeline).
+      fs.mkdirSync(path.join(s.tmp, "logs"), { recursive: true });
+      const handoff = { handoff_id: "h", job_id: pid, scope_id: scopeId, checkout_id: checkoutId, before_snapshot: before };
+      fs.writeFileSync(path.join(s.tmp, "logs", `handoff-${pid}.json`), JSON.stringify(handoff), "utf8");
+      // NO_CHANGE-Report aus gemessenem (unverändertem) Zustand — erfüllt
+      // validateChangeReport (write_status NO_CHANGE ist in der Allow-Liste).
+      const cmp = changes.compareSnapshots(before, before, { allowedFiles: ["app.js"] });
+      const report = {
+        handoff_id: "h", job_id: pid, scope_id: scopeId, checkout_id: checkoutId, writer_id: "a",
+        before_digest: before.digest, after_digest: before.digest, changed_files: [],
+        diff_digest: cmp.diff_digest, write_status: "NO_CHANGE",
+      };
+      const reportFile = path.join(s.tmp, "report-nochange.json");
+      fs.writeFileSync(reportFile, JSON.stringify(report), "utf8");
+      const main = path.join(ROOT, "cli", "main.mjs");
+      // Mit FALSIFY_UI=1: terminaler Zustand MUSS als FM-EVT das Dock erreichen,
+      // obwohl die CLI fail-closed mit Exit 3 endet (keine Freigabe).
+      const withUi = spawnSync(process.execPath, [main, "handoff", "complete", "--file", reportFile, "--root", dir], {
+        cwd: ROOT, env: { ...process.env, FALSIFY_HOME: s.tmp, FALSIFY_UI: "1", FALSIFY_WINDOW: "1" }, encoding: "utf8",
+      });
+      assert.equal(withUi.status, 3, withUi.stdout + withUi.stderr);
+      assert.match(withUi.stdout, /FM-EVT: \{"t":"loop","s":"LOOP_BLOCKED"/, "LOOP_BLOCKED als FM-EVT im CLI-Out");
+      // Ohne FALSIFY_UI: kein Marker (Gate-Beweis — keine Nebenwirkung).
+      const plain = spawnSync(process.execPath, [main, "handoff", "complete", "--file", reportFile, "--root", dir], {
+        cwd: ROOT, env: { ...process.env, FALSIFY_HOME: s.tmp }, encoding: "utf8",
+      });
+      assert.equal(plain.status, 3, plain.stdout + plain.stderr);
+      assert.ok(!/FM-EVT:/.test(plain.stdout), "ohne FALSIFY_UI keine FM-EVT-Marker");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   } finally {
     s.cleanup();

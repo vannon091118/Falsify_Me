@@ -179,7 +179,15 @@ const PRAISE = new RegExp(
     "(?:keine|no)\\s+(?:fehler|errors?|probleme|problems?|issues?|bugs?|l\\u00fccken|gaps?|m\\u00e4ngel|defects?|schw\\u00e4chen|vulnerabilit(?:y|ies))(?:\\s+(?:gefunden|found|vorhanden|present|detected|here|at\\s+all))?",
     "alles\\s+(?:korrekt|correct|gut|good|in\\s+ordnung)",
     "all\\s+good|nothing\\s+wrong|no\\s+concerns?",
-    "best\\u00e4tige|best\\u00e4tigt|bestaetige|bestaetigt|confirmed\\s+correct",
+    // bestätig*-Familie (Live-E2E 2026-09-04): echte Selbst-Bestätigung ist Lob
+    // („Ich/Wir bestätigen …“, „Bestätigt:“). KEIN Lob ist der legitime
+    // Prüfauftrag „… Tests, die bestätigen, dass X rendert / dass Y nicht
+    // rendert“ – deshalb Wortgrenzen (kein Substring-Treffer im Infinitiv
+    // „bestätigen“) UND eine dass-Objektklausel-Ausnahme.
+    "(?:^|[\\s,])(?:ich|wir)\\s+bestätig(?:e|en|st|te|ten|tet)\\b",
+    "\\bbestätig(?:e|st|t|te|ten|tet)\\b(?!\\s*[.,]?\\s+dass\\b)",
+    "\\bbestaetig(?:e|st|t|te|ten|tet)\\b(?!\\s*[.,]?\\s+dass\\b)",
+    "confirmed\\s+correct",
     "funktioniert\\s+(?:alles|fehlerfrei|einwandfrei)",
     "works\\s+(?:perfectly|as\\s+expected|fine)",
     "passt\\s+alles|well\\s+done|sauber\\s+umgesetzt|kein\\s+befund",

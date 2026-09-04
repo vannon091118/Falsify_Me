@@ -32,6 +32,16 @@ test("parseVerdict erkennt Überschriften-Form „## VERDICT: PLAN“ (E2E-Befun
     "jede Markdown-Überschriftenebene zählt");
 });
 
+test("parseVerdict erkennt fette Markdown-Form „**VERDICT:** PLAN“ (Live-E2E 2026-09-04, Job 1eq1ug)", async () => {
+  const { parseVerdict } = await mod("core/verdict.mjs");
+  assert.equal(parseVerdict("Analyse …\n**BEFUND:** Lücke real.\n**VERDICT:** PLAN\n**SUBPROMPT:** …"), "PLAN",
+    "**VERDICT:** PLAN am Zeilenanfang (fett) muss erkannt werden — sonst UNBEKANNT trotz klarem Urteil");
+  assert.equal(parseVerdict("## Befund\nDie Umsetzung wirft TypeError.\n\n**VERDICT:** WRITE\n"), "WRITE");
+  assert.equal(parseVerdict("*VERDICT: RESEARCH*"), "RESEARCH", "einzelnes Sternchen ebenso");
+  assert.equal(parseVerdict("text **VERDICT: WRITE** mitten im Satz"), null,
+    "inline-Verdict bleibt ausgeschlossen (kein Zeilenanfang)");
+});
+
 test("parseVerdict bleibt fail-closed: zweideutige/leere Formen bleiben null", async () => {
   const { parseVerdict } = await mod("core/verdict.mjs");
   assert.equal(parseVerdict("## VERDICT\n\n## SUBPROMPT\n…"), null,

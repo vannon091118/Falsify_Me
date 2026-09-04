@@ -211,6 +211,43 @@ test("validateProbeSet: Anti-Vakuum – vakanter/kurzer check, Lob-claim, Doppel
   }
 });
 
+test("validateProbeSet: bestätigen in dass-Objektklausel ist KEIN Lob (Wortgrenzen-Fix 2026-09-04)", async () => {
+  const { validateProbeSet } = await mod("core/probes.mjs");
+  const { root, whitelist } = probeSetEnv();
+  try {
+    const src = "Eine Anforderung an das Modul.";
+    // Legitimer Prüfauftrag: „… Tests, die bestätigen, dass X rendert / dass Y
+    // nicht rendert“ – beschreibt eine Test-Lücke, kein Selbst-Lob. Schlug vor
+    // dem Fix fehl (Substring-Treffer „bestätige“ in „bestätigen“):
+    const legit = validateProbeSet(
+      [{
+        id: "P1",
+        requirement_ref: "H1",
+        class: "claim-check",
+        target: "core/tools.mjs",
+        claim: "Es fehlen Tests, die bestätigen, dass selfReview:true den Block rendert und dass der Default ihn nicht rendert.",
+        check: "Lies core/tools.mjs und prüfe, ob die Sektion bei selfReview true erscheint und beim Default fehlt.",
+      }],
+      { requirementSource: src, root, whitelist },
+    );
+    assert.equal(legit.ok, true, legit.reasons.join(" | "));
+    // Echte Selbst-Bestätigung bleibt Lob – in allen Formen (1. Person + dass,
+    // Bestätigt:, wir-Form):
+    const praise = validateProbeSet(
+      [
+        { ...legit.probes[0], id: "P1", claim: "Ich bestätige, dass der Plan korrekt umgesetzt wurde." },
+        { ...legit.probes[0], id: "P2", claim: "Bestätigt: keine Fehler im Diff vorhanden." },
+        { ...legit.probes[0], id: "P3", claim: "Wir bestätigen den Plan ohne Einschränkung." },
+      ],
+      { requirementSource: src, root, whitelist },
+    );
+    assert.equal(praise.ok, false);
+    assert.equal(praise.reasons.filter((r) => /Lob-Formulierung/.test(r)).length, 3, praise.reasons.join(" | "));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
 test("validateProbeSet: kaputtes Target (absolut, .., existiert nicht, außerhalb Whitelist)", async () => {
   const { validateProbeSet } = await mod("core/probes.mjs");
   const { root, whitelist } = probeSetEnv();

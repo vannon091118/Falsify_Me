@@ -42,6 +42,8 @@ tests/dead-files.test.mjs
 tests/agent-stream-output.test.mjs
 tests/sql-identifiers.test.mjs
 tests/worker-kill.test.mjs
+tests/install-drift.test.mjs
+ui/tui/views/output-view.test.mjs
 doki/tests/reconstruction.test.mjs
 doki/tests/replay.test.mjs
 doki/tests/full-feature-skeleton.test.mjs

@@ -1,8 +1,29 @@
 // FalsifyMe 2.0 · core/verdict.mjs – compatibility facade
 // Verdict-/Befund-Parsing remains here; gate implementations live in focused modules.
 
+// Führende Markdown-Betonung („**VERDICT:** PLAN“) vor dem Matchen entfernen —
+// Live-E2E 2026-09-04 (Job 1eq1ug): das Modell schrieb das Urteil fett, der
+// Parser blieb UNBEKANNT, obwohl ein klares „VERDICT: PLAN“ vorlag. Der
+// mid-Sentence-Fall („text VERDICT: WRITE mitten im Satz“) bleibt durch die
+// ^-Ankerung ausgeschlossen.
+function normLine(l) {
+  // Entfernt Betonungs-Marker (Markdown **/*/__/_/***) als DELIMITER — nur
+  // dort, wo sie an Nicht-Leerzeichen grenzen: „**VERDICT:** PLAN“ →
+  // „VERDICT: PLAN“, „*VERDICT: RESEARCH*“ → „VERDICT: RESEARCH“. Der
+  // mid-Sentence-Fall („text VERDICT: WRITE mitten im Satz“) bleibt durch
+  // die ^-Ankerung der Erkennungs-Regexe ausgeschlossen.
+  return l
+    .trim()
+    .replace(/\*{1,3}(?=\S)/g, "")
+    .replace(/(?<=\S)\*{1,3}(?=$|[^\S])/g, "")
+    .replace(/\*{1,3}(?=$|[^\S])/g, "")
+    .replace(/_{1,3}(?=\S)/g, "")
+    .replace(/(?<=\S)_{1,3}(?=$|[^\S])/g, "")
+    .replace(/_{1,3}(?=$|[^\S])/g, "");
+}
+
 export function parseVerdict(content) {
-  const lines = String(content || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const lines = String(content || "").split(/\r?\n/).map(normLine).filter(Boolean);
   // 1) klassische Zeilenform, letzte gewinnt
   for (let i = lines.length - 1; i >= 0; i--) {
     const match = lines[i].match(/^#{0,3}\s*VERDICT:\s*(PLAN|RESEARCH|WRITE|ASK)\b/i);
@@ -32,7 +53,7 @@ export function exitCodeOf(verdict) {
 }
 
 export function parseBefund(content) {
-  const lines = String(content || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const lines = String(content || "").split(/\r?\n/).map(normLine).filter(Boolean);
   for (let i = lines.length - 1; i >= 0; i--) {
     const match = lines[i].match(/^BEFUND:\s*(.+)$/i);
     if (match) return match[1].trim();
