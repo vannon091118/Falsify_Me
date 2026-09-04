@@ -36,6 +36,11 @@ import { DokiObserver, OBSERVER_STATES } from './observer.mjs';
 import { buildNarratorContext } from './narrator-context.mjs';
 import { compilePrompt, detectInstructionLikeData } from './prompt.mjs';
 import { narrateOnce } from './thinker-orchestrator.mjs';
+import { etats } from './etats.mjs';
+import { patternKey } from './signals.mjs';
+import { selectBlocks } from './blocks.mjs';
+import { projectEnsemble, accumulateEtats } from './ensemble-state.mjs';
+import { digestJson } from './hash.mjs';
 
 export const BRIDGE_RULE_VERSION = 'doki.bridge.v1';
 export { OBSERVER_STATES as BRIDGE_STATES };
@@ -220,11 +225,44 @@ export function createBridge({
           RE_EVALUATE: { observations: pending.length, last: pending.at(-1)?.observed_text ?? null },
           EVIDENCE: evidence.map((e) => e.id),
         };
+        const stateKey = patternKey({
+          phase: 'bridge',
+          verdict: null,
+          wave: null,
+        });
+        const candidateBlocks = evidence.map((e, idx) => ({
+          block_id: `obs-${e.id ?? idx}`,
+          anchor_ok: Boolean(e.source_event_id),
+          state_key: stateKey,
+          primitive: e.event_type === 'finding' ? 'CONTRADICTION' : 'CLAIM',
+          character: e.event_type === 'finding' ? 'Buffy' : 'Thinker',
+        }));
+        const selected = selectBlocks(candidateBlocks, stateKey).slice(0, 7);
+        const relevantCharacters = [...new Set(selected.map((b) => b.block.character).filter(Boolean))];
+        if (relevantCharacters.length === 0) relevantCharacters.push('Buffy', 'Thinker');
+
+        // ── Akkumulierter etats-State (Etappe 1) ────────────────────────────
+        // Alle pending-Observations als geordnete Event-Liste akkumulieren.
+        const accumulationEvents = pending.map((o, idx) => ({
+          t: o.event_type ?? 'loop',
+          event_type: o.event_type ?? 'loop',
+          id: o.source_event_id ?? o.id ?? `bridge-evt-${idx}`,
+          seq: o.seq ?? idx,
+          phase: 'bridge',
+          v: null,
+          wave: null,
+          text: o.observed_text ?? null,
+        }));
+        const accumulatedState = accumulateEtats(accumulationEvents, { ladder: () => 'NARRATIVELY_RELEVANT' });
+        const ensemble = projectEnsemble(accumulatedState);
+
+
         const narratorContext = buildNarratorContext({
           observed: { observations: evidence, cursor: store.readCursor() },
           report: { phase: 'bridge', from_state: 'COLLECTING', to_state: 'OUTPUT_READY' },
           history: { refs: evidence.map((e) => e.id) },
-          ensemble: {},
+          ensemble,
+          relevance: relevantCharacters,
           care,
           evidence,
         });
@@ -253,6 +291,28 @@ export function createBridge({
         const message = observer.markOutputReady(result.text);
         store.writeBridgeState({ state: 'OUTPUT_READY', narrative_boundary: boundary, slot_owner: owner, slot_since: null });
         store.writeNarrativeBoundary(pending.at(-1).id);
+
+        const outputId = digestJson({ boundary, promptDigest: prompt.promptDigest, stateKey });
+        // Etappe 2: historyId aus echtem patternKey des letzten Events (statt generischem 'bridge').
+        const lastEvt = pending.at(-1);
+        const outputHistoryId = patternKey({
+          phase: lastEvt?.event_type ?? 'bridge',
+          verdict: null,
+          wave: null,
+        });
+        try {
+          store.appendNarrativeOutput({
+            outputId,
+            historyId: outputHistoryId,
+            narratorId: 'NARRATOR_15',
+            promptDigest: prompt.promptDigest,
+            messageText: result.text,
+          });
+        } catch (writeErr) {
+          // fail-open: DOKI-Fehler sind präsentationsseitig — aber diagnostizierbar
+          try { onEvent({ status: 'FALLBACK', narrator: null, contextDigest: null, buffered: observer.buffered, error: `narrative_outputs write: ${String(writeErr?.message || writeErr)}` }); } catch { /* egal */ }
+        }
+
         emit();
         return { pumped: true, status: result.status, message, observations: pending.length, narrator: narratorContext.narrator, contextDigest: narratorContext.contextDigest };
       } finally {

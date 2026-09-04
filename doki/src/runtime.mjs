@@ -7,6 +7,11 @@ import { inspectEventContinuity, readSnapshot } from './falsify-reader.mjs';
 import { sharedKeyWindowOpen } from './rotation.mjs';
 import { buildNarratorContext } from './narrator-context.mjs';
 import { narrateOnce } from './thinker-orchestrator.mjs';
+import { etats } from './etats.mjs';
+import { patternKey } from './signals.mjs';
+import { selectBlocks } from './blocks.mjs';
+import { projectEnsemble, accumulateEtats } from './ensemble-state.mjs';
+
 
 const now = () => new Date().toISOString();
 const updateIdFor = (eventId) => digestJson(`doki:${eventId}:${RUNTIME_VERSION}`);
@@ -56,16 +61,115 @@ function deriveCare(snapshot, report) {
   };
 }
 
+function deriveEnsembleAndRelevance(snapshot, report) {
+  const stateKey = patternKey({
+    phase: report.phase,
+    verdict: report.verdict_ref,
+    wave: report.wave_refs?.[0] ?? null,
+  });
+
+  const candidateBlocks = [];
+  if (snapshot.scope?.header) {
+    candidateBlocks.push({
+      block_id: `scope-${snapshot.scope.id ?? 'header'}`,
+      anchor_ok: true,
+      state_key: stateKey,
+      primitive: 'CLAIM',
+      character: 'Vannon',
+    });
+  }
+  const findings = snapshot.findings ?? [];
+  for (let i = 0; i < findings.length; i++) {
+    const f = findings[i];
+    const isEvil = f.wave === 'evil' || f.wave === 'evil-twin';
+    const hasEvidence = Boolean(f.befund || f.content || f.verdict);
+    candidateBlocks.push({
+      block_id: `finding-${f.id ?? i}`,
+      anchor_ok: hasEvidence,
+      state_key: stateKey,
+      primitive: isEvil ? 'CONTRADICTION' : 'DISCOVERY',
+      character: isEvil ? 'Buffy' : 'Thinker',
+      target: isEvil ? 'Thinker' : null,
+    });
+  }
+
+  const selected = selectBlocks(candidateBlocks, stateKey).slice(0, 7);
+  const relevantCharacters = [...new Set(selected.map((b) => b.block.character).filter(Boolean))];
+  if (relevantCharacters.length === 0) {
+    relevantCharacters.push('Buffy', 'Thinker');
+  }
+
+  // ── Akkumulierter etats-State (Etappe 1) ────────────────────────────────
+  // Statt eines einzelnen etats()-Schritts werden alle beobachteten Events
+  // des Jobs als geordnete Liste durch accumulateEtats() geführt. Das
+  // resultierende characters-Dictionary ist gefüllt (knownEvents, recallCount)
+  // und wird von projectEnsemble korrekt ins Ensemble übersetzt.
+  const accumulationEvents = [];
+
+  // Scope-Header als erstes "job"-Event
+  if (snapshot.scope?.header) {
+    accumulationEvents.push({
+      t: 'job',
+      id: `scope-${snapshot.scope.id ?? 'header'}`,
+      seq: 0,
+      phase: report.phase,
+      v: report.verdict_ref,
+      wave: null,
+      text: snapshot.scope.header,
+    });
+  }
+
+  // Findings als Events in Reihenfolge
+  for (let i = 0; i < findings.length; i++) {
+    const f = findings[i];
+    accumulationEvents.push({
+      t: 'finding',
+      event_type: 'finding',
+      id: String(f.id ?? `finding-${i}`),
+      seq: i + 1,
+      phase: report.phase,
+      v: f.verdict ?? null,
+      wave: f.wave ?? null,
+      text: f.befund ?? f.content ?? null,
+    });
+  }
+
+  // Loop-Event selbst als letztes
+  accumulationEvents.push({
+    t: snapshot.loop_event?.event_type && ['phase', 'finding', 'verdict', 'done', 'job', 'loop'].includes(snapshot.loop_event.event_type)
+      ? snapshot.loop_event.event_type
+      : 'loop',
+    id: snapshot.loop_event?.id ?? 'loop-event',
+    seq: accumulationEvents.length + 1,
+    phase: report.phase,
+    v: report.verdict_ref,
+    wave: report.wave_refs?.[0] ?? null,
+    text: typeof snapshot.loop_event?.payload === 'string'
+      ? snapshot.loop_event.payload
+      : JSON.stringify(snapshot.loop_event?.payload ?? ''),
+  });
+
+  // Leiter-Regel: alle Events auf NARRATIVELY_RELEVANT hochstufen
+  const accumulatedState = accumulateEtats(accumulationEvents, {
+    ladder: () => 'NARRATIVELY_RELEVANT',
+  });
+  const ensemble = projectEnsemble(accumulatedState);
+
+  return { ensemble, relevance: relevantCharacters, stateKey, etatsStep: { state: accumulatedState } };
+}
+
+
 async function narrate({report,snapshot,history,updateId,env,falsifyDb,dokiDb,modelCall=callModel}) {
   if (!sharedKeyWindowOpen(falsifyDb, snapshot.loop_event.id) || activeThinkerRunExists(falsifyDb)) {
     return fallback({ promptDigest:null, narratorContext:null }, 'DOKI wartet auf den freien Thinker-Slot.');
   }
+  const { ensemble, relevance, stateKey } = deriveEnsembleAndRelevance(snapshot, report);
   const narratorContext = buildNarratorContext({
     observed: snapshot,
     report,
     history,
-    ensemble: {},
-    relevance: [],
+    ensemble,
+    relevance,
     care: deriveCare(snapshot, report),
     evidence: snapshot.findings ?? [],
   });
@@ -87,6 +191,11 @@ async function narrate({report,snapshot,history,updateId,env,falsifyDb,dokiDb,mo
     });
     if (result.status === 'DEFERRED') return fallback({ ...prompt, narratorContext }, 'DOKI wartet auf den freien Thinker-Slot.');
     dokiDb.prepare('INSERT OR REPLACE INTO rotation_state(id,window_key,reswitch_count,call_count,token_count,updated_at) VALUES(1,?,?,?,?,?)').run(snapshot.loop_event.job_id,0,1,0,now());
+
+    const outputId = digestJson({ updateId, promptDigest: prompt.promptDigest, stateKey });
+    dokiDb.prepare('INSERT OR REPLACE INTO narrative_outputs(output_id,history_id,narrator_id,prompt_digest,message_text,call_count,created_at) VALUES(?,?,?,?,?,1,?)')
+      .run(outputId, stateKey, 'NARRATOR_15', prompt.promptDigest, result.text, now());
+
     return { mode:'NARRATIVE', renderPath:'THINKER', reswitchCount:0, body:result.text, prompt, narratorContext, model:result.model };
   } catch (error) {
     return fallback({ ...prompt, narratorContext }, 'DOKI-LLM-Fehler: ' + String(error?.message || error || 'unbekannter Fehler') + '.');

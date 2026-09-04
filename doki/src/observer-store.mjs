@@ -247,7 +247,10 @@ export function createPersistentStore({ path, db } = {}) {
         VALUES(?,?,?,?,?,?)`).run(historyId, baseCursorId, inputDigest, ruleVersion, stateDigest, now());
     },
     appendNarrativeOutput({ outputId, historyId, narratorId, promptDigest, messageText }) {
-      ownedDb.prepare(`INSERT INTO narrative_outputs(output_id,history_id,narrator_id,prompt_digest,message_text,call_count,created_at)
+      // INSERT OR IGNORE: narrative_outputs sind historische Fakten — der erste
+      // Write gewinnt immer. Ein zweiter Write mit identischer output_id (Idempotenz-
+      // Guard bei Crash-Recovery oder doppeltem pump()) überschreibt nie den ersten.
+      ownedDb.prepare(`INSERT OR IGNORE INTO narrative_outputs(output_id,history_id,narrator_id,prompt_digest,message_text,call_count,created_at)
         VALUES(?,?,?,?,?,1,?)`).run(outputId, historyId, narratorId, promptDigest, messageText, now());
     },
     db: ownedDb,
