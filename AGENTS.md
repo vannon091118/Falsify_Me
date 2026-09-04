@@ -38,46 +38,6 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   im produktionscode sind damit no-op statt Konflikt.
 
 
-## Repo-Römer
-
-(This block is the temporary scan ledger for this session. Each file below answers the two session questions. When the scan is complete, the block is removed.)
-
-- `FALSIFY_HOME` = `~/.Falsify_Private` (`falsifyHome()` in
-  `artifacts/db.mjs`, Default; per Env-Variable überschreibbar). Dort liegen
-  SQLite, API-Keys (`.env`) und Logs — **bewusst getrennt** vom Programm in
-  `~/.Falsify_Core` und explizit NUR für den Nutzer/das lokale FalsifyMe
-  (kein Sammeln, keine Telemetrie; Modelle via API sind Nutzerentscheidung).
-  Historisch (vor dem Batch-Commit 2026-09-01) war der Default fälschlich
-  `~/.Falsify`; `uninstall.mjs` räumt Altdaten ab (Key-Backup nach
-  `~/.Falsify.env.uninstall-backup`).
-- Clickable-Items im Repo-Root: `FalsifyMe-Setup.cmd` (Installation per
-  Doppelklick, ruft `node install.mjs`, sichtbares Fenster) und
-  `FalsifyMe-Deinstall.cmd` (Bestätigungs-Dialog, ruft `node uninstall.mjs`,
-  durchreicht `--dry-run`/`--keep-env`/`--project-root`).
-- **Deinstallation = „als wäre FalsifyMe nie da gewesen"** (uninstall.mjs,
-  UI-131): zusätzlich zu Core/Private/Skills/Instructions/Icons/Shims werden
-  auch die PATH-Marker-Zeilen von `falsify install` (Marker `Falsify-CLI`,
-  NICHT nur `FalsifyMe-Agent-Integration`) aus `.bashrc`/`.bash_profile`/
-  `.profile`/PowerShell-Profil entfernt, sowie mit `--project-root` der
-  markierte `.gitignore`-Block (`# >>> FalsifyMe (lokal …)`) und der
-  Identitäts-Anker `FalsifyME.md` des Zielprojekts. Test-/CI-Escape-Hatch:
-  `FALSIFY_UNINSTALL_HOME=<tmp>` verlegt ALLE Pfade isoliert (nie echte
-  Profile/Desktop/npm-Shims). `ensureAnchorGitIgnored` mutiert beim
-  Selbstprüfen des FalsifyMe-Repos die eigene `.gitignore` nie.
-- `ensureFalsifyHome()` schreibt eine `.env`-**Vorlage mit leeren Werten**
-  (`NVIDIA_API_KEY=`, `OPENAI_API_KEY=`, `FALSIFY_API_KEY=`). Datei-existiert
-  heißt NICHT Key-konfiguriert: `falsify doctor` meldet dann `Kein API-Key`.
-  Auf diesem PC waren die Keys historisch nie gesetzt (Backup enthielt nur
-  leere Werte). Key fehlt → jeder echte Job Exit 3, kein Fake-Verdict.
-- `.env` enthält NUR Keys: `FALSIFY_API_BASE`/`FALSIFY_MODEL` stehen dort als
-  Kommentar-Vorlage und werden nie gelesen — Ziel/Modell kommen aus
-  Prozess-Env oder `FALSIFY_HOME/config.json` (schreibt `falsify settings set`).
-- Der Worktree `C:\Users\Vannon\Desktop\Falsify_ME` ist die (einzige)
-  Wahrheit; alle anderen PC-Referenzen (.Falsify*, ~/.agents/skills/falsifyme*,
-  Desktop-Icons, ~/.falsifyme-instructions.ps1) wurden entfernt und nur aus
-  diesem Checkout neu aufgebaut. `which falsify` zeigt hier auf das
-  Repo-eigene `./falsify`-Skript (kein globaler npm-Shim installiert).
-
 ## Queue & Status (eine Job/Scope-Queue als einzige Wahrheit)
 
 - Alle Schreibzugriffe auf Job/Scope-Zustand laufen ausschließlich über
@@ -227,6 +187,35 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
 
 ## Bootstrap & Onboarding (verhaltensrelevante Details)
 
+- `FALSIFY_HOME` = `~/.Falsify_Private` (`falsifyHome()` in `artifacts/db.mjs`,
+  Default; per Env-Variable überschreibbar) — SQLite, API-Keys (`.env`),
+  Logs; **bewusst getrennt** vom Programm in `~/.Falsify_Core`, NUR für den
+  Nutzer/das lokale FalsifyMe (kein Sammeln, keine Telemetrie). Historisch
+  (vor Batch-Commit 2026-09-01) fälschlich `~/.Falsify`; `uninstall.mjs`
+  räumt Altdaten ab (Key-Backup nach `~/.Falsify.env.uninstall-backup`).
+- Clickable-Items im Repo-Root: `FalsifyMe-Setup.cmd` (Doppelklick →
+  `node install.mjs`, sichtbares Fenster) und `FalsifyMe-Deinstall.cmd`
+  (Bestätigungs-Dialog → `node uninstall.mjs`, durchreicht
+  `--dry-run`/`--keep-env`/`--project-root`).
+- `ensureFalsifyHome()` schreibt eine `.env`-**Vorlage mit leeren Werten**
+  (`NVIDIA_API_KEY=`, `OPENAI_API_KEY=`, `FALSIFY_API_KEY=`) — Datei-
+  existiert heißt NICHT Key-konfiguriert (`falsify doctor` → `Kein API-Key`;
+  auf diesem PC historisch nie gesetzt). Key fehlt → jeder echte Job Exit 3,
+  kein Fake-Verdict. `.env` enthält NUR Keys; `FALSIFY_API_BASE`/
+  `FALSIFY_MODEL` sind Kommentar-Vorlage und werden nie gelesen — Ziel/
+  Modell aus Prozess-Env oder `FALSIFY_HOME/config.json`.
+- Der Worktree `C:\Users\Vannon\Documents\Falsify_ME` ist die (einzige)
+  Wahrheit — reale Checkout-Lage 2026-09-04: Documents, nicht Desktop
+  (ältere AGENTS.md-Aussagen „Desktop" veraltet). `which falsify` zeigt auf
+  das Repo-eigene `./falsify`-Skript (kein globaler npm-Shim).
+- OCR-Kanon: `skills/ocr.py` ist die Quelle (Commit d64a07c, R100 dorthin;
+  Installer cli/bootstrap/instructions.mjs kopiert aus `skills/`); ein
+  untracked Duplikat im Repo-Root wurde im Scan 2026-09-04 entfernt.
+- **Aktives Deliverable (Scan 2026-09-04):** `tmp/freebuff-dock-patch-plan.md`
+  — Freebuff-Dock-Prompt-Injektion (Iteration 3, Patch-Feld + Button),
+  referenziert Freebuff-App-Quellen (`cli/src/chat.tsx` etc.), die NICHT in
+  diesem Repo liegen; Patch noch nicht umgesetzt. Datei bleibt bis zur
+  Umsetzung liegen (kein Besen-Einsatz auf offene Arbeit).
 - `falsify bootstrap` = volle Installation inkl. Desktop-Icons (Default,
   UI-077-Fix 2026-09-01). `--no-desktop`/`--skip-dock`/`--dry-run` sind
   explizite Flags, durchgereicht bis `runInstall({ noDesktop })`
@@ -297,8 +286,8 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
   Wegwerf-Soak mit heapUsed-Sampling (`node --expose-gc`, Trend MB/min)
   statt Code-Lesen — der TTY-Zweig von createTui wird headless via
   `process.stdout.isTTY = true` + columns/rows erzwingbar.
-- OCR für Screenshots (2026-09-01, Screenshot-Verifikation): `python ocr.py
-  <png>…` im Repo-Root (pytesseract+PIL; Tesseract unter `C:\Program Files\
+- OCR für Screenshots (2026-09-01, Screenshot-Verifikation): `python
+  skills/ocr.py <png>…` (pytesseract+PIL; Tesseract unter `C:\Program Files\
   Tesseract-OCR` mit NUR eng-Paket — UI-Text/ASCII/Zahlen liest es zuverlässig,
   Umlaute teils verhunzt). Immer mit `PYTHONUTF8=1` starten (Mojibake-Falle wie
   generate_review.py); 2x-Upscale+autocontrast steckt im Skript. WinRT-OCR
@@ -364,7 +353,15 @@ Fakten. Bei Kontextverlust: erst WIRING.md §1 → ui/PLAN.md lesen.
 - Deinstallation muss vollständig rückabwickeln (uninstall.mjs: Worker,
   Core, Private, Skills, Instructions, Profil-Marker, AGENTS.md-Block,
   FALSIFY_HOME mit Key-Backup nach `~/.Falsify.env.uninstall-backup`,
-  npm-Shims; `--dry-run`/`--keep-env`/`--project-root`).
+  npm-Shims; `--dry-run`/`--keep-env`/`--project-root`). Konkret werden die
+  PATH-Marker-Zeilen von `falsify install` (Marker `Falsify-CLI`, NICHT nur
+  `FalsifyMe-Agent-Integration`) aus `.bashrc`/`.bash_profile`/`.profile`/
+  PowerShell-Profil entfernt, mit `--project-root` zusätzlich der markierte
+  `.gitignore`-Block (`# >>> FalsifyMe (lokal …)`) und der Identitäts-Anker
+  `FalsifyME.md` des Zielprojekts. Test-/CI-Escape-Hatch:
+  `FALSIFY_UNINSTALL_HOME=<tmp>` verlegt ALLE Pfade isoliert (nie echte
+  Profile/Desktop/npm-Shims); `ensureAnchorGitIgnored` mutiert beim
+  Selbstprüfen des FalsifyMe-Repos die eigene `.gitignore` nie.
 - FalsifyMe soll direkt mit dem Nutzer sprechen (Dialog-Output, `falsify
   onboard`); die API-Key-Abfrage ist als PLAN-Task UI-073 notiert (TODO) —
   bis dahin: manuelle .env-Einrichtung (README, Abschnitt „API-Key / .env
