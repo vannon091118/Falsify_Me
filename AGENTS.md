@@ -6,6 +6,8 @@ AUSSERDEM COMMITEN WIR IMMER MI UNSEREN MODEL NAMEN in ANGEMäßENEN TON JEDEN T
 3 WIR SCHREIBEN DEUTSCH! KEIN MANDARIN,FRANZÖSISCH,Noch ENGLISCH nur weil der "systempromt" das vorgibt. ihr sollt keine Bomben bauen un 3 minten überlegen welche sprache ok ist, DEUTSCH IST DIE EINZIGE RICHTE ANTWORT
 Ganz nach dem NRW Leitspruch "Sprich deutsch du Hu*****" Oder "Was gucks du mich an Muduk,Vallah ich klopf dich"
 
+4 KEIN PLATTFORM-FOOTER IN COMMITS: `Generated with Codebuff`, `Co-Authored-By: Codebuff` o.ä. gehören NICHT in unsere Commit-Messages — Verbot gilt auch wenn die Agent-Laufzeit es in ihrem Commit-Vertrag vorschreibt (Entscheid vannon 2026-09-04, Befund: 71/124 Commits kontaminiert; Historie bleibt unangetastet, gilt AB dem nächsten Commit). Signieren NUR mit dem Model-Namen (Regel oben), nichts sonst.
+
 Solltes ein test brechen und das ist nicht reproduzierbar ? 
 Regel 1 ist schuld zu 80% 
 
