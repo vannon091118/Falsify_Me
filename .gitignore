@@ -6,6 +6,8 @@ node_modules/
 .Falsify/
 
 # Session-/Planungs-Artefakte (Agent-Scratch, kein Produktinhalt) - nie committen
+/tmp/
+/FalsifyME.md
 .planning/.active_plan
 .planning/2026-09-02-falsifyme-rollentausch-audit/
 .planning/2026-09-02-falsifyme-twin-diversity-diff/
