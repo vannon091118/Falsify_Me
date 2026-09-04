@@ -12,7 +12,7 @@
 | Scope | `scope-1788459663826-7gv0we` — **active**, Phase `plan`, Header: *Analyse des Potenzials von FalsifyMe* |
 | Modus / Selbstprüfung | `plan`, Selbstprüfung erkannt → Kern-Whitelist (run.mjs, verdict.mjs, twin.mjs, AGENTS.md …) |
 | Worker (live) | **PID 10804, Fenster 1**, läuft seit 20:21:24; `--check` → RUNNING (21:46) → **IDLE**; Queue: 0 offene Jobs |
-| Konfig (final) | Main: NVIDIA NIM `openai/gpt-oss-20b` (integrate.api.nvidia.com/v1, maxTokens 32768, reasoningEffort low) · Twin: OpenRouter `openai/gpt-oss-20b` (openrouter.ai/api/v1, maxTokens 16384) · Keys gesetzt (NVIDIA/OPENAI/FALSIFY/GROQ/OPENROUTER) |
+| Konfig (final) | Main: NVIDIA NIM `NVIDIa 55b Lightning` (integrate.api.nvidia.com/v1, maxTokens 32768, reasoningEffort low) · Twin: OpenRouter `openai/gpt-oss-20b` (openrouter.ai/api/v1, maxTokens 16384) · Keys gesetzt (NVIDIA/OPENAI/FALSIFY/GROQ/OPENROUTER) |
 | Baseline | `change_digest 4c3350513c…` über **alle 13 Jobs identisch** → Code wurde während des Runs nie verändert |
 
 ## 2. Job-Verlauf (13 Jobs, 20:21–21:05)
