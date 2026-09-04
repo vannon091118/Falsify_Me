@@ -40,6 +40,7 @@ import { runAgent } from "../core/agent.mjs";
 import { checkFeasibility } from "../core/feasibility.mjs";
 import { warnIfNoWorker, workerSnapshot, lastHeartbeatAge, workerHintLines } from "./workerliveness.mjs";
 import { resolveProjectContext, validateProjectFiles } from "../core/project-context.mjs";
+import { loadSysContextSection } from "../core/syscontext.mjs";
 import { requireProjectIdentity, assertScopeCheckout } from "../artifacts/projects.mjs";
 import { snapshotRoot } from "../core/changes.mjs";
 import { buildHandoff, serializeHandoff } from "../core/handoff.mjs";
@@ -707,8 +708,20 @@ async function main() {
   // Modell - sonst ist die Gegenpruefung von der Erstpruefung nicht unterscheidbar.
   uiEvt({ t: "model", thinker: model, twin: executionConfig.twinModel, who: "thinker" });
   const findings = scope ? getFindings(db, scope.id) : [];
+  // System-Orientierung (Coder-Artefakt, Schema v1): die im FALSIFY-Home
+  // gespeicherte Übersicht wird in JEDEN Review gerendert (UNTRUSTED CONTEXT).
+  // FalsifyMe schreibt sie nie – der Coder pflegt via `falsify syscontext set`.
+  // Fehlend/ungültig ist KEIN Job-Fehler (nur Orientierung, nie Wahrheit):
+  // ungültig → ehrliche Warnung, Job läuft ohne die Sektion weiter.
+  const sysContext = loadSysContextSection(falsifyHome(), ROOT);
+  if (!sysContext.ok && sysContext.reason === "invalid") {
+    console.warn(yellow(`⚠ System-Orientierung schema-ungültig (übersprungen, ${sysContext.errors?.length || 0} Fehler) – Pflege: falsify syscontext set --root "${ROOT}"`));
+  } else if (sysContext.ok) {
+    console.log(dim(`  Orientierung: ${sysContext.doc.subject} (Schema v${sysContext.doc.schemaVersion}, by ${sysContext.doc.updatedBy})`));
+  }
   const userContent = buildUserContent({
     header: scope ? scope.header : null,
+    sysContextSection: sysContext.ok ? sysContext.section : null,
     phase: scope ? scope.phase : null,
     lastBefund: scope ? scope.last_befund : null,
     findings,

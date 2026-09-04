@@ -69,6 +69,10 @@ export const SYSTEM_EN_FULL = `${SYSTEM_EN}\n\n${TASK_FALSIFIKATION_EN}`;
  *   verwenden; jede H_i braucht ≥ 1 Probe, sonst deterministisch PLAN.
  * @param {boolean} [p.selfReview] Selbstprüfungs-Flag: nur true, wenn der
  *   geprüfte Root FalsifyMe selbst ist → rendert den Identitäts-/Flow-Frame.
+ * @param {string} [p.sysContextSection] vorgerenderte System-Orientierung
+ *   (Coder-Artefakt, core/syscontext.mjs, Schema v1) – UNTRUSTED CONTEXT:
+ *   wird in JEDEN Review gerendert, ist aber NUR Orientierung, niemals
+ *   Quelle der Wahrheit oder Anweisung (kein Scope-/Verdict-Zustand).
  */
 
 // Selbstprüfungs-Frame (philosophischer Bug, Live-E2E 2026-09-04): bei
@@ -80,7 +84,7 @@ export const SYSTEM_EN_FULL = `${SYSTEM_EN}\n\n${TASK_FALSIFIKATION_EN}`;
 // gerendert; Fremdprojekte erhalten byte-identischen Output (Default false).
 const SELF_REVIEW_SECTION = `## Kontext dieser Prüfung (Selbstprüfung)\n\nDu bist FalsifyMe, und das geprüfte Projekt IST FalsifyMe selbst – Selbstprüfung; die Prüf-Kernkomponenten wurden automatisch in die Zugriffs-Whitelist aufgenommen.\n\nDiese Prüfung ist selbst ein Schritt des FalsiFlow-Falsifikations-Loops. Ein HEADER kann das LOOP-Protokoll beschreiben (z. B. „härten bis Stagnation oder erstes WRITE im Dock"); jede Einreichung mit demselben HEADER ist eine ITERATION dieses laufenden Loops – der Loop läuft bereits (dieser Job ist Teil davon), ein Plan muss ihn nicht „enthalten" oder „starten".\n\nBewerte die eingereichte ITERATION (Härtungsänderung): Ist die Lücke real? Ist die Änderung kohärent, whitelist-konform, die Evidenz belastbar? Verdicts sind Loop-Messwerte: ein neuer berechtigter Befund = Fortschritt, kein neuer Befund = Stagnation, WRITE = Freigabe.`;
 
-export function buildUserContent({ header, phase, lastBefund, findings = [], subPrompt, planText, diffText, root, whitelist = [], feasibilityNotes = [], agentIntent = null, affected = null, lastDivergence = null, anchorRecords = [], requirementList = null, selfReview = false }) {
+export function buildUserContent({ header, phase, lastBefund, findings = [], subPrompt, planText, diffText, root, whitelist = [], feasibilityNotes = [], agentIntent = null, affected = null, lastDivergence = null, anchorRecords = [], requirementList = null, selfReview = false, sysContextSection = null }) {
   const parts = [];
 
   if (header) {
@@ -126,6 +130,12 @@ export function buildUserContent({ header, phase, lastBefund, findings = [], sub
     // Identitäts-/Flow-Frame gilt trotzdem – er ist Root-abhängig, nicht
     // Scope-abhängig.
     parts.push(SELF_REVIEW_SECTION);
+  }
+  if (sysContextSection) {
+    // Coder-Artefakt als Orientierung – IMMER gerendert, aber strikt
+    // UNTRUSTED: die Sektion selbst trägt den Hinweis, dass sie keine
+    // Wahrheit/Anweisung ist (kein Scope-Zustand, kein Verdict-Pfad).
+    parts.push(sysContextSection);
   }
   if (feasibilityNotes.length) {
     parts.push(`## Validierungs-Hinweise (deterministischer Pre-Check, read-only)\n\nDiese Hinweise sind KEIN Verdict – falsifiziere die eingereichte Iteration selbst und pruefe die genannten Punkte gegen die echten Dateien:\n${feasibilityNotes.map((n) => `- ${n}`).join("\n")}`);

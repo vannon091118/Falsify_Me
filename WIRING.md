@@ -63,6 +63,8 @@ core/feasibility.mjs       ← Umsetzbarkeits-Puffer (Intent→Execution, §14)
 core/identity.mjs         ← FalsifyME.md-Anchor: Root-/Digest-Prüfung, Records (read/explicit lifecycle write)
 artifacts/projects.mjs    ← SQLite-Owner für PROJECT/CHECKOUT-Bindungen; Pre-Session-Identity-Gate
 cli/anchor.mjs            ← expliziter Anchor-Lifecycle: init/check/rebind/clone/record
+cli/syscontext.mjs        ← falsify syscontext set|show|history (Coder-Artefakt im FALSIFY-Home, Schema v1)
+core/syscontext.mjs       ← System-Orientierung: Schema/Validator/Snapshot-Diff + UNTRUSTED-Context-Render
 core/probes.mjs            ← Probe-Vertrag (P0-Cutover, §16): splitRequirement /
                              parseProbeSet / validateProbeSet / computeVerdict
 core/twin.mjs              ← Unabhängige Gegenprüfung (Evil Twin, Regel 6, §15)
@@ -233,6 +235,7 @@ oder:         start "FalsifyMe-TUI" cmd /k node ui\tui-demo.mjs %*
 | `tui/parser.mjs` | Chunk→Zeilen→Events (`FM-EVT:`), ANSI-Strip |
 | `core/tools.mjs` | read-only Tool-Set (list_dir/read_file/glob), Whitelist-Zwang |
 | `core/project-context.mjs` | gemeinsame Zielroot-/Allowlist-/Self-Review-Kontext-Policy |
+| `core/syscontext.mjs` | Coder-gepflegte System-Orientierung (Schema v1, FALSIFY-Home, Snapshot-Historie/Diff) — UNTRUSTED CONTEXT, nie Wahrheit |
 | `core/evidence.mjs` | Challenge-, Research-, Struktur- und allgemeine Evidenz-Gates |
 | `core/twin-evidence.mjs` | Twin-Evidenz (Regel 6): objektive Tool-Evidence (host-aufgezeichneter erfolgreicher read_file) trägt die Freigabe; wörtliche Zitat-Verankerung als Qualitäts-Gate für Zitat-Aussagen |
 | `core/prompt.mjs` | Prompt-Bau + Loader; System-Prompt-Text als DATEN in `core/prompt-text/*.md` (Root-Cause-Fix: keine Template-Literale für Text) |
@@ -775,6 +778,8 @@ nicht und fuehrt keine neue Modellrolle oder Schreibinstanz ein.
 ### Verifikation
 
 ```bash
+node --test tests/syscontext.test.mjs   # System-Orientierung (Schema v1, fail-closed,
+                                        # Snapshot-Historie/Diff, UNTRUSTED-Rendering)
 node --test tests/identity.test.mjs
 node --test tests/foreign-project.test.mjs tests/probe-e2e.test.mjs tests/research-additions.test.mjs tests/selfreview.test.mjs
 npm test

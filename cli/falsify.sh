@@ -28,6 +28,7 @@
 #   falsify status <job-id> | falsify jobs | falsify stats [--json] | falsify state | falsify check
 #   falsify scope show <id> | falsify scope trace <id> | falsify scope list
 #   falsify anchor init|check|rebind|clone|record [--root <dir>]
+#   falsify syscontext set|show|history [--root <dir>]  System-Orientierung im Falsify-Home pflegen (Coder-Artefakt)
 #   falsify scope trace <id>                 GAP-Loop je Runde: Welle/Verdict/Intent/Befund + Loop-Ausgang
 #   falsify log <job-id> | falsify answer <job-id> [--file pfad]
 #   falsify history [--last n]              Verlauf & Auswirkung (--scope <id> = Detail)
@@ -245,6 +246,9 @@ case "$cmd" in
     ;;
   anchor)
     node "$V2_DIR/cli/main.mjs" anchor "$@"
+    ;;
+  syscontext)
+    node "$V2_DIR/cli/main.mjs" syscontext "$@"
     ;;
   handoff)
     node "$V2_DIR/cli/main.mjs" handoff "$@"

@@ -15,6 +15,7 @@ import { runDoctor } from "./doctor.mjs";
 import { runSettings, runModels } from "./settings.mjs";
 import { runOnboardCli } from "./onboard.mjs";
 import { runAnchor } from "./anchor.mjs";
+import { runSysContext } from "./syscontext.mjs";
 import { HELP_TEXT } from "./help.mjs";
 import { fail } from "./util.mjs";
 import { verifySkillsAtStartup, formatSkillCheck } from "../core/skill-version.mjs";
@@ -44,6 +45,7 @@ async function main() {
     case "resume": runResume(args.slice(1)); break;
     case "scope": runScope(args.slice(1)); break;
     case "anchor": runAnchor(args.slice(1)); break;
+    case "syscontext": runSysContext(args.slice(1)); break;
     case "handoff": {
       const { runHandoff } = await import("./handoff.mjs");
       await runHandoff(args.slice(1));

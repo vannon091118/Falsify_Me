@@ -22,6 +22,13 @@ Verwendung:
   falsify scope list [--all]              aktive (oder alle) Scopes
   falsify anchor init|check|rebind|clone   Projektanker verwalten (Root-Bindung, kein Verdict-Zustand)
   falsify anchor record <typ> …            bestätigten Decision-Record im Anker speichern
+  falsify syscontext set --root <dir> --file <overview.json> [--by <quelle>]
+                                          System-Orientierung des CODERS im Falsify-Home
+                                          speichern (Schema v1, fail-closed bei Verstoß;
+                                          wird in JEDEN Review als UNTRUSTED CONTEXT gerendert)
+  falsify syscontext show|history [--root <dir>] [--last n]
+                                          Stand anzeigen bzw. Snapshot-Historie (Diff je
+                                          Update, Quelle/Modell – Drift-Überwachung)
   falsify handoff brief --job-id <id>     Coder-Arbeitsanweisung aus dem freigegebenen
                                           Handoff rendern (Whitelist, Digest, Twin-Proben)
   falsify handoff report --job-id <id> --root <dir> [--out report.json]

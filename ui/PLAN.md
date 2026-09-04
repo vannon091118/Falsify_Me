@@ -2167,3 +2167,24 @@ fast (inkl. dead-files)
 RESULT: PASS — tote Dateien sind im GANZEN Repo ab jetzt ein Test-Fail statt
 stiller Rust; Negativ-Nachweis ueber Fixture-Ordner (Orphan.mjs wird gemeldet,
 Used.mjs/Entry.mjs nicht) + Allowlist-Drift-Guard (stale Eintraege failen).
+
+──────────────────────────────────────────────────────
+ID: UI-153
+TASK: System-Orientierung (Coder-Artefakt, Schema v1) — FalsifyMe rendert die im
+FALSIFY-Home gespeicherte, schema-validierte Systemuebersicht in JEDEN Review als
+UNTRUSTED CONTEXT (core/syscontext.mjs + cli/syscontext.mjs, 2026-09-04).
+Kernprinzip (User-Vorgabe): FalsifyMe schreibt NIE — der Coding-Agent pflegt via
+`falsify syscontext set --root <dir> --file overview.json` (fail-closed bei
+Schema-Verstoss: unbekannte Keys/Typen/Newlines/Duplikate/Laengen abgelehnt),
+run.mjs rendert `## System-Orientierung (UNTRUSTED CONTEXT...)` in buildUserContent.
+Snapshot-Historie + Diff je Update (Quelle/Modell, sha256) = Drift-Ueberwachung
+der Coder-internen Ueberwachung. Kein DB-Write, kein Verdict-Pfad, kein zweiter
+Lese-Kanal fuer den Thinker (by value, nicht Whitelist).
+STATUS: DONE
+DEPENDS_ON: -- (Konzept-Frage des Users 2026-09-04, Antwort: immer rendern,
+Coder pflegt via CLI)
+VERIFY: node --test tests/syscontext.test.mjs (7/7); bash scripts/run-tests.sh fast
+RESULT: Implementiert + getestet: core/syscontext.mjs (Schema v1, saveSysContext
+atomar prev->write->snapshot), cli/syscontext.mjs (set/show/history), run.mjs-
+Ladepfad (invalid = Warnung, Job laeuft ohne Sektion), prompt.mjs-Sektion
+(byte-identisch ohne Uebergabe), selfreview.mjs/doctor.mjs-Registrierung.

@@ -55,6 +55,7 @@ export const SELF_REVIEW_CORE = [
   "core/project-context.mjs",
   "core/agent.mjs", "core/config.mjs", "core/feasibility.mjs", "core/keys.mjs",
   "core/prompt.mjs", "core/probes.mjs", "core/ratelimit.mjs", "core/selfreview.mjs", "core/settings.mjs",
+  "core/syscontext.mjs", "cli/syscontext.mjs",
   "core/tools.mjs", "core/twin.mjs", "core/verdict.mjs",
   // Externe Verträge (Handoff/Change/10X-Protokolle) – die Writer-Grenze
   // und ihre Evidenz-Validierung gehören in den Prüf-Scope.

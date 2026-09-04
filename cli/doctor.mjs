@@ -24,9 +24,9 @@ const INSTALL_LOCATION_FILE = path.join(os.homedir(), ".Falsify_Core", "install-
 // Runtime-kritische Dateien: Aenderungen hier aendern das Verdict-/Gate-
 // Verhalten des laufenden Workers; Doku/Tests sind bewusst nicht dabei.
 const RUNTIME_CRITICAL = [
-  "cli/run.mjs", "cli/handoff.mjs", "cli/main.mjs", "cli/jobs.mjs", "cli/scope.mjs", "cli/doctor.mjs", "cli/anchor.mjs",
+  "cli/run.mjs", "cli/handoff.mjs", "cli/main.mjs", "cli/jobs.mjs", "cli/scope.mjs", "cli/doctor.mjs", "cli/anchor.mjs", "cli/syscontext.mjs",
   "core/prompt.mjs", "core/probes.mjs", "core/twin.mjs", "core/verdict.mjs", "core/agent.mjs",
-  "core/selfreview.mjs", "core/project-context.mjs", "core/identity.mjs", "core/evidence.mjs", "core/twin-evidence.mjs",
+  "core/selfreview.mjs", "core/project-context.mjs", "core/syscontext.mjs", "core/identity.mjs", "core/evidence.mjs", "core/twin-evidence.mjs",
   "artifacts/jobs.mjs", "artifacts/scopes.mjs", "artifacts/db.mjs", "artifacts/handoff.mjs", "artifacts/loopflow.mjs", "artifacts/loops.mjs",
   "ui/worker.mjs",
 ];
