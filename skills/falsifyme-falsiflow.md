@@ -1,69 +1,86 @@
 ---
 name: falsifyme-falsiflow
-description: Run the FalsiFlow mandatory falsification workflow before code changes using the locally installed FalsifyMe gateway. Use whenever the user asks to falsify, verify-before-write, run a FalsifyMe check, submit a plan for falsification, or mentions FalsiFlow / FalsifyMe / "falsyfiME" / scope protocol before implementing changes. Also use after implementation for the review-in-same-scope step.
+description: Den verpflichtenden FalsiFlow-Falsifikations-Workflow vor Codeänderungen mit dem lokal installierten FalsifyMe-Gateway ausführen. Verwenden, wenn der Nutzer um Falsifizieren, Verify-before-Write, einen FalsifyMe-Check, das Einreichen eines Plans zur Falsifikation bittet oder vor Implementierungsänderungen FalsiFlow / FalsifyMe / "falsyfiME" / Scope-Protokoll erwähnt. Auch nach der Implementierung für den Review-im-gleichen-Scope-Schritt verwenden.
 ---
 
-# FalsifyMe / FalsiFlow Session Workflow
+# FalsifyMe / FalsiFlow Session-Workflow
 
-FalsifyMe is an external, read-only falsification gateway: Coding Agent → CLI → SQLite job/scope → visible worker → falsification agent → findings → verdict → exit code for you. It never writes into the checked project — the one explicit exception is the physical `FalsifyME.md` project anchor (identity + user-confirmed decision records, created once at bootstrap/`falsify anchor init`; it never holds scopes, findings, verdicts, or rules). You stay read-only until FalsifyMe releases you.
+FalsifyMe ist ein externes, read-only Falsifikations-Gateway: Coding-Agent → CLI → SQLite-Job/Scope → sichtbarer Worker → Falsifikations-Agent → Befunde → Verdict → Exit-Code für dich. Es schreibt nie in das geprüfte Projekt — die eine explizite Ausnahme ist der physische `FalsifyME.md`-Projekt-Anker (Identität + nutzerbestätigte Entscheidungs-Records, einmalig bei Bootstrap/`falsify anchor init` erzeugt; er hält nie Scopes, Befunde, Verdicts oder Regeln). Du bleibst read-only, bis FalsifyMe dich freigibt.
 
-## Install locations (resolve — never hardcode a username)
+## Installationsorte (auflösen — nie einen Benutzernamen hartkodieren)
 
-The installer (`node install.mjs`, run from a FalsifyMe checkout) places everything
-under the user's home. The exact paths of the last install are recorded in
-`~/.Falsify_Core/install-location.json`:
+Der Installer (`node install.mjs`, aus einem FalsifyMe-Checkout ausgeführt) legt
+alles unter dem Home-Verzeichnis des Nutzers ab. Die exakten Pfade der letzten
+Installation stehen in `~/.Falsify_Core/install-location.json`:
 
-- Program: `~/.Falsify_Core` (Windows: `%USERPROFILE%\.Falsify_Core`) — CLI entry
-  `node cli/main.mjs`, worker check `node ui/worker.mjs --check`, dock start
+- Programm: `~/.Falsify_Core` (Windows: `%USERPROFILE%\.Falsify_Core`) — CLI-Einstieg
+  `node cli/main.mjs`, Worker-Check `node ui/worker.mjs --check`, Dock-Start
   `ui/start-dock.cmd`
-- Private data + runtime home: `~/.Falsify_Private` (FALSIFY_HOME: logs,
+- Private Daten + Runtime-Home: `~/.Falsify_Private` (FALSIFY_HOME: Logs,
   config.json, .env, falsify.db)
-- Agent skills (installed): `~/.agents/skills/falsifyme`
-  (`agent-skill-falsify.sh/.mjs/.ps1`) and this skill
+- Agent-Skills (installiert): `~/.agents/skills/falsifyme`
+  (`agent-skill-falsify.sh/.mjs/.ps1`) und dieser Skill
   (`~/.agents/skills/falsifyme-falsiflow`)
 
-> **GOTCHA (the #1 breakage):** the install dir is `.Falsify_Core` — with a
-> leading dot. `~/Falsify_Core` (without the dot) does NOT exist; any command
-> against it fails with `MODULE_NOT_FOUND`. Always use `~/.Falsify_Core`.
+> **GOTCHA (der #1-Bruch):** das Installationsverzeichnis heißt
+> `.Falsify_Core` — mit führendem Punkt. `~/Falsify_Core` (ohne Punkt)
+> existiert NICHT; jeder Befehl dagegen schlägt mit `MODULE_NOT_FOUND` fehl.
+> Immer `~/.Falsify_Core` verwenden.
 
-The skill scripts resolve their install dir themselves (relative in the repo
-checkout, fallback to `~/.Falsify_Core` in the installed copy), so they work on
-any machine right after installation — never paste a `C:/Users/<name>/...` path
-into a command.
+Die Skill-Skripte lösen ihr Installationsverzeichnis selbst auf (relativ im
+Repo-Checkout, Fallback auf `~/.Falsify_Core` in der installierten Kopie),
+funktionieren also direkt nach der Installation auf jeder Maschine — nie einen
+`C:/Users/<name>/...`-Pfad in einen Befehl einfügen.
 
-## Ticket protocol (non-negotiable)
+## Ticket-Protokoll (nicht verhandelbar)
 
-1. **The agent writes the job as a ticket** ("what should be done"). The user's input is passed 1:1 as `--user-input` on EVERY iteration — it becomes the scope HEADER and stays in every scope prompt. One scope per task; never mix contexts.
-2. **FalsifyMe alone determines the scope ID.** Submit passes the ticket as `--header`; FalsifyMe resolves it deterministically per checkout: no open scope → creates one (minted ID), exactly one open scope → continues it, several → fail-closed (exit 2, scope list). The agent never passes, parses, or re-supplies a scope ID. `--scope` is an operator/diagnostics flag, not an agent contract.
-3. Every job starts a fresh model conversation; only results from its own scope may be used.
-4. Loop until the scope is fulfilled — the LAST review decides:
-   - `VERDICT: PLAN` → rework the iteration, resubmit with the SAME ticket (`--user-input` 1:1).
-   - `VERDICT: RESEARCH` → FalsifyMe needs more data: research read-only, add findings, resubmit (same ticket).
-   - `VERDICT: WRITE` → release: you may switch read-only → write. Implement, then submit the implementation for review in the SAME scope (WRITE/REVIEW loop).
-5. FalsifyMe stays read-only to the project (sole exception: the identity anchor `FalsifyME.md`; all runtime state lives in SQLite). Error/missing verdict = no release. Exit codes: 0 WRITE · 1 PLAN/RESEARCH · 5 ASK · 2 config/args · 3 API/runtime/no-verdict.
+1. **Der Agent schreibt den Job als Ticket** („was getan werden soll“). Die
+   Nutzer-Eingabe wird 1:1 als `--user-input` bei JEDER Iteration durchgereicht —
+   sie wird zum Scope-HEADER und bleibt in jedem Scope-Prompt. Ein Scope pro
+   Task; Kontexte nie mischen.
+2. **Allein FalsifyMe bestimmt die Scope-ID.** Submit reicht das Ticket als
+   `--header` durch; FalsifyMe löst es deterministisch pro Checkout auf: kein
+   offener Scope → erzeugt einen (gemintete ID), genau ein offener → führt ihn
+   fort, mehrere → fail-closed (Exit 2, Scope-Liste). Der Agent reicht nie eine
+   Scope-ID durch, parst sie nicht und liefert sie nicht erneut. `--scope` ist
+   ein Operator-/Diagnose-Flag, kein Agent-Vertrag.
+3. Jeder Job startet eine frische Modell-Konversation; nur Ergebnisse aus dem
+   eigenen Scope dürfen verwendet werden.
+4. Loopen, bis der Scope erfüllt ist — das LETZTE Review entscheidet:
+   - `VERDICT: PLAN` → Iteration überarbeiten, mit demselben Ticket erneut
+     einreichen (`--user-input` 1:1).
+   - `VERDICT: RESEARCH` → FalsifyMe braucht mehr Daten: read-only
+     recherchieren, Befunde ergänzen, erneut einreichen (dasselbe Ticket).
+   - `VERDICT: WRITE` → Freigabe: du darfst read-only → write wechseln.
+     Implementieren, dann die Implementierung zum Review im SELBEN Scope
+     einreichen (WRITE/REVIEW-Loop).
+5. FalsifyMe bleibt read-only zum Projekt (einzige Ausnahme: der
+   Identitäts-Anker `FalsifyME.md`; aller Runtime-Zustand lebt in SQLite).
+   Fehler/fehlendes Verdict = keine Freigabe. Exit-Codes: 0 WRITE · 1
+   PLAN/RESEARCH · 5 ASK · 2 Config/Args · 3 API/Runtime/kein Verdict.
 
-## Mandatory 10x protocol after every piece of work
+## Verpflichtendes 10x-Protokoll nach jeder Arbeit
 
-After every plan, change, bug fix, refactor, feature, documentation change, or
-configuration change, record both layers below. They are agent/reviewer
-contracts, not a second queue or verdict path; only the existing falsification
-pipeline can release `WRITE`.
+Nach jedem Plan, jeder Änderung, jedem Bugfix, Refactoring, Feature, jeder
+Dokumentations- oder Konfigurationsänderung beide Ebenen unten festhalten. Sie
+sind Agent-/Reviewer-Verträge, keine zweite Queue oder Verdict-Pfad; nur die
+bestehende Falsifikations-Pipeline kann `WRITE` freigeben.
 
 ### CHANGE_GATE_10X
 
-Answer A1 through A10 with `JA` and include proof for each answer:
+A1 bis A10 mit `JA` beantworten und für jede Antwort einen Beleg liefern:
 
 ```text
 A1: JA
-Proof: <concrete evidence>
-Test: <exact command or reproducible verification>
+Proof: <konkreter Beleg>
+Test: <exakter Befehl oder reproduzierbare Verifikation>
 ```
 
-The ten checks cover scope, unchanged architecture, verdict authority, real
-refutation evidence, root/scope binding, fail-closed release, Evil-Twin context
-isolation, safe handling of empty/malformed/API-failed responses, executable
-verification, and hostile-agent safety. Any `NEIN`, `UNBEKANNT`, or missing
-proof means exactly:
+Die zehn Checks decken Scope, unveränderte Architektur, Verdict-Autorität,
+echte Widerlegungs-Evidenz, Root-/Scope-Bindung, fail-closed-Freigabe,
+Evil-Twin-Kontext-Isolation, sichere Behandlung leerer/fehlerhafter/
+API-fehlerhafter Antworten, ausführbare Verifikation und Feindseliger-Agent-
+Sicherheit ab. Jedes `NEIN`, `UNBEKANNT` oder fehlender Beleg bedeutet exakt:
 
 ```text
 BLOCKED – mindestens eine Invariante ist nicht nachgewiesen.
@@ -71,56 +88,75 @@ BLOCKED – mindestens eine Invariante ist nicht nachgewiesen.
 
 ### FALSIFICATION_RECORD_10X
 
-The independent reviewer records for every plan, change, and iteration:
+Der unabhängige Reviewer hält für jeden Plan, jede Änderung und jede
+Iteration fest:
 
 ```text
 F1: User-Agent-Ausgangsbehauptung
 F2: user contract
-F3: exact scope match or divergence
-F4: falsifiable assumption
-F5: attack performed
-F6: verified evidence actually read
-F7: counterevidence searched and result
-F8: unexamined or merely assumed area
-F9: strongest residual risk
-F10: WRITE decision or concrete blocker
+F3: exakter Scope-Match oder Divergenz
+F4: falsifizierbare Annahme
+F5: durchgeführter Angriff
+F6: verifizierte, tatsächlich gelesene Evidenz
+F7: gesuchte Gegenbeweise und Ergebnis
+F8: ungeprüfter oder nur vermuteter Bereich
+F9: stärkstes verbleibendes Risiko
+F10: WRITE-Entscheidung oder konkreter Blocker
 ```
 
-`F6` must identify evidence that exists in the accessible root and scope;
-fictional files, lines, symbols, or confidence are invalid. No sufficient proof
-means no `WRITE` claim.
+`F6` muss Evidenz benennen, die im zugänglichen Root und Scope existiert;
+fiktive Dateien, Zeilen, Symbole oder Selbstvertrauen sind ungültig. Ohne
+ausreichenden Nachweis keine `WRITE`-Behauptung.
 
 ## Workflow
 
-1. **Open worker windows first** (up to 3, always visible, never headless):
+1. **Zuerst Worker-Fenster öffnen** (bis zu 3, immer sichtbar, nie headless):
    ```bash
    node ~/.Falsify_Core/ui/worker.mjs --check
    ```
-   If it prints `STOPPED`, start a visible dock window — double-click the
-   `FalsifyMe.lnk` desktop icon, or run `ui\start-dock.cmd 1` from
-   `%USERPROFILE%\.Falsify_Core` in a Windows terminal. Never start headless.
-   Step 4's submit script also ensures the dock is running.
-2. **Start the ticket** (optional but visible; binds the job without submitting):
+   Wenn `STOPPED` ausgegeben wird, ein sichtbares Dock-Fenster starten —
+   Desktop-Icon `FalsifyMe.lnk` doppelklicken oder `ui\start-dock.cmd 1` aus
+   `%USERPROFILE%\.Falsify_Core` in einem Windows-Terminal ausführen. Nie
+   headless starten. Das Submit-Skript aus Schritt 4 stellt das Dock ebenfalls
+   sicher.
+2. **Das Ticket starten** (optional, aber sichtbar; bindet den Job ohne
+   Einreichen):
    ```bash
-   falsify start "<user input exactly as given>"
+   falsify start "<user input genau wie gegeben>"
    ```
-   FalsifyMe reports whether it created a new scope or continues the open one — the ID is FalsifyMe's business, not yours.
-3. **Write the plan** to a file (short, concrete, file-level).
-4. **Submit** via the bundled skill script (it ensures windows, claims, polls, prints the verdict). The SAME command starts and continues — the ticket (`--user-input` 1:1) is the identity:
+   FalsifyMe meldet, ob es einen neuen Scope erzeugt oder den offenen
+   fortführt — die ID ist FalsifyMes Sache, nicht deine.
+3. **Den Plan in eine Datei schreiben** (kurz, konkret, auf Dateiebene).
+4. **Submit über das gebündelte Skill-Skript** (es stellt Fenster sicher,
+   claimt, pollt, gibt das Verdict aus). Derselbe Befehl startet und führt
+   fort — das Ticket (`--user-input` 1:1) ist die Identität:
    ```bash
    bash ~/.agents/skills/falsifyme/agent-skill-falsify.sh \
-     --user-input "<user input exactly as given>" \
+     --user-input "<user input genau wie gegeben>" \
      --plan plan.txt \
-     --root <absolute project root> \
+     --root <absoluter Projekt-Root> \
      --files "src/a.py,src/b.py"
    ```
-   `--files` is the whitelist of model access (read-only tools: list_dir, read_file, glob). No `..`, absolute escapes, or symlink escapes.
-5. **Act on the verdict** per the loop above. On WRITE: implement, then resubmit a review plan with the same ticket (`--user-input` 1:1). The final review's verdict is what counts.
-6. Useful CLI: `falsify resume [--header "<ticket>"]` (re-engage the last open job) · `falsify history [--scope <id>]` (what happened & how FalsifyMe affected the project) · `jobs` · `status <job>` · `log <job>` · `answer <job>` · `state`. Settings: `falsify settings show|set` (provider/apiBase/model/apiKey — keys live only in `FALSIFY_HOME/.env`, never in repos).
+   `--files` ist die Whitelist des Modell-Zugriffs (read-only Tools:
+   list_dir, read_file, glob). Kein `..`, keine absoluten Escapes oder
+   Symlink-Escapes.
+5. **Auf das Verdict gemäß dem Loop oben reagieren.** Bei WRITE:
+   implementieren, dann einen Review-Plan mit demselben Ticket (`--user-input`
+   1:1) erneut einreichen. Das Verdict des finalen Reviews zählt.
+6. Nützliche CLI: `falsify resume [--header "<ticket>"]` (letzten offenen Job
+   wieder aufnehmen) · `falsify history [--scope <id>]` (was passiert ist und
+   wie FalsifyMe das Projekt beeinflusst hat) · `jobs` · `status <job>` ·
+   `log <job>` · `answer <job>` · `state`. Settings:
+   `falsify settings show|set` (Provider/apiBase/model/apiKey — Keys leben nur
+   in `FALSIFY_HOME/.env`, nie in Repos).
 
-## Hard rules
+## Harte Regeln
 
-- Until `VERDICT: WRITE`, make zero edits to the target project.
-- The TUI (`ui/START-TUI.cmd`, `node ui/tui-demo.mjs`) is observation only — it never accepts jobs from users and is not a control channel.
-- Never claim a verdict you did not see in CLI output; exit code 3 or an error is a hard no.
-- doctor check if anything misbehaves: `node ~/.Falsify_Core/cli/main.mjs doctor` (expects: Node ≥22, deps ink/react OK, config, API key, WAL DB).
+- Bis `VERDICT: WRITE` null Edits am Zielprojekt.
+- Die TUI (`ui/START-TUI.cmd`, `node ui/tui-demo.mjs`) ist reine Beobachtung —
+   sie nimmt nie Jobs von Nutzern an und ist kein Steuerkanal.
+- Nie ein Verdict behaupten, das du nicht in der CLI-Ausgabe gesehen hast;
+   Exit-Code 3 oder ein Fehler ist ein hartes Nein.
+- Doctor-Check, wenn etwas falsch läuft:
+   `node ~/.Falsify_Core/cli/main.mjs doctor` (erwartet: Node ≥22, deps
+   ink/react OK, config, API-Key, WAL-DB).

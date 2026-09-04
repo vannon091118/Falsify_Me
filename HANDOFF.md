@@ -1,87 +1,97 @@
-# FalsifyMe Handoff — Audit 2026-09-03 (supersedes 2026-09-02)
+# FalsifyMe Handoff — Audit 2026-09-03 (ersetzt 2026-09-02)
 
 ## Status
 
-This worktree contains the verified P0 probe-cutover **plus the complete
-production runtime loop** (Phases 1–5 of
-`plan/feature-runtime-loop-production-1.md`): the chain
-`THINKER → EVIL TWIN → GATE → WRITE_AUTHORIZED → external Coder →
-CHANGE_CAPTURED → RE_REVIEW_QUEUED → THINKER` is executable and e2e-tested.
-The consolidation record lives in that plan file; module ownership in
-`WIRING.md` §18.
+Dieser Worktree enthält den verifizierten P0-Probe-Cutover **plus den
+kompletten Produktions-Runtime-Loop** (Phasen 1–5 von
+`plan/feature-runtime-loop-production-1.md`): die Kette
+`THINKER → EVIL TWIN → GATE → WRITE_AUTHORIZED → externer Coder →
+CHANGE_CAPTURED → RE_REVIEW_QUEUED → THINKER` ist ausführbar und e2e-getestet.
+Der Konsolidierungs-Record lebt in jener Plan-Datei; die Modul-Zuständigkeiten
+in `WIRING.md` §18.
 
-**Not yet complete (honest gaps):** UI-119/UI-124 (Brench event contract +
-loop-state E2E visibility), the runtime enforcement of the structured 10X
-protocol gates (`core/protocols.mjs` is implemented
-and tested but deliberately not wired into the release path — the system
-prompts do not yet emit structured records), full doctor/uninstall hardening
-(items 4–7 below), and the final release audit (TASK-023 remainder).
+**Noch nicht abgeschlossen (ehrliche Lücken):** UI-119/UI-124 (Brench-Event-
+Vertrag + Loop-State-E2E-Sichtbarkeit), die Runtime-Erzwingung der
+strukturierten 10X-Protokoll-Gates (`core/protocols.mjs` ist implementiert
+und getestet, aber bewusst nicht in den Release-Pfad verdrahtet — die
+System-Prompts erzeugen noch keine strukturierten Records), die vollständige
+Doctor-/Uninstall-Härtung (Punkte 4–7 unten) und das finale Release-Audit
+(TASK-023-Rest).
 
-The repository is intentionally left uncommitted. All current tracked changes
-and current product files are to remain available for the next agent or human;
-no files were deleted or reset during this audit.
+Das Repository ist absichtlich uncommittet gelassen. Alle aktuellen getrackten
+Änderungen und aktuellen Produktdateien sollen für den nächsten Agenten oder
+Menschen verfügbar bleiben; während dieses Audits wurden keine Dateien
+gelöscht oder zurückgesetzt.
 
-## Loop Verification (new 2026-09-03)
+## Loop-Verifikation (neu 2026-09-03)
 
-- Loop layer split acyclically (2026-09-03, `job lifecycle → transition
-  service → loop state`): `artifacts/loops.mjs` is the pure loop-state
-  machine (12 states, illegal transitions and terminal rewrites fail-closed,
-  SEC-004); `artifacts/loopflow.mjs` is the single `advanceLoop(event)`
-  transition service; `artifacts/handoff.mjs` is the `completeHandoff`
-  orchestrator (child jobs only via `jobs.createJob`; the writer scan in
-  `tests/invariants.test.mjs` registers `artifacts/handoff.mjs`). No import
-  cycle between jobs.mjs and loops.mjs anymore.
-- `jobDone` finalizes status AND loop state in ONE transaction (SAVEPOINT;
-  atomic even inside the review commit): a crash can never leave
-  `status=ERROR` with `loop_state=RE_REVIEW_RUNNING`, and a failed loop
-  transition fails the whole state change (no half state, no silent catch).
-- `completeHandoff` validates report/handoff/change correlation inside one
-  `BEGIN IMMEDIATE` transaction, creates exactly one child job with full
-  correlation (`parent_job_id`, `handoff_id`, `iteration_id`, `change_digest`,
-  `header_digest`), and is idempotent for duplicate deliveries (verified with
-  100 identical reports).
-- `header_digest` + base `change_digest` are frozen at submit and direct-run;
-  a drifted header rejects the job before any model call.
-- The external writer path (`falsify handoff brief` → change →
-  `falsify handoff complete`) is proven end-to-end in
-  `tests/full-loop-e2e.test.mjs`; the negative matrix (NO_CHANGE, loop limit,
-  unauthorized paths, forged correlation, secrets, terminal immutability) in
-  `tests/full-loop-negative.test.mjs`.
-- The coder brief (`renderCoderBrief`) is a pure derivation of the persisted
-  handoff and fails closed on any invalid handoff — it carries no authority.
+- Loop-Schicht azyklisch getrennt (2026-09-03, `Job-Lebenszyklus →
+  Übergangs-Dienst → Loop-Zustand`): `artifacts/loops.mjs` ist die reine
+  Loop-Zustandsmaschine (12 Zustände, illegale Übergänge und terminale
+  Überschreibungen fail-closed, SEC-004); `artifacts/loopflow.mjs` ist der
+  einzige `advanceLoop(event)`-Übergangs-Dienst; `artifacts/handoff.mjs` ist
+  der `completeHandoff`-Orchestrierer (Child-Jobs nur via
+  `jobs.createJob`; der Writer-Scan in `tests/invariants.test.mjs`
+  registriert `artifacts/handoff.mjs`). Es gibt keinen Importzyklus mehr
+  zwischen jobs.mjs und loops.mjs.
+- `jobDone` finalisiert Status UND Loop-Zustand in EINER Transaktion
+  (SAVEPOINT; atomar auch innerhalb des Review-Commits): ein Crash kann nie
+  `status=ERROR` mit `loop_state=RE_REVIEW_RUNNING` hinterlassen, und ein
+  fehlgeschlagener Loop-Übergang lässt die gesamte Zustandsänderung
+  scheitern (kein halber Zustand, kein stilles Catch).
+- `completeHandoff` validiert die Report-/Handoff-/Change-Korrelation
+  innerhalb EINER `BEGIN IMMEDIATE`-Transaktion, erzeugt genau ein Child-Job
+  mit voller Korrelation (`parent_job_id`, `handoff_id`, `iteration_id`,
+  `change_digest`, `header_digest`) und ist für doppelte Zustellungen
+  idempotent (verifiziert mit 100 identischen Reports).
+- `header_digest` + Basis-`change_digest` werden bei Submit und Direkt-Run
+  eingefroren; ein abgedrifteter Header weist den Job vor jedem Modell-Call
+  ab.
+- Der externe Writer-Pfad (`falsify handoff brief` → Change →
+  `falsify handoff complete`) ist end-to-end in
+  `tests/full-loop-e2e.test.mjs` bewiesen; die Negativ-Matrix (NO_CHANGE,
+  Loop-Limit, unautorisierte Pfade, gefälschte Korrelation, Secrets,
+  Terminal-Immutabilität) in `tests/full-loop-negative.test.mjs`.
+- Der Coder-Brief (`renderCoderBrief`) ist eine reine Ableitung des
+  persistierten Handoffs und fail-closed bei jedem ungültigen Handoff — er
+  trägt keine Autorität.
 
-## What Was Verified (2026-09-02 audit, still valid)
+## Was verifiziert wurde (Audit 2026-09-02, weiterhin gültig)
 
-## What Was Verified
+## Was verifiziert wurde
 
-- `core/probes.mjs` provides deterministic requirement splitting, probe-set
-  parsing, structural validation, per-probe evidence checks, and the single
-  probe-based `computeVerdict` gate.
-- `core/twin.mjs` provides isolated `runProbeExecution`; malformed, incomplete,
-  missing, or failed probe results remain fail-closed.
-- `cli/run.mjs` invokes the probe validator and Twin executor for WRITE
-  candidates, checks structural and divergence gates, and compares whitelist
-  file mtime/size before and after Twin execution.
-- Prompt data is loaded from `core/prompt-text/*.md`; the Thinker and probe
-  executor contracts are present in German and English.
-- The mandatory `CHANGE_GATE_10X` and `FALSIFICATION_RECORD_10X` contract is
-  propagated to `AGENTS.md`, README, WIRING, skills, and bootstrap templates.
-- `FALSIFY_HOME` uses the documented `~/.Falsify_Private` default, separate
-  from the program installation in `~/.Falsify_Core`.
-- Existing Ollama/OpenAI-compatible configuration behavior remains in the
-  tree. Loopback detection exists in `core/config.mjs`; this audit does not
-  claim that every worker/API-key path consumes it correctly.
-- The banner file and package/license/documentation changes already present in
-  the worktree were preserved. The requested split-identity banner concept is
-  design direction only unless separately verified in the SVG.
+- `core/probes.mjs` liefert deterministische Anforderungs-Zerlegung,
+  Probe-Set-Parsing, strukturelle Validierung, Proben-Evidenzprüfungen und
+  das einzige probe-basierte `computeVerdict`-Gate.
+- `core/twin.mjs` liefert die isolierte `runProbeExecution`; fehlerhafte,
+  unvollständige, fehlende oder fehlgeschlagene Probe-Ergebnisse bleiben
+  fail-closed.
+- `cli/run.mjs` ruft den Probe-Validator und Twin-Executor für
+  WRITE-Kandidaten auf, prüft strukturelle und Divergenz-Gates und vergleicht
+  mtime/Größe der Whitelist-Dateien vor und nach der Twin-Ausführung.
+- Prompt-Daten werden aus `core/prompt-text/*.md` geladen; die Thinker- und
+  Probe-Executor-Verträge liegen auf Deutsch und Englisch vor.
+- Der verbindliche `CHANGE_GATE_10X`- und `FALSIFICATION_RECORD_10X`-Vertrag
+  ist in AGENTS.md, README, WIRING, Skills und Bootstrap-Templates
+  propagiert.
+- `FALSIFY_HOME` nutzt den dokumentierten Default `~/.Falsify_Private`,
+  getrennt von der Programminstallation in `~/.Falsify_Core`.
+- Das bestehende Ollama-/OpenAI-kompatible Konfigurationsverhalten bleibt im
+  Baum erhalten. Loopback-Erkennung existiert in `core/config.mjs`; dieses
+  Audit behauptet nicht, dass jeder Worker-/API-Key-Pfad sie korrekt
+  konsumiert.
+- Die bereits im Worktree vorhandenen Banner-Datei- und
+  Paket-/Lizenz-/Dokumentationsänderungen wurden erhalten. Das angefragte
+  Split-Identity-Banner-Konzept ist nur Design-Richtung, sofern nicht separat
+  in der SVG verifiziert.
 
-## Verification Evidence
+## Verifikations-Evidenz
 
-Executed successfully from the repository root:
+Erfolgreich vom Repository-Root aus ausgeführt:
 
 ```text
 npm test
-228 tests passed, 0 failed   (2026-09-03; +3: Terminal-Matrix SEC-004, jobDone-Crash-Boundary, Immutable-Guard; baseline 198 pre-loop, 191 at the 09-02 audit)
+228 Tests bestanden, 0 fehlgeschlagen   (2026-09-03; +3: Terminal-Matrix SEC-004, jobDone-Crash-Boundary, Immutable-Guard; Baseline 198 vor dem Loop, 191 beim Audit am 09-02)
 
 node --check cli/run.mjs
 node --check artifacts/db.mjs
@@ -105,94 +115,106 @@ bash -n selbsttest.sh
 git diff --check
 ```
 
-The suite includes probe cutover E2E cases, fail-closed missing-probe cases,
-Twin evidence tests, queue invariants, bootstrap tests, settings/key tests,
-security tests, stream tests, and the existing UI/test integration coverage.
+Die Suite umfasst Probe-Cutover-E2E-Fälle, fail-closed-Missing-Probe-Fälle,
+Twin-Evidenztests, Queue-Invarianten, Bootstrap-Tests, Settings-/Key-Tests,
+Security-Tests, Stream-Tests und die bestehende UI-/Test-Integrationsabdeckung.
 
-## Implemented Documentation Changes
+## Umgesetzte Dokumentationsänderungen
 
-- Added the reusable 10x completion and independent-review protocol to the
-  canonical agent contract and executable workflow documentation.
-- Added the P0 probe-cutover contract and test command references to README,
-  WIRING, prompts, and `ui/PLAN.md`.
-- Corrected WIRING's open-work statement so it no longer says that only the
-  API-key onboarding task remains open.
-- Added this handoff so verified behavior and incomplete work cannot be
-  confused during context loss or parallel development.
+- Das wiederverwendbare 10X-Abschluss- und unabhängige Prüfprotokoll wurde
+  zum kanonischen Agent-Vertrag und zur ausführbaren Workflow-Dokumentation
+  hinzugefügt.
+- Der P0-Probe-Cutover-Vertrag und Testbefehl-Referenzen wurden zu README,
+  WIRING, Prompts und `ui/PLAN.md` hinzugefügt.
+- Die WIRING-Aussage zu offenen Arbeiten wurde korrigiert, sodass sie nicht
+  mehr sagt, nur die API-Key-Onboarding-Aufgabe sei offen.
+- Dieses Handoff wurde hinzugefügt, damit verifiziertes Verhalten und
+  unvollständige Arbeit bei Kontextverlust oder paralleler Entwicklung nicht
+  verwechselt werden.
 
-## Pending Implementation Contracts
+## Ausstehende Implementierungs-Verträge
 
-The following items remain pending. Their presence in configuration/schema
-must not be read as proof that the behavior is complete.
+Die folgenden Punkte sind weiterhin offen. Ihre Präsenz in
+Konfiguration/Schema darf nicht als Beweis gelesen werden, dass das Verhalten
+vollständig ist.
 
-1. **Immutable per-job runtime snapshots and explicit overrides**
-   `core/config.mjs` has `snapshotConfig()` and `configFromSnapshot()`;
-   `artifacts/jobs.mjs` stores `runtime_config`. `cli/run.mjs` still resolves
-   execution from process-global `CFG` in important paths, does not snapshot
-   all explicit per-run overrides into submitted jobs, and the worker does not
-   restore the stored snapshot before launching a job. Add regression tests for
-   submit -> settings change -> worker execution, including Ollama-compatible
-   keyless loopback behavior and separate Twin model/API/key settings.
+1. **Unveränderliche Per-Job-Runtime-Snapshots und explizite Overrides**
+   `core/config.mjs` hat `snapshotConfig()` und `configFromSnapshot()`;
+   `artifacts/jobs.mjs` speichert `runtime_config`. `cli/run.mjs` löst die
+   Ausführung in wichtigen Pfaden weiterhin aus dem prozessglobalen `CFG`
+   auf, snapshotet nicht alle expliziten Per-Run-Overrides in eingereichte
+   Jobs, und der Worker stellt den gespeicherten Snapshot vor dem Start eines
+   Jobs nicht wieder her. Regressionstests ergänzen für
+   Submit → Settings-Änderung → Worker-Ausführung, inklusive
+   Ollama-kompatibles keyless Loopback-Verhalten und getrennte
+   Twin-Modell-/API-/Key-Settings.
 
-2. **Structured attack-round / NO_EVIDENCE contract**
-   The P0 probe contract is implemented and fail-closed, but the broader
-   attack-round/NO_EVIDENCE workflow item is not a separately completed
-   runtime contract. Any implementation must remain context/evidence only or
-   downgrade/veto; it must never create a second WRITE path.
+2. **Strukturierter Attack-Round-/NO_EVIDENCE-Vertrag**
+   Der P0-Probe-Vertrag ist implementiert und fail-closed, aber der
+   breitere Attack-Round-/NO_EVIDENCE-Workflow-Punkt ist kein separat
+   abgeschlossener Runtime-Vertrag. Jede Implementierung muss Kontext/
+   Evidenz-only bleiben oder downgraden/vetoen; sie darf nie einen zweiten
+   WRITE-Pfad erzeugen.
 
-3. **Verdict parsing and bounded transient retry**
-   `parseVerdict()` is robust against several placement variants and queue
-   retry helpers exist. Worker crash/provider retry orchestration is not yet
-   fully wired, and retry metadata must never reopen a terminal `DONE` or
-   `ERROR` job. Add tests for transient retry, backoff eligibility, attempt
-   exhaustion, abort classification, and immutable terminal rows.
+3. **Verdict-Parsing und begrenzter transienter Retry**
+   `parseVerdict()` ist robust gegenüber mehreren Platzierungsvarianten und
+   Queue-Retry-Helfer existieren. Worker-Crash-/Provider-Retry-Orchestrierung
+   ist noch nicht vollständig verdrahtet, und Retry-Metadaten dürfen nie
+   einen terminalen `DONE`- oder `ERROR`-Job wieder öffnen. Tests ergänzen
+   für transienten Retry, Backoff-Berechtigung, Versuchs-Erschöpfung,
+   Abort-Klassifikation und unveränderliche terminale Zeilen.
 
-4. **CLI help and bootstrap targeting**
-   Bootstrap flag parsing and explicit mode/reach are present, but every CLI
-   subcommand still needs a side-effect-free `--help` audit. In particular,
-   verify that `falsify scope new --help` cannot create a scope and that agent
-   and instruction targets are explicit at both bootstrap entry points.
+4. **CLI-Help und Bootstrap-Zielausrichtung**
+   Bootstrap-Flag-Parsing und expliziter Modus/Reichweite sind vorhanden,
+   aber jedes CLI-Subkommando braucht noch ein nebenwirkungsfreies
+   `--help`-Audit. Insbesondere verifizieren, dass `falsify scope new
+   --help` keinen Scope erzeugen kann und dass Agent- und
+   Instruction-Ziele an beiden Bootstrap-Einstiegen explizit sind.
 
-5. **Canonical secret paths and diagnostics**
-   The canonical home and private env writing groundwork exists, including
-   `0600` attempts on POSIX. Doctor still needs a complete audit for file mode,
-   duplicate/legacy homes, local-provider key exemptions, and honest diagnostics
-   when `.env` exists only as an empty template.
+5. **Kanonische Secret-Pfade und Diagnostik**
+   Das Fundament für kanonisches Home und Private-Env-Schreiben existiert,
+   inklusive `0600`-Versuchen auf POSIX. Doctor braucht noch ein
+   vollständiges Audit für Dateimodus, Duplikat-/Legacy-Homes,
+   Local-Provider-Key-Ausnahmen und ehrliche Diagnostik, wenn `.env` nur
+   als leere Vorlage existiert.
 
-6. **Uninstall safety**
-   The uninstall flow handles several known paths, workers, backups, and
-   dry-run behavior. Active sessions, locked directories, legacy homes, and
-   protection of unrelated user files still require adversarial tests and
-   bounded removal retries. Do not broaden deletion beyond explicitly owned
-   paths.
+6. **Uninstall-Sicherheit**
+   Der Uninstall-Flow behandelt mehrere bekannte Pfade, Worker, Backups und
+   Dry-Run-Verhalten. Aktive Sessions, gesperrte Verzeichnisse, Legacy-Homes
+   und der Schutz fremder Nutzerdateien brauchen noch Adversarial-Tests und
+   begrenzte Lösch-Retries. Löschungen nicht über explizit eigene Pfade
+   hinaus verbreitern.
 
-7. **Opt-in allowlisted web research**
-   `core/config.mjs` contains web-search settings, but there is no verified
-   end-to-end allowlisted web tool with isolated Twin context, throttling,
-   source references, and source persistence. Keep the default disabled and
-   fail closed on missing credentials, disallowed domains, network errors, and
-   malformed source results.
+7. **Opt-in-Allowlist-Web-Recherche**
+   `core/config.mjs` enthält Web-Search-Settings, aber es gibt keinen
+   verifizierten end-to-end Allowlist-Web-Tool mit isoliertem Twin-Kontext,
+   Throttling, Quellen-Referenzen und Quellen-Persistenz. Default deaktiviert
+   lassen und bei fehlenden Credentials, nicht erlaubten Domains,
+   Netzwerkfehlern und fehlerhaften Quellen-Ergebnissen fail-closed bleiben.
 
-8. **Final completion and staging**
-   Documentation propagation and verification are in progress. The final
-   staging operation must include all current requested, documentation, and
-   pre-existing product changes, while leaving ignored session scratch out.
-   No commit has been created in this handoff.
+8. **Finaler Abschluss und Staging**
+   Dokumentations-Propagation und Verifikation laufen. Der finale
+   Staging-Schritt muss alle aktuell angefragten, Dokumentations- und
+   vorab existierenden Produktänderungen einschließen, während ignoriertes
+   Session-Scratch draußen bleibt. In diesem Handoff wurde kein Commit
+   erzeugt.
 
-## Next Execution Order
+## Nächste Ausführungsreihenfolge
 
-1. Add focused tests for the current snapshot/retry helpers before changing
-   their consumers.
-2. Wire one immutable config object through submit, direct-run, worker spawn,
-   Thinker, and Twin paths; preserve legacy rows with explicit fallback.
-3. Complete CLI help, secrets/doctor, uninstall, and opt-in web boundaries with
-   fail-closed tests.
-4. Update README/WIRING/`ui/PLAN.md` only with behavior proven by tests.
-5. Run the full suite and static checks again.
-6. Review `git diff` and `git log`, stage all intended current changes, and
-   leave the commit uncreated unless explicitly requested.
+1. Fokussierte Tests für die aktuellen Snapshot-/Retry-Helfer ergänzen,
+   bevor deren Konsumenten geändert werden.
+2. EIN unveränderliches Config-Objekt durch Submit, Direkt-Run, Worker-Spawn,
+   Thinker und Twin-Pfade verdrahten; Legacy-Zeilen mit explizitem Fallback
+   erhalten.
+3. CLI-Help-, Secrets-/Doctor-, Uninstall- und Opt-in-Web-Grenzen mit
+   fail-closed-Tests abschließen.
+4. README/WIRING/`ui/PLAN.md` nur mit durch Tests bewiesenem Verhalten
+   aktualisieren.
+5. Die volle Suite und statische Checks erneut ausführen.
+6. `git diff` und `git log` prüfen, alle beabsichtigten aktuellen Änderungen
+   stagen und den Commit unerzeugt lassen, sofern nicht explizit angefragt.
 
-## Audit Record
+## Audit-Record
 
 ```text
 F1: User-Agent-Ausgangsbehauptung: Die gewünschte Kette lautet USER AGENT → THINKER → EVIL TWIN → USER AGENT → REPOSITORY CHANGE → THINKER.

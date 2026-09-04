@@ -1,206 +1,256 @@
-# DOKI Full Feature Implementation Plan
+# DOKI Full-Feature-Implementierungsplan
 
-## Developer Gate
+## Developer-Gate
 
-`FULL_COMPLETE_VERSION` — not MVP, not PoC, not headless-only.
+`FULL_COMPLETE_VERSION` — kein MVP, kein PoC, kein headless-only.
 
-The target is a visible, persistent DOKI observer integrated into the existing FalsifyMe terminal Dock without changing FalsifyMe technical authority.
+Das Ziel ist ein sichtbarer, persistenter DOKI-Observer, der in das
+bestehende FalsifyMe-Terminal-Dock integriert ist, ohne die technische
+Autorität von FalsifyMe zu verändern.
 
-## Source of truth
+## Quelle der Wahrheit
 
-- FalsifyMe/Git remain technical truth.
-- The visible terminal/Dock stream is the observed runtime surface.
-- DOKI owns only reconstructable narrative memory and ensemble state.
-- SQLite is memory, never a second truth.
-- The Thinker is the only external LLM integration and only writes final prose.
+- FalsifyMe/Git bleiben die technische Wahrheit.
+- Der sichtbare Terminal-/Dock-Stream ist die beobachtete Runtime-Oberfläche.
+- DOKI besitzt nur rekonstruierbares narratives Gedächtnis und Ensemble-Zustand.
+- SQLite ist Gedächtnis, nie eine zweite Wahrheit.
+- Der Thinker ist die einzige externe LLM-Integration und schreibt nur finale Prosa.
 
-## Runtime model
+## Runtime-Modell
 
 ```text
-FalsifyMe visible terminal
-  -> DOKI observer buffer
-  -> exactly-once observation cursor
-  -> deterministic narrative reconstruction
-  -> 14-character ensemble state
-  -> 15th narrator context
-  -> auto-generated prompt
-  -> shared Falsify Thinker API
-  -> exactly one Thinker call when the reserved slot is available
-  -> commit-message prose
-  -> visible Dock output
+FalsifyMe sichtbares Terminal
+  -> DOKI-Observer-Puffer
+  -> exactly-once Observation-Cursor
+  -> deterministische narrative Rekonstruktion
+  -> 14-Charakter-Ensemble-Zustand
+  -> 15. Erzähler-Kontext
+  -> automatisch generierter Prompt
+  -> gemeinsame Falsify-Thinker-API
+  -> genau ein Thinker-Call, wenn der reservierte Slot verfügbar ist
+  -> Commit-Message-Prosa
+  -> sichtbarer Dock-Output
 ```
 
-DOKI observes while FalsifyMe and Evil Twin are active. It does not control either path. It may continue collecting terminal material while an external coding agent is reacting to Evil-Twin findings. The waiting period is intentionally variable because the runtime cannot know how long the external agent needs.
+DOKI beobachtet, während FalsifyMe und Evil Twin aktiv sind. Es steuert keinen
+der beiden Pfade. Es darf Terminalmaterial weiter sammeln, während ein
+externer Coding-Agent auf Evil-Twin-Befunde reagiert. Die Wartezeit ist
+absichtlich variabel, weil die Runtime nicht wissen kann, wie lange der
+externe Agent braucht.
 
-## Persistent ensemble
+## Persistentes Ensemble
 
-The 14 characters are persistent identities, not prompt-switched personas. Each character has rebuildable history, memory, relationships, perspective/belief state, thread participation, emotional state and recall state.
+Die 14 Charaktere sind persistente Identitäten, keine prompt-geschalteten
+Personas. Jeder Charakter hat rekonstruierbare Historie, Gedächtnis,
+Beziehungen, Perspektiven-/Überzeugungs-Zustand, Thread-Teilnahme,
+emotionalen Zustand und Recall-Zustand.
 
-Relationships are directed: `A -> B` is independent from `B -> A`.
+Beziehungen sind gerichtet: `A -> B` ist unabhängig von `B -> A`.
 
-The 15th narrator is a separate narrator role. It converts the prepared historical ensemble context into the final commit-message prose. Its voice is intentionally cynical, sarcastic and sometimes caustic. It may imply and editorialize from supplied evidence, but it may not invent technical facts or alter FalsifyMe authority.
+Der 15. Erzähler ist eine separate Erzähler-Rolle. Er wandelt den
+aufbereiteten historischen Ensemble-Kontext in die finale
+Commit-Message-Prosa um. Seine Stimme ist bewusst zynisch, sarkastisch und
+manchmal beißend. Er darf aus gelieferter Evidenz andeuten und kommentieren,
+aber keine technischen Fakten erfinden oder FalsifyMe-Autorität verändern.
 
-## Terminal observation contract
+## Terminal-Observation-Vertrag
 
-The observer consumes the actual terminal monologue/dialog stream. Every observation receives a stable event identity and is persisted as observed exactly once. Already-seen events are never treated as new narrative events.
+Der Observer konsumiert den tatsächlichen Terminal-Monolog-/Dialog-Stream.
+Jede Observation erhält eine stabile Ereignis-Identität und wird als
+beobachtet genau einmal persistiert. Bereits gesehene Ereignisse werden nie
+als neue narrative Ereignisse behandelt.
 
-The observer must preserve:
+Der Observer muss bewahren:
 
-- raw observed text / structured event data
-- source event identity
-- ordering
-- session / job association when available
-- timestamps for ordering only
-- source references
+- rohen beobachteten Text / strukturierte Ereignisdaten
+- Quell-Ereignis-Identität
+- Reihenfolge
+- Session-/Job-Zuordnung, wenn verfügbar
+- Zeitstempel nur für die Ordnung
+- Quellen-Referenzen
 
-Interpretation is derived later, never written into raw observations.
+Interpretation wird später abgeleitet, nie in rohe Observations geschrieben.
 
-## Narrative reconstruction layers
+## Narrative Rekonstruktions-Ebenen
 
-1. Observation: source terminal facts only.
-2. Relationship effects: deterministic directed deltas from observed events.
-3. Thread state: deterministic merge/split from evidence-backed continuity.
-4. Perspective/beliefs: character-specific interpretation with evidence references.
-5. Memory/character state: persistent recall plus non-destructive emotional decay.
-6. Conflict/relevance: derived contradictions, salience and narrative weight.
-7. Narrative context: read-only assembled context for the 15th narrator.
+1. Observation: Quell-Terminal-Fakten nur.
+2. Beziehungseffekte: deterministische gerichtete Deltas aus beobachteten Ereignissen.
+3. Thread-Zustand: deterministisches Merge/Split aus evidenzgestützter Kontinuität.
+4. Perspektive/Überzeugungen: charakter-spezifische Interpretation mit Evidenz-Referenzen.
+5. Gedächtnis/Charakter-Zustand: persistenter Recall plus nicht-destruktiver emotionaler Zerfall.
+6. Konflikt/Relevanz: abgeleitete Widersprüche, Salienz und narratives Gewicht.
+7. Narrativer Kontext: read-only zusammengesetzter Kontext für den 15. Erzähler.
 
-The source material is reconstructable. Derived state carries rule versions. Rebuilding from the same observed history must reproduce the same state.
+Das Quellmaterial ist rekonstruierbar. Abgeleiteter Zustand trägt
+Regelversionen. Das Wiederaufbauen aus derselben beobachteten Historie muss
+denselben Zustand reproduzieren.
 
-## Thinker gate
+## Thinker-Gate
 
-The Thinker is not an analyst or decision-maker.
+Der Thinker ist kein Analyst und kein Entscheider.
 
-Before the API call, DOKI must already know:
+Vor dem API-Call muss DOKI bereits wissen:
 
-- what happened
-- what was observed
-- which characters are relevant
-- their historical state
-- relationships
-- thread state
-- perspective/belief state
-- emotional state
-- current narrative relevance
-- the role and voice of the 15th narrator
+- was passiert ist
+- was beobachtet wurde
+- welche Charaktere relevant sind
+- deren historischen Zustand
+- Beziehungen
+- Thread-Zustand
+- Perspektiven-/Überzeugungs-Zustand
+- emotionalen Zustand
+- aktuelle narrative Relevanz
+- Rolle und Stimme des 15. Erzählers
 
-The generated prompt is deterministic from that prepared context.
+Der generierte Prompt ist deterministisch aus diesem aufbereiteten Kontext.
 
-Exactly one Thinker call is made for the narrative output. No Q-learning decision loop, no GREEN/RED model choice and no multi-call reswitch chain belongs in the target narrative path.
+Für den narrativen Output wird genau ein Thinker-Call gemacht. Keine
+Q-Learning-Entscheidungsschleife, keine GREEN/RED-Modellwahl und keine
+Multi-Call-Reswitch-Kette gehört in den Ziel-Narrativ-Pfad.
 
-## Shared key / idle model switching
+## Gemeinsamer Key / Idle-Modellwechsel
 
-These are explicit by-design constraints and are unchanged:
+Das sind explizite By-Design-Constraints und unverändert:
 
-- one shared Falsify Thinker API key
-- Thinker model switching whenever the Thinker becomes idle according to the existing rotation contract
-- no second DOKI provider/key architecture
+- ein gemeinsamer Falsify-Thinker-API-Key
+- Thinker-Modellwechsel, sobald der Thinker gemäß dem bestehenden
+  Rotations-Vertrag idle wird
+- keine zweite DOKI-Provider-/Key-Architektur
 
 ## Evil Twin
 
-Evil Twin remains a FalsifyMe technical actor. DOKI observes its visible output and incorporates the evidence into narrative state. DOKI never controls, replaces or rewrites Evil-Twin findings.
+Evil Twin bleibt ein technischer FalsifyMe-Akteur. DOKI beobachtet seinen
+sichtbaren Output und arbeitet die Evidenz in den narrativen Zustand ein.
+DOKI steuert, ersetzt oder schreibt Evil-Twin-Befunde nie neu.
 
-## Visible Dock integration
+## Sichtbare Dock-Integration
 
-The existing FalsifyMe Dock remains the presentation surface. DOKI is added as an additional observation/output lane in that surface, not as a second terminal application.
+Das bestehende FalsifyMe-Dock bleibt die Präsentationsfläche. DOKI wird als
+zusätzliche Observations-/Output-Spur in dieser Fläche hinzugefügt, nicht als
+zweite Terminal-Anwendung.
 
-The user must be able to see:
+Der Nutzer muss sehen können:
 
-- FalsifyMe technical progress
-- Thinker / Evil-Twin activity already exposed by FalsifyMe
-- DOKI observation state
-- buffering / waiting state
-- narrator identity
-- 15th narrator output
-- final commit-message prose
-- DOKI authority = NONE
-- DOKI failure/fallback state
+- FalsifyMe technischen Fortschritt
+- Thinker-/Evil-Twin-Aktivität, die FalsifyMe bereits anzeigt
+- DOKI-Observations-Zustand
+- Puffer-/Warte-Zustand
+- Erzähler-Identität
+- 15.-Erzähler-Output
+- finale Commit-Message-Prosa
+- DOKI-Autorität = KEINE
+- DOKI-Fehler-/Fallback-Zustand
 
-## Variable idle bridging
+## Variables Idle-Bridging
 
-The observer state machine must support:
+Die Observer-Zustandsmaschine muss unterstützen:
 
 ```text
 COLLECTING
   -> WAITING_FOR_THINKER_SLOT
-  -> COLLECTING (new terminal material arrives)
+  -> COLLECTING (neues Terminalmaterial trifft ein)
   -> PROMPT_READY
   -> THINKER_RUNNING
   -> OUTPUT_READY
   -> COLLECTING
 ```
 
-No fixed sleep is used as a proxy for completion. The runtime has no reliable knowledge of the external coding agent's reaction time after Evil-Twin findings.
+Kein fester Sleep wird als Proxy für Abschluss verwendet. Die Runtime hat
+kein verlässliches Wissen über die Reaktionszeit des externen Coding-Agenten
+nach Evil-Twin-Befunden.
 
-## Exactly-once narrative consumption
+## Exactly-once narrative Konsumption
 
-The observer maintains a durable cursor/digest. Once a terminal event has entered the narrative history, seeing the same event again cannot create a second narrative event.
+Der Observer führt einen dauerhaften Cursor/Digest. Sobald ein
+Terminal-Ereignis in die narrative Historie eingegangen ist, kann das erneute
+Sehen desselben Ereignisses kein zweites narratives Ereignis erzeugen.
 
-Replays are idempotent. New events extend the history.
+Replays sind idempotent. Neue Ereignisse erweitern die Historie.
 
-## Failure contract
+## Fehler-Vertrag
 
-Any DOKI failure is presentation-only:
+Jeder DOKI-Fehler ist präsentations-only:
 
-- FalsifyMe verdict unchanged
-- FalsifyMe lifecycle unchanged
-- abort semantics unchanged
-- queue unchanged
-- Evil Twin unchanged
-- visible factual fallback permitted
+- FalsifyMe-Verdict unverändert
+- FalsifyMe-Lebenszyklus unverändert
+- Abbruch-Semantik unverändert
+- Queue unverändert
+- Evil Twin unverändert
+- sichtbarer faktenbasierter Fallback erlaubt
 
-## Data separation
+## Datentrennung
 
-DOKI may read FalsifyMe state read-only. DOKI writes only its own database. No foreign-key dependency into FalsifyMe is introduced.
+DOKI darf FalsifyMe-Zustand read-only lesen. DOKI schreibt nur seine eigene
+Datenbank. Keine Fremdschlüssel-Abhängigkeit in FalsifyMe wird eingeführt.
 
-## Implementation sequence
+## Implementierungsreihenfolge
 
-### Step A — observer foundation
+### Schritt A — Observer-Fundament
 
-Create the terminal event envelope, stable observation identity, cursor, deduplication and append-only observation store.
+Terminal-Ereignis-Envelope, stabile Observation-Identität, Cursor,
+Deduplizierung und append-only Observation-Store erstellen.
 
-### Step B — ensemble foundation
+### Schritt B — Ensemble-Fundament
 
-Port/adapt the SnipWar narrator catalog and persistent character state model. Materialize the 14 directed relationship edges per character pair without self-edges.
+SnipWar-Erzähler-Katalog und persistentes Charakter-Zustandsmodell
+portieren/anpassen. Die 14 gerichteten Beziehungs-Kanten pro
+Charakter-Paar ohne Self-Edges materialisieren.
 
-### Step C — narrative layers
+### Schritt C — Narrative Ebenen
 
-Implement relationship effects, thread state, perspective/belief state, memory/character state, emotional decay, conflict/relevance and evidence references.
+Beziehungseffekte, Thread-Zustand, Perspektiven-/Überzeugungs-Zustand,
+Gedächtnis-/Charakter-Zustand, emotionalen Zerfall, Konflikt/Relevanz und
+Evidenz-Referenzen implementieren.
 
-### Step D — historical rebuild
+### Schritt D — Historischer Wiederaufbau
 
-Implement full replay from persisted observation history and byte/semantic determinism checks.
+Volles Replay aus persistierter Observations-Historie und Byte-/
+Semantik-Determinismus-Checks implementieren.
 
-### Step E — narrator context
+### Schritt E — Erzähler-Kontext
 
-Add the 15th narrator context builder. Its style is fixed: cynical, sarcastic, occasionally caustic. It receives facts and derived narrative state but no technical authority.
+Den 15.-Erzähler-Kontext-Builder hinzufügen. Sein Stil ist fest: zynisch,
+sarkastisch, gelegentlich beißend. Er erhält Fakten und abgeleiteten
+narrativen Zustand, aber keine technische Autorität.
 
-### Step F — Thinker orchestration
+### Schritt F — Thinker-Orchestrierung
 
-Generate the prompt automatically. Reserve the shared Thinker slot. Make exactly one call. Persist the resulting narrative message. Release the slot.
+Den Prompt automatisch generieren. Den gemeinsamen Thinker-Slot reservieren.
+Genau einen Call machen. Die resultierende narrative Message persistieren.
+Den Slot freigeben.
 
-### Step G — Dock wiring
+### Schritt G — Dock-Verdrahtung
 
-Attach observer events and final DOKI output to the existing visible Dock without replacing its state machine or adding a second UI writer.
+Observer-Events und finalen DOKI-Output an das bestehende sichtbare Dock
+anhängen, ohne dessen Zustandsmaschine zu ersetzen oder einen zweiten
+UI-Writer hinzuzufügen.
 
-### Step H — E2E
+### Schritt H — E2E
 
-Run a real visible FalsifyMe workflow including Thinker, Evil Twin, external-agent waiting, DOKI buffering, free-slot acquisition, one Thinker call and final visible commit prose.
+Einen echten sichtbaren FalsifyMe-Workflow ausführen, inklusive Thinker,
+Evil Twin, externer-Agent-Wartezeit, DOKI-Pufferung, Frei-Slot-Erwerb, einem
+Thinker-Call und finaler sichtbarer Commit-Prosa.
 
-## Commit protocol
+## Commit-Protokoll
 
-The implementation sequence is also the Git commit sequence on `codex/doki-rev2`.
+Die Implementierungsreihenfolge ist auch die Git-Commit-Reihenfolge auf
+`codex/doki-rev2`.
 
-- Exactly one implementation point per commit.
-- No mixed-point commits.
-- No unrelated cleanup inside a feature-point commit.
-- Every commit must be independently reviewable against the plan point it implements.
-- After each commit, verify the changed scope and tests before starting the next point.
-- The branch remains `codex/doki-rev2` for the entire implementation sequence.
-- `main` is not modified by the implementation work.
-- A point is not considered complete merely because files exist; its acceptance/tests must pass before the next point begins.
+- Genau ein Implementierungspunkt pro Commit.
+- Keine Misch-Punkt-Commits.
+- Kein unabhängiges Cleanup innerhalb eines Feature-Punkt-Commits.
+- Jeder Commit muss unabhängig gegen den Planpunkt reviewbar sein, den er
+  implementiert.
+- Nach jedem Commit den geänderten Scope und die Tests verifizieren, bevor der
+  nächste Punkt beginnt.
+- Der Branch bleibt für die gesamte Implementierungsreihenfolge
+  `codex/doki-rev2`.
+- `main` wird durch die Implementierungsarbeit nicht verändert.
+- Ein Punkt gilt nicht allein deshalb als abgeschlossen, weil Dateien
+  existieren; seine Abnahme-/Tests müssen bestehen, bevor der nächste Punkt
+  beginnt.
 
-Commit naming convention:
+Commit-Namenskonvention:
 
 ```text
 DOKI A: observer foundation
@@ -213,31 +263,47 @@ DOKI G: Dock wiring
 DOKI H: full visible E2E
 ```
 
-If a point must be split internally for a technical reason, the split must first be added explicitly to this plan as separate numbered sub-points. No silent subdivision and no silent regrouping.
+Muss ein Punkt intern aus technischem Grund geteilt werden, wird die Teilung
+zuerst explizit als separate nummerierte Unterpunkte zu diesem Plan
+hinzugefügt. Keine stille Unterteilung und keine stille Neugruppierung.
 
-## Required test matrix
+## Erforderliche Test-Matrix
 
-Unit: identity, deduplication, relationship direction, thread merge/split, belief evidence, memory reconstruction, emotional decay, narrator selection, narrator voice constraints, prompt determinism.
+Unit: Identität, Deduplizierung, Beziehungsrichtung, Thread-Merge/Split,
+Überzeugungs-Evidenz, Gedächtnis-Rekonstruktion, emotionaler Zerfall,
+Erzähler-Auswahl, Erzähler-Stimm-Constraints, Prompt-Determinismus.
 
-Integration: terminal observer, SQLite separation, Falsify read-only, shared-key gate, Thinker slot, model idle switch, DOKI persistence, Dock events.
+Integration: Terminal-Observer, SQLite-Trennung, Falsify read-only,
+Shared-Key-Gate, Thinker-Slot, Modell-Idle-Wechsel, DOKI-Persistenz,
+Dock-Events.
 
-E2E: normal completion, Evil-Twin path, external-agent delay, concurrent observation, repeated terminal events, replay/restart, Thinker failure, Thinker timeout, rate limit, missing DOKI DB, Falsify DB read-only failure, abort and Falsify error.
+E2E: normaler Abschluss, Evil-Twin-Pfad, externer-Agent-Verzögerung,
+gleichzeitige Observation, wiederholte Terminal-Ereignisse, Replay/Restart,
+Thinker-Fehler, Thinker-Timeout, Rate-Limit, fehlende DOKI-DB,
+Falsify-DB-read-only-Fehler, Abbruch und Falsify-Fehler.
 
-## Explicitly unchanged
+## Explizit unverändert
 
-- FalsifyMe technical verdict authority
-- FalsifyMe lifecycle / loop-state ownership
-- FalsifyMe abort semantics
-- Evil Twin technical role
-- shared Thinker API key
-- idle-time Thinker model switching
-- existing FalsifyMe queue semantics
-- existing FalsifyMe Dock ownership rules
+- FalsifyMe technische Verdict-Autorität
+- FalsifyMe Lebenszyklus-/Loop-State-Zuständigkeit
+- FalsifyMe Abbruch-Semantik
+- Evil-Twin technische Rolle
+- gemeinsamer Thinker-API-Key
+- Idle-Zeit-Thinker-Modellwechsel
+- bestehende FalsifyMe-Queue-Semantik
+- bestehende FalsifyMe-Dock-Ownership-Regeln
 
-## No silent changes gate
+## Gate: keine stillen Änderungen
 
-Every production modification must be listed with file, symbol, reason, authority impact, persistence impact and tests. Anything not listed is not changed.
+Jede Produktions-Änderung muss mit Datei, Symbol, Grund, Autoritäts-Wirkung,
+Persistenz-Wirkung und Tests gelistet werden. Was nicht gelistet ist, wird
+nicht geändert.
 
-## Acceptance
+## Abnahme
 
-A normal user can watch one visible FalsifyMe terminal session, including Evil-Twin work, while DOKI observes in parallel, accumulate persistent narrative history, bridge variable idle periods without duplicating events, and finally see one 15th-narrator commit message produced by exactly one Thinker call, without any technical FalsifyMe result being modified.
+Ein normaler Nutzer kann eine sichtbare FalsifyMe-Terminal-Session inklusive
+Evil-Twin-Arbeit beobachten, während DOKI parallel beobachtet, persistente
+narrative Historie aufbaut, variable Idle-Phasen ohne Ereignis-Duplikate
+überbrückt und schließlich eine 15.-Erzähler-Commit-Message sieht, die von
+genau einem Thinker-Call erzeugt wurde — ohne dass ein technisches
+FalsifyMe-Ergebnis verändert wird.

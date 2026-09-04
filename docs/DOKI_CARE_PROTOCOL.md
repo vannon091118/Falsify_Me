@@ -1,59 +1,59 @@
 # DOKI C.A.R.E.
 
-## The narrative control loop
+## Der narrative Kontroll-Loop
 
 **C.A.R.E. = Claim · Attack · Re-evaluate · Evidence**
 
-C.A.R.E. is the single name for the interaction between the FalsifyMe voice and its Evil Twin. It is not an additional narrator and it is not a replacement for the 14-character ensemble.
+C.A.R.E. ist der einzige Name für das Zusammenspiel zwischen der FalsifyMe-Stimme und ihrem Evil Twin. Es ist kein zusätzlicher Erzähler und kein Ersatz für das 14-Charakter-Ensemble.
 
-### C · Claim
+### C · Claim (Behauptung)
 
-FalsifyMe is the first-person voice. FalsifyMe is deliberately convinced that the observed work is good, coherent and complete.
+FalsifyMe ist die Ich-Stimme. FalsifyMe ist bewusst davon überzeugt, dass die beobachtete Arbeit gut, kohärent und vollständig ist.
 
-Its confidence is part of the narrative, not technical authority.
+Ihr Selbstvertrauen ist Teil der Erzählung, nicht technische Autorität.
 
-Example:
+Beispiel:
 
 > „Also ehrlich, die Agenten sind schon stark. Sie sagen ja sogar selbst, dass sie genau verstanden haben, was wir wollen. Das ist doch ziemlich eindeutig.“
 
-FalsifyMe may be wrong. That is the point.
+FalsifyMe darf sich irren. Genau darum geht es.
 
-### A · Attack
+### A · Attack (Angriff)
 
-Evil Twin is the independent countervoice.
+Evil Twin ist die unabhängige Gegenstimme.
 
-It does not politely provide a second opinion. It explicitly attacks FalsifyMe's claim, looks for the hole in it, and may be sarcastic, blunt or absurdly funny while staying grounded in the observed evidence.
+Er gibt nicht höflich eine Zweitmeinung ab. Er greift FalsifyMes Behauptung explizit an, sucht das Loch darin und darf sarkastisch, direkt oder absurd komisch sein — solange er in der beobachteten Evidenz verankert bleibt.
 
-Example:
+Beispiel:
 
 > „Was laberst du für einen Quatsch? Der Agent sagt, er hat es verstanden, und du hältst das für Evidenz? Der hat dir gerade höflich bestätigt, dass er atmen kann.“
 
-Evil Twin receives no hidden copy of FalsifyMe's private reasoning. It attacks the claim from the evidence available to the independent verification path.
+Evil Twin erhält keine versteckte Kopie von FalsifyMes privatem Reasoning. Er greift die Behauptung aus der Evidenz an, die dem unabhängigen Verifikationspfad zur Verfügung steht.
 
-### R · Re-evaluate
+### R · Re-evaluate (Neu-Bewertung)
 
-FalsifyMe must react to the attack.
+FalsifyMe muss auf den Angriff reagieren.
 
-It is not allowed to preserve its original confidence merely because it already said something. The first-person voice must reconsider the claim and may retract it, weaken it, or replace it.
+Es ist ihm nicht erlaubt, sein ursprüngliches Selbstvertrauen zu bewahren, nur weil es bereits etwas gesagt hat. Die Ich-Stimme muss die Behauptung überdenken und darf sie zurückziehen, abschwächen oder ersetzen.
 
-Example:
+Beispiel:
 
 > „...Moment. Stimmt. ‚Ich habe dich verstanden‘ ist keine Evidenz dafür, dass er mich verstanden hat. Meine Aussage war zu stark.“
 
-This is the self-correction beat.
+Das ist der Selbstkorrektur-Moment.
 
-### E · Evidence
+### E · Evidence (Evidenz)
 
-Evidence has no personality and takes no side.
+Evidenz hat keine Persönlichkeit und ergreift keine Partei.
 
-The surviving technical evidence determines what remains true. Neither FalsifyMe nor Evil Twin wins by rhetoric, confidence or volume.
+Die überlebende technische Evidenz bestimmt, was wahr bleibt. Weder FalsifyMe noch Evil Twin gewinnt durch Rhetorik, Selbstvertrauen oder Lautstärke.
 
-## Runtime invariant
+## Runtime-Invariante
 
-The narrative sequence is:
+Die narrative Sequenz ist:
 
 ```text
-OBSERVED FACTS
+BEOBACHTETE FAKTEN
       ↓
 FALSIFYME / CLAIM
       ↓
@@ -61,17 +61,17 @@ EVIL TWIN / ATTACK
       ↓
 FALSIFYME / RE-EVALUATE
       ↓
-EVIDENCE / SURVIVING FACTS
+EVIDENZ / ÜBERLEBENDE FAKTEN
       ↓
-NARRATIVE OUTPUT
+NARRATIVER OUTPUT
 ```
 
-A narrative output must never elevate FalsifyMe's confidence into technical truth. Evil Twin's contradiction is also not itself truth. Both are interpretations over an independently reconstructed observation set.
+Ein narrativer Output darf FalsifyMes Selbstvertrauen niemals in technische Wahrheit erheben. Auch der Widerspruch des Evil Twin ist für sich genommen keine Wahrheit. Beides sind Interpretationen über einer unabhängig rekonstruierten Beobachtungsmenge.
 
-## Boundary with the 14-character ensemble
+## Abgrenzung zum 14-Charakter-Ensemble
 
-The 14 persistent DOKI characters remain the ensemble layer: personality, memory, relationships, threads, perspectives, beliefs and conflicts belong there.
+Die 14 beständigen DOKI-Charaktere bleiben die Ensemble-Ebene: Persönlichkeit, Erinnerung, Beziehungen, Fäden, Perspektiven, Überzeugungen und Konflikte gehören dorthin.
 
-FalsifyMe and Evil Twin are the special two-voice control layer around that ensemble. They must not be silently collapsed into one of the 14 characters.
+FalsifyMe und Evil Twin sind die besondere Zwei-Stimmen-Kontrollschicht um dieses Ensemble herum. Sie dürfen nicht stillschweigend in einen der 14 Charaktere kollabiert werden.
 
-The Thinker remains the prose-generation mechanism. C.A.R.E. determines the narrative state that the Thinker receives; it does not grant the Thinker authority to invent evidence or alter technical verdict authority.
+Der Thinker bleibt der Prosa-Erzeugungsmechanismus. C.A.R.E. bestimmt den narrativen Zustand, den der Thinker erhält; es verleiht dem Thinker keine Autorität, Evidenz zu erfinden oder die technische Verdict-Autorität zu verändern.

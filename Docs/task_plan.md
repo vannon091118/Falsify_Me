@@ -1,53 +1,53 @@
-# Plan: FalsifyMe change review
+# Plan: FalsifyMe-Change-Review
 
-Goal: Understand the actual change in this FalsifyMe repo, explain it clearly, and decide what to do next (visual explanation, bounded design work, or a different next step).
+Ziel: Den tatsächlichen Change in diesem FalsifyMe-Repo verstehen, klar erklären und entscheiden, was als Nächstes zu tun ist (visuelle Erklärung, begrenzte Design-Arbeit oder ein anderer nächster Schritt).
 
-Background:
-- The session started from a spec-brainstorm pass on FalsifyMe.
-- The user then asked to activate the brainstorming skill, then asked for a diff-anchored brainstorm.
-- I do not yet have the diff.
-- The repo is FalsifyMe, a read-only falsification gateway for coding agents with CLI + TUI/Dock + Evil Twin + structural/evidence gates.
+Hintergrund:
+- Die Session startete mit einem Spec-Brainstorm-Durchgang zu FalsifyMe.
+- Der Nutzer bat dann darum, den Brainstorming-Skill zu aktivieren, danach um einen diff-verankerten Brainstorm.
+- Ich habe den Diff noch nicht.
+- Das Repo ist FalsifyMe, ein read-only Falsifikations-Gateway für Coding-Agenten mit CLI + TUI/Dock + Evil Twin + strukturellen/Evidenz-Gates.
 
-Scope for this session:
-- Find the change in question.
-- Read the surrounding architecture enough to judge it accurately.
-- Give a concrete recommendation.
-- If useful, build a single self-contained HTML visual explanation in `.freebuff/`.
+Scope dieser Session:
+- Den betreffenden Change finden.
+- Die umgebende Architektur genug lesen, um ihn akkurat zu beurteilen.
+- Eine konkrete Empfehlung geben.
+- Falls sinnvoll, eine einzelne in sich geschlossene HTML-Visualisierung in `.freebuff/` bauen.
 
 Constraints:
-- Do not edit product code just to build the explanation.
-- Do not start implementation until the design/plan is approved.
+- Produktcode nicht nur zum Bauen der Erklärung editieren.
+- Keine Implementierung starten, bis Design/Plan genehmigt sind.
 
-## Phases
+## Phasen
 
-### Phase 1: Locate the change
+### Phase 1: Den Change lokalisieren
 Status: in_progress
-Dependency: none
-Expected result: one concrete diff, commit, file, or patch location to anchor on.
+Abhängigkeit: keine
+Erwartetes Ergebnis: ein konkreter Diff, Commit, Datei- oder Patch-Ort als Anker.
 
-### Phase 2: Understand surrounding architecture
+### Phase 2: Umgebende Architektur verstehen
 Status: todo
-Dependency: Phase 1
-Expected result: short findings note on the relevant flows (CLI, worker/dock, verdict, twin, agent events, UI state) needed to judge the change.
+Abhängigkeit: Phase 1
+Erwartetes Ergebnis: kurze Findings-Notiz zu den relevanten Flows (CLI, Worker/Dock, Verdict, Twin, Agent-Events, UI-State), die zur Beurteilung des Changes nötig sind.
 
-### Phase 3: Judge the change
+### Phase 3: Den Change beurteilen
 Status: todo
-Dependency: Phase 2
-Expected result: a concise written assessment: what the change does, what it improves, what it misses, and what a bigger improvement could be.
+Abhängigkeit: Phase 2
+Erwartetes Ergebnis: eine knappe schriftliche Einschätzung: was der Change tut, was er verbessert, was ihm fehlt und was eine größere Verbesserung sein könnte.
 
-### Phase 4: Decide next artifact
+### Phase 4: Nächstes Artefakt entscheiden
 Status: todo
-Dependency: Phase 3
-Expected result: one approved next step. Likely candidate: a self-contained visual explanation in `.freebuff/`.
+Abhängigkeit: Phase 3
+Erwartetes Ergebnis: ein genehmigter nächster Schritt. Wahrscheinlicher Kandidat: eine in sich geschlossene visuelle Erklärung in `.freebuff/`.
 
-## Decisions made
+## Getroffene Entscheidungen
 
-(None yet)
+(Noch keine)
 
-## Errors encountered
+## Aufgetretene Fehler
 
-(None yet)
+(Noch keine)
 
-## Next step
+## Nächster Schritt
 
-Run Phase 1: locate the diff or exact change the user means. If the user has it, ask for the path/commit/patch. If not, inspect recent repo changes to find the most likely candidate.
+Phase 1 ausführen: den Diff oder exakten Change lokalisieren, den der Nutzer meint. Hat der Nutzer ihn, nach Pfad/Commit/Patch fragen. Falls nicht, die jüngsten Repo-Änderungen prüfen, um den wahrscheinlichsten Kandidaten zu finden.

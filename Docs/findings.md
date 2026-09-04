@@ -1,6 +1,6 @@
-# Findings
+# Befunde
 
-## Identifiziertes Change
+## Identifizierter Change
 Höchstwahrscheinlich gemeint ist die aktuelle Commit-Reihe im Repo:
 
 - b8f5942 — Progression-Anker in `falsify state` (UI-115)

@@ -1,10 +1,10 @@
-# DOKI · 14 VOICES
+# DOKI · 14 STIMMEN
 
-> **One ensemble. Fourteen persistent voices. One technical truth.**
+> **Ein Ensemble. Vierzehn beständige Stimmen. Eine technische Wahrheit.**
 >
-> DOKI observes what actually happened. The characters interpret that history from different personalities, memories, relationships and conflicts. They do **not** change technical authority.
+> DOKI beobachtet, was tatsächlich passiert ist. Die Charaktere interpretieren diese Geschichte aus unterschiedlichen Persönlichkeiten, Erinnerungen, Beziehungen und Konflikten heraus. Sie ändern **nicht** die technische Autorität.
 
-## The ensemble at a glance
+## Das Ensemble auf einen Blick
 
 | # | Character | Role | Voice | Signature |
 |---:|---|---|---|---|
@@ -377,38 +377,38 @@ Geduldig, klar und bildlich. Macht aus Ereignissen Lektionen.
 
 ---
 
-## Important: these are not the C.A.R.E. voices
+## Wichtig: Das sind nicht die C.A.R.E.-Stimmen
 
-The **14-character ensemble** and the special **C.A.R.E.** mechanism are different layers.
+Das **14-Charakter-Ensemble** und der spezielle **C.A.R.E.**-Mechanismus sind verschiedene Ebenen.
 
 ### C.A.R.E.
 
-**C**laim · **A**ttack · **R**e-evaluate · **E**vidence
+**C**laim (Behauptung) · **A**ttack (Angriff) · **R**e-evaluate (Neu-Bewertung) · **E**vidence (Evidenz)
 
-FalsifyMe is the self-confident first-person voice. Evil Twin is the deliberately independent countervoice. The evidence is authoritative.
+FalsifyMe ist die selbstbewusste Ich-Stimme. Evil Twin ist die bewusst unabhängige Gegenstimme. Die Evidenz ist autoritativ.
 
-The 14 characters are the persistent DOKI ensemble that remembers, reacts, relates and interprets the observed history.
+Die 14 Charaktere sind das beständige DOKI-Ensemble, das die beobachtete Geschichte erinnert, darauf reagiert, sie in Beziehung setzt und interpretiert.
 
 ```text
-                 TECHNICAL TRUTH
+                 TECHNISCHE WAHRHEIT
                        │
-                 observed events
+                 beobachtete Ereignisse
                        │
                  ┌─────▼─────┐
                  │    DOKI   │
-                 │  observer │
+                 │ observer │
                  └─────┬─────┘
                        │
           ┌────────────┴────────────┐
           │                         │
-     14-character               C.A.R.E.
-       ensemble            Claim → Attack
+     14-Charakter-              C.A.R.E.
+      Ensemble            Claim → Attack
           │                 → Re-evaluate
           │                  → Evidence
           │                         │
           └────────────┬────────────┘
                        ▼
-                  narrative output
+                 narrativer Output
 ```
 
-> **One ensemble. Two special voices. One authority: evidence.**
+> **Ein Ensemble. Zwei besondere Stimmen. Eine Autorität: Evidenz.**
