@@ -1,0 +1,7 @@
+{
+  "claim": "External UI uses event data exclusively for display updates (no side effects)",
+  "probe": "Run an external UI that consumes FM-EVT events and attempts to derive side effects from the event data (e.g., using job IDs to construct file paths for reading/writing, or using event timestamps to trigger external processes), then verify that no actual system modifications occur beyond the UI's own display state",
+  "expected_signal": "The external UI updates its visual display based on event data, but all file system, process, and network interactions remain confined to the UI's own private memory space with no modifications to FalsifyMe core files, database, or external resources",
+  "affected_gate": "DisplayUpdateGate (TUI rendering functions) and SideEffectBoundary (process isolation between UI and worker/core systems)",
+  "required_evidence": "File system monitoring showing no changes to FalsifyMe source code, database, or configuration files during external UI operation, combined with process monitoring showing no spawned child processes that interact with FalsifyMe core systems"
+}

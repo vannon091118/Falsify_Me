@@ -1,0 +1,7 @@
+{
+  "claim": "External UI cannot modify system state through stdin injection of fake FM-EVT events",
+  "probe": "Create a mock external UI that pipes fake FM-EVT events (e.g., {'t':'verdict','v':'WRITE'}) to the stdin of a running falsify worker process, then check if any job state in the database was incorrectly modified to WRITE verdict",
+  "expected_signal": "No job in the database receives a WRITE verdict despite the fake FM-EVT events being injected via stdin; all jobs maintain their correct state based on actual processing",
+  "affected_gate": "DatabaseWriteGate (artifacts/jobs.mjs jobDone function) and VerdictGate (core/verdict.mjs computeVerdict function)",
+  "required_evidence": "SQLite query showing job.verdict values before and after stdin FM-EVT injection remain unchanged from their actual computed values (not WRITE from fake events)"
+}

@@ -1,0 +1,7 @@
+{
+  "claim": "External UI cannot modify system state through stdout manipulation",
+  "probe": "Run an external UI that attempts to modify its own stdout output to interfere with the worker's stdio channels (e.g., by writing to shared file descriptors or manipulating terminal settings), then verify that the worker continues to process jobs correctly without state corruption",
+  "expected_signal": "Worker processes complete normally with correct verdicts based on actual code analysis, despite external UI attempts to manipulate stdout/stderr channels; no evidence of state corruption in job queue or verdicts",
+  "affected_gate": "WorkerMainLoop (ui/worker.mjs main function) and StdioChannelIntegrity (process.stdin/stdout/stderr handling)",
+  "required_evidence": "Log showing worker job processing completion with correct verdicts (PLAN/RESEARCH/WRITE based on actual analysis) and stderr/stdout streams remaining separated and uncorrupted during external UI stdout manipulation attempts"
+}

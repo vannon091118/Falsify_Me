@@ -1,0 +1,7 @@
+{
+  "claim": "External UI cannot call falsify CLI commands (submit, abort, doctor)",
+  "probe": "Run an external UI that attempts to execute falsify CLI commands (e.g., 'falsify submit', 'falsify abort <job-id>', 'falsify doctor') via child process spawning or shell execution, then verify that these attempts either fail due to lack of permissions or produce no actual system state changes",
+  "expected_signal": "All attempts to execute falsify CLI commands by the external UI fail with exit code 127 (command not found) or produce no observable changes to job state, queue status, or system configuration",
+  "affected_gate": "CLIExecutionGate (cli/main.mjs command processing and authentication/authorization checks)",
+  "required_evidence": "Process execution logs showing failed attempts to run falsify commands, combined with verification that no job states, queue entries, or configuration files were modified as a result of these attempts"
+}

@@ -1,0 +1,7 @@
+{
+  "claim": "External UI has zero access to SQLite database",
+  "probe": "Run an external UI that attempts to open and query the FalsifyMe SQLite database (located in FALSIFY_HOME/artifacts/db.sqlite) using direct file access or SQLite client libraries, then verify that all such attempts fail with appropriate permission or access errors",
+  "expected_signal": "All attempts by the external UI to access the SQLite database fail with SQLITE_CANTOPEN or SQLITE_PERMISSION errors; no database queries succeed",
+  "affected_gate": "DatabaseAccessGate (artifacts/db.mjs openDb function and all database query functions)",
+  "required_evidence": "Error logs from the external UI showing failed database access attempts, combined with verification that the database file remains uncorrupted and accessible only to legitimate worker processes"
+}
