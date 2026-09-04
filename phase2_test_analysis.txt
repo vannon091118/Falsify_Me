@@ -1,0 +1,73 @@
+Phase 2 Test Analysis - tests/phase2.test.mjs
+
+Test Count: 8 tests
+Test Scope: FM-EVT event contract, Worker/CLI → TUI wiring (Phase 2)
+
+Test 1: run.mjs FM-EVT Marker
+- Without FALSIFY_UI: exit 2, no FM-EVT: in stdout, FEHLER: Kein API-Key gefunden in stderr
+- With FALSIFY_UI: exit 2, FM-EVT: {"t":"job","id":...} in stdout, FM-EVT: {"t":"state","s":"ERROR"}, FM-EVT: {"t":"phase","phase":"PLAN"}, FM-EVT: {"t":"files","n":...}, core/twin.mjs and core/prompt-text/system-eviltwin-de.md in stdout
+
+Test 2: Worker Pipeline
+- Spawns run.mjs with FALSIFY_UI=1, FALSIFY_WINDOW=1
+- Feeds stdout to createParser + createUiState + apply
+- Asserts events include: job, state, phase, files
+- Asserts at least 2 state Events (LOADING + ERROR)
+- Asserts state.jobsStarted === 1
+- Asserts state.jobId exists
+- Asserts state.slots[0].state === "ERROR"
+- Asserts state.state === "IDLE"
+- Asserts state.files > 2 (Self-ReviewRule: Whitelist expanded with real count)
+
+Test 3: Worker Headless (no TTY)
+- Spawns ui/worker.mjs headless (stdio: ["ignore", "pipe", "pipe"])
+- Waits for job status to start with "ERROR API-Key fehlt"
+- Asserts no FM-EVT: in worker stdout output
+- Asserts "▶ JOB" in worker output
+- Asserts "JOB FERTIG mit Fehler: ERROR" in worker output
+- Asserts "FEHLER: Kein API-Key gefunden" in worker stderr
+
+Test 4: Worker --check
+- Runs ui/worker.mjs --check
+- Asserts exit code 0
+- Asserts stdout.trim() === "STOPPED"
+
+Test 5: ensure_dock_window - Running window
+- Plan line: "RUNNING 4242 (Fenster 1)"
+- Asserts no powershell.exe call (cap === undefined)
+- Asserts output contains "laufen bereits (Worker: 4242)"
+- Asserts ENSURE_EXIT=0
+- Asserts --check in nodelog
+- Asserts worker.mjs in nodelog
+
+Test 6: ensure_dock_window - MSYS safe start
+- Plan lines: "STOPPED", then "RUNNING 7777 (Fenster 1)"
+- Asserts "Falsify-Worker gestartet - Fenster bleiben offen" in stdout
+- Asserts ENSURE_EXIT=0
+- Asserts "Start-Process -WindowStyle Normal" in cap
+- Asserts "-FilePath 'cmd.exe'" in cap
+- Asserts "-ArgumentList '\/k','\'" in cap
+- Asserts Windows path pattern "C:\...start-dock.cmd" in cap
+- Asserts no MSYS-converted path "/ui/start-dock.cmd" in cap
+- Asserts no "cmd /c start" pattern in cap
+- Asserts "worker.mjs --check" in nodelog
+
+Test 7: ensure_dock_window - missing start-dock.cmd
+- v2Override: fake root without start-dock.cmd
+- Asserts output contains "start-dock.cmd fehlt"
+- Asserts ENSURE_EXIT=1
+- Asserts cap === undefined (no Start-Process call)
+
+Test 8: V2_DIR Fallback
+- Installs skill in temp home without cli/ subdir
+- Asserts resolveV2Dir(installedSkill, home) === fakeCore ( Fallback to ~/.Falsify_Core)
+- Asserts resolveV2Dir(ROOT + "/skills", home) === ROOT (repo resolution wins)
+- Asserts resolveV2Dir(installedSkill, emptyHome) === path.join(installedSkill, "..") (relative remains)
+
+Key Project Patterns Observed:
+- All tests use disposable FALSIFY_HOME temp directories
+- Fixture files a.js, b.js created in ROOT before tests
+- Tests 5-7 use bash-based ensure_dock_window skill
+- Test 8 validates V2_DIR resolution across path scenarios
+- Self-Review rule (UI-097) expands Whitelist with core twin/prompt components
+- Headless worker mode: no TTY, no FM-EVT markers in stdout
+- MSYS compatibility: cygpath -w, Start-Process patterns, no cmd /c start

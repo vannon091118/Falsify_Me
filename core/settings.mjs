@@ -203,6 +203,7 @@ function validateSettings(patch) {
 export function getRuntimeSettings() {
   const cfg = loadConfig();
   const file = readJson(configPath());
+  const keyNames = cfg.keyEnvNames || ["NVIDIA_API_KEY", "OPENAI_API_KEY", "FALSIFY_API_KEY"];
   const keyName = String(file.apiKeyName || file.apiKeyEnv || process.env.FALSIFY_API_KEY_ENV || "FALSIFY_API_KEY").split(",")[0].trim();
   const twinKeyName = String(file.twinApiKeyEnv || process.env.FALSIFY_TWIN_API_KEY_ENV || "").split(",")[0].trim() || null;
   const result = {
@@ -210,10 +211,36 @@ export function getRuntimeSettings() {
     apiBase: cfg.apiBase,
     model: cfg.model,
     apiKeyEnv: cfg.keyEnvNames.join(","),
-    keyConfigured: Boolean(process.env[keyName]?.trim()) || hasEnvKey(envPath(), keyName),
+    keyConfigured: false,
     configFile: configPath(),
     envFile: envPath(),
   };
+  // Pruefe, ob ein Key in process.env konfiguriert ist.
+  for (const kn of keyNames) {
+    if (Boolean(process.env[kn]?.trim())) {
+      result.keyConfigured = true;
+      result.keyName = kn;
+      break;
+    }
+  }
+  // Fallback: prüfe .env Datei auf nicht-leere Werte
+  if (!result.keyConfigured) {
+    const envContent = readEnv(envPath());
+    const lines = envContent.split(/\r?\n/);
+    for (const kn of keyNames) {
+      const marker = `${kn}=`;
+      for (const line of lines) {
+        if (!line.startsWith(marker)) continue;
+        const v = line.slice(marker.length).trim().replace(/^["']|["']$/g, "");
+        if (v) {
+          result.keyConfigured = true;
+          result.keyName = kn;
+          break;
+        }
+      }
+      if (result.keyConfigured) break;
+    }
+  }
   // Evil-Twin-Diversität (F-2/F-3-Fix 2026-09-02): Twin-Modell/-Basis/-Key-Name
   // /-Reasoning-Effort in settings show sichtbar (Werte maskiert; Namen sind
   // keine Secrets). twinReasoningEffort ist der aufgeloeste Wert (Fallback

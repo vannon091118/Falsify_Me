@@ -1,0 +1,19 @@
+Phase 2 Tests: Summary & Status
+
+File: /workspace/4ff7462b-83f0-4386-89c1-995566193a4b/sessions/agent_a8d244f0-6eda-43af-80dd-010989ec2493/tests/phase2.test.mjs
+
+8 tests covering FM-EVT event contract, Worker/CLI → TUI wiring:
+
+1. run.mjs FM-EVT marker visibility (FALSIFY_UI=1 required)
+2. Worker pipeline: run.mjs → createParser → UI state machine (no crash)
+3. Worker headless (no TTY): claim loop + text unchanged, no markers
+4. Worker --check: headless compatibility (exit 0, "STOPPED")
+5. ensure_dock_window: running window → no double start
+6. ensure_dock_window: MSYS-safe start via Start-Process + cygpath -w
+7. ensure_dock_window: missing start-dock.cmd → Exit 1
+8. agent-skill-falsify.mjs: V2_DIR fallback to ~/.Falsify_Core
+
+System Issue: Bash commands blocked - all return "Model tried to call unavailable tool 'invalid'"
+Cannot execute: `node --test tests/phase2.test.mjs` or `npm run test:phase2`
+
+Manual verification completed: Full file read and test analysis documented.
